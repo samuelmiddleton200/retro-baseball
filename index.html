@@ -213,16 +213,32 @@ let G = null;
 
 function newGame(teamAb){
   const lvl = () => 70 + bell() * 28;
+  _cardId = 1;
   const teams = TEAMS.map(t => {
     const lineup = POS.map(p => makeHitter(lvl(), p));
     const rot = [0,1,2,3,4].map(() => makePitcher(lvl(), 'SP'));
     const pen = [0,1,2,3].map(() => makePitcher(lvl(), 'RP')).concat([makePitcher(lvl() + 6, 'CP')]);
+    [...lineup, ...rot, ...pen].forEach(p => { p.num = ri(1, 72); });
     return { ...t, lineup, rot, pen, w:0, l:0, rs:0, ra:0 };
   });
-  G = { v:1, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:2500, seasonLen:25,
-        sched:[], rotIdx:0, cards:[], log:[] };
+  G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:2500, seasonLen:25,
+        sched:[], rotIdx:0, cards:[], slots:{ lineup:[], rot:[], pen:[] }, freeAt:0 };
+  // your own nine, five starters and five relievers all become cards you own
+  const me = G.teams[G.team];
+  const own = p => { p.id = _cardId++; p.lvl = 0; p.ovr = ovrOf(p); G.cards.push(p); return p.id; };
+  G.slots.lineup = me.lineup.map(own);
+  G.slots.rot = me.rot.map(own);
+  G.slots.pen = me.pen.map(own);
   makeSchedule();
   save();
+}
+// point the team at whatever cards are in the slots right now
+function rebuildTeam(){
+  const me = G.teams[G.team];
+  const get = id => cardById(id) || me.lineup[0];
+  me.lineup = G.slots.lineup.map(get);
+  me.rot = G.slots.rot.map(get);
+  me.pen = G.slots.pen.map(get);
 }
 function makeSchedule(){
   // every day our team plays somebody; opponents rotate through the league
@@ -233,8 +249,28 @@ function makeSchedule(){
     G.sched.push({ opp, home: d % 2 === 0, done:false, rs:0, ra:0 });
   }
 }
-const save = () => { try { localStorage.setItem(SAVE, JSON.stringify(G)); } catch(e){} };
-const load = () => { try { const d = JSON.parse(localStorage.getItem(SAVE)); if (d && d.v === 1) G = d; } catch(e){} };
+const save = () => {
+  try {
+    // our own players live in G.cards; the team just points at them, so blank those
+    // three lists before saving and build them again on load
+    const me = G.teams[G.team], keep = { lineup:me.lineup, rot:me.rot, pen:me.pen };
+    me.lineup = me.rot = me.pen = null;
+    const txt = JSON.stringify(G);
+    me.lineup = keep.lineup; me.rot = keep.rot; me.pen = keep.pen;
+    localStorage.setItem(SAVE, txt);
+  } catch(e){}
+};
+const load = () => {
+  try {
+    const d = JSON.parse(localStorage.getItem(SAVE));
+    if (d && d.v === 2){
+      G = d;
+      _cardId = Math.max(1, ...G.cards.map(c => c.id || 0)) + 1;
+      G.cards.forEach(c => { c.st = c.st || newStat(); });
+      rebuildTeam();
+    }
+  } catch(e){}
+};
 const myTeam = () => G.teams[G.team];
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -252,89 +288,509 @@ function text(s, x, y, c = '#fff', size = 7, align = 'left'){
   g.textAlign = align; g.textBaseline = 'top'; g.fillStyle = c;
   g.fillText(s, x | 0, y | 0);
 }
-function textb(s, x, y, c = '#fff', size = 7, align = 'left'){   // with a dark outline so it reads on any background
+function textb(s, x, y, c = '#fff', size = 7, align = 'left'){
+  // Small text gets a single soft shadow; big callouts get a full outline so they
+  // carry over the grass and the crowd. A heavy outline on small text reads as a smudge.
   g.font = `${size}px ui-monospace, "Courier New", monospace`;
   g.textAlign = align; g.textBaseline = 'top';
-  g.fillStyle = '#000'; [[1,0],[-1,0],[0,1],[0,-1]].forEach(d => g.fillText(s, (x + d[0]) | 0, (y + d[1]) | 0));
+  g.fillStyle = 'rgba(0,0,0,.72)';
+  if (size >= 10) [[1,0],[-1,0],[0,1],[0,-1]].forEach(d => g.fillText(s, (x + d[0]) | 0, (y + d[1]) | 0));
+  else g.fillText(s, (x + 1) | 0, (y + 1) | 0);
   g.fillStyle = c; g.fillText(s, x | 0, y | 0);
 }
 
-// a player seen from behind/side: head, cap, shoulders, arms, legs. `k` scales it.
-function drawPlayer(x, y, k, lk, c1, c2, o = {}){
-  const sk = lk.skin, hr = lk.hair, bw = Math.round(9 * k * lk.bulk);
-  const bodyY = y - Math.round(20 * k), headR = Math.round(4.2 * k);
-  // legs
-  const legW = Math.max(2, Math.round(3 * k)), legH = Math.round(10 * k);
-  R(x - bw / 2 + 1, y - legH, legW, legH, c2);
-  R(x + bw / 2 - legW - 1, y - legH, legW, legH, c2);
-  R(x - bw / 2 + 1, y - 2, legW, 2, '#1a1a1a'); R(x + bw / 2 - legW - 1, y - 2, legW, 2, '#1a1a1a');
-  // torso with a little shading down the right side
-  const trH = Math.round(13 * k);
-  R(x - bw / 2, y - legH - trH, bw, trH, c1);
-  R(x + bw / 2 - 2, y - legH - trH, 2, trH, shade(c1, -.12));
-  R(x - bw / 2, y - legH - trH, bw, 2, shade(c1, .12));
-  // arms
-  const armW = Math.max(2, Math.round(2.6 * k));
-  if (o.arms !== 'none'){
-    R(x - bw / 2 - armW, y - legH - trH + 2, armW, Math.round(8 * k), c1);
-    R(x + bw / 2, y - legH - trH + 2, armW, Math.round(8 * k), c1);
-    R(x - bw / 2 - armW, y - legH - trH + 2 + Math.round(8 * k), armW, Math.round(3 * k), sk);
-    R(x + bw / 2, y - legH - trH + 2 + Math.round(8 * k), armW, Math.round(3 * k), sk);
+/* ───────────────────────────────────────────────────────────────────────────
+   PIXEL RIG — the same way Retro Boxing draws its fighters.
+   Shapes are rasterised into a pixel grid, shaded band by band, then given a
+   dark outline. Every sprite is built once and cached, so the game only pays
+   for it the first time a pose is seen.
+   ─────────────────────────────────────────────────────────────────────────── */
+const RW = 112, RH = 108;                       // the pixel grid one player is drawn on
+const OUTL = '#120c18';
+
+// ── colour maths ───────────────────────────────────────────────────────────
+function hexToHsl(h){
+  let [r, gq, b] = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+  const mx = Math.max(r, gq, b), mn = Math.min(r, gq, b), l = (mx + mn) / 2;
+  let hh = 0, s = 0;
+  if (mx !== mn){ const d = mx - mn; s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn);
+    hh = mx === r ? (gq - b) / d + (gq < b ? 6 : 0) : mx === gq ? (b - r) / d + 2 : (r - gq) / d + 4; hh /= 6; }
+  return [hh * 360, s, l];
+}
+function hslToHex(h, s, l){
+  h = ((h % 360) + 360) % 360 / 360; l = clamp(l, 0, 1);
+  const f = n => { const k = (n + h * 12) % 12, a = s * Math.min(l, 1 - l);
+    return Math.round((l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255); };
+  return '#' + [f(0), f(8), f(4)].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+// a ramp of shades from one colour: [hue shift, saturation x, lightness x, lift toward white]
+function ramp(base, spec){
+  const [h, s, l] = hexToHsl(base);
+  return spec.map(([dh, ds, dl, lift]) =>
+    hslToHex(h + dh, clamp(s * ds, 0, 1), lift ? l + (1 - l) * lift : l * dl));
+}
+function mix(a, b, t){
+  const A = parseInt(a.slice(1), 16), B = parseInt(b.slice(1), 16);
+  return '#' + [16, 8, 0].map(sh => Math.round(lerp((A >> sh) & 255, (B >> sh) & 255, clamp(t, 0, 1))))
+    .map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+// every colour one player is painted with
+function palette(look, c1, c2){
+  const [s1, s2, s3, s4, s5] = ramp(look.skin, [[-16,.8,.34],[-9,.9,.58],[-4,.95,.82],[0,1,1],[6,.9,0,.34]]);
+  const [j1, j2, j3, j4] = ramp(c1, [[-5,.9,.5],[-2,.95,.74],[0,1,1],[5,.9,0,.3]]);
+  const pantBase = mix(c2 === '#ffffff' ? '#e9ecf2' : c2, '#ffffff', .45);
+  const [p1, p2, p3] = ramp(pantBase, [[-3,.7,.62],[0,.8,1],[4,.6,0,.28]]);
+  const hairBase = look.hair === '#120d0a' ? '#1d1510' : look.hair;
+  const [r1, r2, r3] = ramp(hairBase, [[-5,.9,.55],[0,1,1],[5,.85,0,.3]]);
+  return { K:OUTL, s1, s2, s3, s4, s5, j1, j2, j3, j4, p1, p2, p3, r1, r2, r3,
+           boot:'#1d1a22', boot2:'#2e2a36', eye:'#f2efe6', iris:'#2a1c14',
+           bat:'#c79a5c', bat2:'#e0bb86', bat3:'#9a7340', leather:'#8a5f33', leather2:'#ab7a46',
+           mesh:'#3a404e', mesh2:'#596273', white:'#f4f2ea' };
+}
+
+// ── the rasteriser ─────────────────────────────────────────────────────────
+function Rig(PAL){
+  const buf = new Array(RW * RH).fill(null);
+  const tmp = document.createElement('canvas'); tmp.width = RW; tmp.height = RH;
+  const tg = tmp.getContext('2d', { willReadFrequently:true });
+  let part = null;
+  const C = c => PAL[c] || c;
+  // rasterise one shape and hand back which pixels it covers
+  const mask = draw => {
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    const B = (x, y, r = 0) => { if (x-r < x0) x0 = x-r; if (y-r < y0) y0 = y-r; if (x+r > x1) x1 = x+r; if (y+r > y1) y1 = y+r; };
+    const rec = { moveTo:(x,y) => { B(x,y); tg.moveTo(x,y); }, lineTo:(x,y) => { B(x,y); tg.lineTo(x,y); },
+      closePath:() => tg.closePath(),
+      ellipse:(cx,cy,rx,ry,a,b,c) => { B(cx,cy,Math.max(rx,ry)); tg.ellipse(cx,cy,rx,ry,a,b,c); } };
+    tg.beginPath(); draw(rec);
+    const m = new Uint8Array(RW * RH);
+    const bx = Math.max(0, Math.floor(x0) - 1), by = Math.max(0, Math.floor(y0) - 1);
+    const bw = Math.min(RW, Math.ceil(x1) + 2) - bx, bh = Math.min(RH, Math.ceil(y1) + 2) - by;
+    if (bw <= 0 || bh <= 0) return m;
+    tg.clearRect(bx, by, bw, bh); tg.fillStyle = '#000'; tg.fill();
+    const a = tg.getImageData(bx, by, bw, bh).data;
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++)
+      m[(by + y) * RW + bx + x] = a[(y * bw + x) * 4 + 3] > 127;
+    return m;
+  };
+  const poly = pts => gg => pts.forEach(([x, y], i) => i ? gg.lineTo(x + .5, y + .5) : gg.moveTo(x + .5, y + .5));
+  return {
+    // a body part: begin, paint into it, end (which adds the dark outline around it)
+    begin(){ part = new Array(RW * RH).fill(null); },
+    end(plain){
+      const has = (x, y) => x >= 0 && y >= 0 && x < RW && y < RH && part[y * RW + x];
+      if (!plain) for (let y = 0; y < RH; y++) for (let x = 0; x < RW; x++){
+        const i = y * RW + x;
+        if (!part[i] && (has(x+1,y) || has(x-1,y) || has(x,y+1) || has(x,y-1))) buf[i] = PAL.K;
+      }
+      for (let i = 0; i < RW * RH; i++) if (part[i]) buf[i] = part[i];
+    },
+    fill(col, pts){ const m = mask(poly(pts)), c = C(col); for (let i = 0; i < RW*RH; i++) if (m[i]) part[i] = c; },
+    ell(col, cx, cy, rx, ry){ const m = mask(gg => gg.ellipse(cx+.5, cy+.5, rx, ry, 0, 0, 7)), c = C(col);
+      for (let i = 0; i < RW*RH; i++) if (m[i]) part[i] = c; },
+    // paint only where the part already is, for shading on top of a shape
+    shade(col, pts){ const m = mask(poly(pts)), c = C(col); for (let i = 0; i < RW*RH; i++) if (m[i] && part[i]) part[i] = c; },
+    shadeE(col, cx, cy, rx, ry){ const m = mask(gg => gg.ellipse(cx+.5, cy+.5, rx, ry, 0, 0, 7)), c = C(col);
+      for (let i = 0; i < RW*RH; i++) if (m[i] && part[i]) part[i] = c; },
+    dot(col, x, y, w = 1, h = 1){ const c = C(col); x = Math.round(x); y = Math.round(y);
+      for (let j = 0; j < h; j++) for (let i = 0; i < w; i++)
+        if (x+i >= 0 && x+i < RW && y+j >= 0 && y+j < RH) part[(y+j) * RW + x+i] = c; },
+    line(col, pts){ const c = C(col);
+      for (let k = 1; k < pts.length; k++){
+        const [ax, ay] = pts[k-1], [bx, by] = pts[k], n = Math.max(Math.abs(bx-ax), Math.abs(by-ay)) || 1;
+        for (let t = 0; t <= n; t++){
+          const x = Math.round(ax + (bx-ax)*t/n), y = Math.round(ay + (by-ay)*t/n);
+          if (x >= 0 && x < RW && y >= 0 && y < RH && part[y*RW+x]) part[y*RW+x] = c;
+        } } },
+    // an arm or a leg: a tapered tube, lit on one edge and dark on the other
+    limb(A, B, w1, w2, set = ['s2','s3','s4','s5'], crease){
+      const dx = B[0]-A[0], dy = B[1]-A[1], L = Math.hypot(dx, dy) || 1;
+      const vx = dx/L, vy = dy/L, nx = -vy, ny = vx;
+      const m = mask(gg => {
+        poly([[A[0]+nx*w1/2, A[1]+ny*w1/2], [B[0]+nx*w2/2, B[1]+ny*w2/2],
+              [B[0]-nx*w2/2, B[1]-ny*w2/2], [A[0]-nx*w1/2, A[1]-ny*w1/2]])(gg);
+        gg.moveTo(A[0]+.5+w1/2, A[1]+.5); gg.ellipse(A[0]+.5, A[1]+.5, w1/2, w1/2, 0, 0, 7);
+        gg.moveTo(B[0]+.5+w2/2, B[1]+.5); gg.ellipse(B[0]+.5, B[1]+.5, w2/2, w2/2, 0, 0, 7);
+      });
+      const lit = (nx * .55 - ny * .84) > 0 ? 1 : -1;
+      for (let y = 0; y < RH; y++) for (let x = 0; x < RW; x++){
+        const i = y*RW + x; if (!m[i]) continue;
+        const qx = x - A[0], qy = y - A[1];
+        const u = (qx*vx + qy*vy) / L, d = (qx*nx + qy*ny) * lit;
+        const w = (w1 + (w2-w1) * clamp(u, 0, 1)) / 2;
+        let c = set[2];
+        if (d > w - 1.3) c = set[3];
+        else if (d < -(w - 1.6)) c = set[1];
+        if (crease && u > .3 && u < .8 && Math.abs(d + w*.18) < .55) c = set[0];
+        part[i] = C(c);
+      }
+    },
+    toCanvas(){
+      const cvv = document.createElement('canvas'); cvv.width = RW; cvv.height = RH;
+      const cg = cvv.getContext('2d'), im = cg.createImageData(RW, RH);
+      buf.forEach((c, i) => { if (!c) return; const n = parseInt(c.slice(1), 16);
+        im.data[i*4] = n >> 16; im.data[i*4+1] = (n >> 8) & 255; im.data[i*4+2] = n & 255; im.data[i*4+3] = 255; });
+      cg.putImageData(im, 0, 0); return cvv;
+    },
+  };
+}
+
+/* ── the body ───────────────────────────────────────────────────────────────
+   Joints live in grid pixels. The figure faces RIGHT; lefties are mirrored
+   when drawn. "near" is the arm/leg closer to the camera.                    */
+const BASE = {
+  head:[56,16], neck:[56,27], chest:[56,34], hip:[55,56],
+  nSh:[53,30], fSh:[59,30],
+  nEl:[50,42], nHa:[52,33], fEl:[56,42], fHa:[55,33],
+  nKn:[50,76], nAn:[48,99], fKn:[60,76], fAn:[63,99],
+  lean:0, turn:0, batA:null, gloveA:null, ball:null, crouch:0,
+};
+
+function buildPlayer(J, look, c1, c2, o = {}){
+  const P = palette(look, c1, c2), S = Rig(P);
+  const j = { ...BASE, ...J };
+  const cr = j.crouch || 0, L = j.lean || 0;
+  const T = ([x, y]) => [x + L * (1 - (y - 20) / 80), y + (y > 50 ? 0 : cr)];
+  const hip = T(j.hip), chest = T(j.chest), neck = T(j.neck), head = T(j.head);
+  const nSh = T(j.nSh), fSh = T(j.fSh);
+
+  // ---- far leg, then near leg, so the near one sits on top -----------------
+  const leg = (kn, an, near) => {
+    S.begin();
+    S.limb(hip, kn, near ? 11 : 10, near ? 8 : 7, ['p1','p1','p2','p3']);
+    S.limb(kn, [an[0], an[1] - 3], near ? 8 : 7, near ? 6 : 5, ['p1','p1','p2','p3']);
+    // the sock and the shoe
+    S.limb([kn[0] + (an[0]-kn[0])*.62, kn[1] + (an[1]-kn[1])*.62], [an[0], an[1]-3], 7, 5.5, ['j1','j1','j2','j3']);
+    S.fill('boot', [[an[0]-4, an[1]-4], [an[0]+5, an[1]-4], [an[0]+7, an[1]], [an[0]-4, an[1]]]);
+    S.shade('boot2', [[an[0]-4, an[1]-4], [an[0]+5, an[1]-4], [an[0]+5, an[1]-2], [an[0]-4, an[1]-2]]);
+    S.end();
+  };
+  leg(T(j.fKn), T(j.fAn), false);
+
+  // ---- the far arm --------------------------------------------------------
+  const arm = (sh, el, ha, near) => {
+    S.begin();
+    S.limb(sh, el, near ? 9 : 8, near ? 7 : 6, ['j1','j1','j2','j3']);        // sleeve
+    S.limb(el, ha, near ? 6.5 : 5.5, near ? 5 : 4.5, ['s2','s2','s3','s4'], true);  // forearm
+    S.ell(near ? 's3' : 's2', ha[0], ha[1], 3, 2.6);                           // hand
+    S.end();
+  };
+  arm(fSh, T(j.fEl), T(j.fHa), false);
+
+  // ---- torso --------------------------------------------------------------
+  S.begin();
+  S.fill('j2', [[nSh[0]-7, nSh[1]-3], [fSh[0]+7, fSh[1]-3], [hip[0]+8, hip[1]], [hip[0]-8, hip[1]]]);
+  S.shade('j1', [[hip[0]-8, hip[1]-16], [hip[0]+8, hip[1]-16], [hip[0]+8, hip[1]], [hip[0]-8, hip[1]]]);   // under the ribs
+  S.shade('j3', [[nSh[0]-7, nSh[1]-3], [fSh[0]+7, fSh[1]-3], [fSh[0]+6, fSh[1]+4], [nSh[0]-6, nSh[1]+4]]); // lit shoulders
+  S.shade('j1', [[nSh[0]-7, nSh[1]-1], [nSh[0]-3, nSh[1]-2], [hip[0]-5, hip[1]], [hip[0]-8, hip[1]]]);     // shadow down the back
+  // belt
+  S.fill('boot', [[hip[0]-8, hip[1]-4], [hip[0]+8, hip[1]-4], [hip[0]+8, hip[1]], [hip[0]-8, hip[1]]]);
+  S.dot('j4', hip[0]-1, hip[1]-3, 3, 3);
+  if (o.front){
+    S.dot('j1', hip[0], hip[1]-20, 1, 16);                                      // the button placket down the front
+    S.dot('j3', hip[0]-1, hip[1]-20, 1, 16);
   }
-  // head + cap + hair + (sometimes) beard
-  const hy = y - legH - trH - headR * 2 + 1;
-  R(x - headR, hy, headR * 2, headR * 2, sk);
-  R(x - headR, hy + headR * 2 - 1, headR * 2, 1, shade(sk, -.18));
-  if (lk.beard) R(x - headR, hy + headR, headR * 2, headR, shade(sk, -.3));
-  R(x - headR - 1, hy - 1, headR * 2 + 2, Math.round(headR * .9), hr);          // hair
-  R(x - headR - 1, hy - Math.round(headR * .7), headR * 2 + 2, Math.round(headR * .8), c1);   // cap
-  R(x - headR - 1, hy - Math.round(headR * .7), headR * 2 + 2, 1, shade(c1, .18));
-  if (o.brim !== 'none') R(x - headR - 1, hy + Math.round(headR * .1), headR * 2 + 3, 1, shade(c1, -.25));
-  return { headY: hy, topY: y - legH - trH };
+  if (o.number != null && !o.front){                                            // the number across his back
+    const dig = String(o.number).split('');
+    dig.forEach((d, i) => {
+      const x0 = hip[0] - (dig.length * 5) / 2 + i * 5, y0 = hip[1] - 17;
+      NUM[d].forEach(([dx, dy, w, h]) => S.dot('white', x0 + dx, y0 + dy, w || 1, h || 1));
+    });
+  }
+  S.end();
+
+  // ---- head, cap, hair ----------------------------------------------------
+  S.begin();
+  S.limb(neck, [neck[0], neck[1]-4], 7, 7, ['s1','s1','s2','s3']);              // neck
+  S.ell('s4', head[0], head[1], 8, 8.5);
+  S.shadeE('s3', head[0]-3, head[1]+1, 5, 7);                                   // the far side of the face
+  S.shadeE('s2', head[0]-6, head[1]+3, 3, 5);
+  S.shadeE('s5', head[0]+4, head[1]-3, 3.5, 3.5);                               // light on the cheekbone
+  S.shade('s2', [[head[0]-8, head[1]+5], [head[0]+8, head[1]+5], [head[0]+8, head[1]+9], [head[0]-8, head[1]+9]]);  // jaw shadow
+  if (look.beard){
+    S.shade('r1', [[head[0]-6, head[1]+2], [head[0]+8, head[1]+1], [head[0]+8, head[1]+9], [head[0]-5, head[1]+8]]);
+  }
+  if (o.front){
+    // seen head on: two eyes, a nose down the middle, the brim across the brow
+    S.shadeE('s3', head[0], head[1]+4, 7, 4);
+    S.dot('eye', head[0]-4, head[1]-1, 3, 2); S.dot('iris', head[0]-3, head[1]-1, 1, 2);
+    S.dot('eye', head[0]+2, head[1]-1, 3, 2); S.dot('iris', head[0]+3, head[1]-1, 1, 2);
+    S.dot('s1', head[0]-5, head[1]-3, 4, 1); S.dot('s1', head[0]+2, head[1]-3, 4, 1);
+    S.dot('s3', head[0], head[1]+1, 1, 3);                                      // nose
+    S.dot('s2', head[0]-2, head[1]+5, 5, 1);                                    // mouth
+    S.shade('r2', [[head[0]-9, head[1]-5], [head[0]+9, head[1]-5], [head[0]+9, head[1]-1], [head[0]-9, head[1]-1]]);
+    S.fill('j2', [[head[0]-9, head[1]-3], [head[0]-6, head[1]-10], [head[0]+6, head[1]-10], [head[0]+9, head[1]-3]]);
+    S.shade('j3', [[head[0]-5, head[1]-10], [head[0]+4, head[1]-10], [head[0]+5, head[1]-6], [head[0]-5, head[1]-6]]);
+    S.fill('j1', [[head[0]-10, head[1]-4], [head[0]+10, head[1]-4], [head[0]+9, head[1]-1], [head[0]-9, head[1]-1]]); // brim
+    S.dot('j4', head[0]-1, head[1]-8, 2, 2);
+  } else {
+    // in profile: one eye, the ear, and the brim pointing the way he looks
+    S.dot('s2', head[0]-2, head[1], 2, 3);
+    S.dot('eye', head[0]+4, head[1]-1, 3, 2); S.dot('iris', head[0]+5, head[1]-1, 1, 2);
+    S.dot('s1', head[0]+3, head[1]-3, 4, 1);
+    S.dot('s2', head[0]+4, head[1]+4, 3, 1);
+    S.dot('s5', head[0]+7, head[1]+1, 1, 2);                                    // nose tip
+    S.shade('r2', [[head[0]-9, head[1]-4], [head[0]+2, head[1]-6], [head[0]+2, head[1]-2], [head[0]-9, head[1]+2]]);
+    S.shade('r1', [[head[0]-9, head[1]-1], [head[0]-4, head[1]-2], [head[0]-4, head[1]+3], [head[0]-9, head[1]+3]]);
+    S.fill('j2', [[head[0]-9, head[1]-3], [head[0]-7, head[1]-9], [head[0]+3, head[1]-10], [head[0]+8, head[1]-5], [head[0]+8, head[1]-2]]);
+    S.shade('j3', [[head[0]-7, head[1]-9], [head[0]+2, head[1]-10], [head[0]+4, head[1]-7], [head[0]-6, head[1]-6]]);
+    S.shade('j1', [[head[0]-9, head[1]-4], [head[0]-5, head[1]-5], [head[0]-5, head[1]-2], [head[0]-9, head[1]-2]]);
+    S.fill('j1', [[head[0]+7, head[1]-5], [head[0]+14, head[1]-4], [head[0]+14, head[1]-2], [head[0]+7, head[1]-2]]);   // brim
+    S.dot('j4', head[0]-2, head[1]-8, 2, 2);
+  }
+  if (o.helmet){                                                                // batting helmet: an ear flap
+    S.fill('j1', [[head[0]-9, head[1]-3], [head[0]-9, head[1]+5], [head[0]-3, head[1]+6], [head[0]-2, head[1]-2]]);
+    S.shade('j2', [[head[0]-8, head[1]-2], [head[0]-5, head[1]-2], [head[0]-5, head[1]+3], [head[0]-8, head[1]+3]]);
+  }
+  if (o.mask){                                                                  // catcher's mask
+    S.fill('mesh', [[head[0]+2, head[1]-8], [head[0]+11, head[1]-6], [head[0]+11, head[1]+7], [head[0]+2, head[1]+8]]);
+    for (let i = -5; i <= 6; i += 3) S.dot('mesh2', head[0]+3, head[1]+i, 8, 1);
+  }
+  S.end();
+
+  // ---- the near arm, and whatever it is holding ---------------------------
+  arm(nSh, T(j.nEl), T(j.nHa), true);
+  const nHa = T(j.nHa), fHa = T(j.fHa);
+  if (j.batA != null){
+    const a = j.batA * Math.PI / 180, grip = [(nHa[0] + fHa[0]) / 2, (nHa[1] + fHa[1]) / 2];
+    const tip = [grip[0] + Math.cos(a) * 38, grip[1] + Math.sin(a) * 38];
+    const mid = [grip[0] + Math.cos(a) * 22, grip[1] + Math.sin(a) * 22];
+    S.begin();
+    S.limb(grip, mid, 3.4, 5, ['bat3','bat3','bat','bat2']);
+    S.limb(mid, tip, 5, 6.4, ['bat3','bat3','bat','bat2']);
+    S.limb([grip[0] - Math.cos(a)*3, grip[1] - Math.sin(a)*3], grip, 4, 3.4, ['boot','boot','boot2','boot2']);  // the knob
+    S.end();
+  }
+  if (j.gloveA != null){
+    const a = j.gloveA * Math.PI / 180, c = [nHa[0] + Math.cos(a) * 5, nHa[1] + Math.sin(a) * 5];
+    S.begin();
+    S.ell('leather', c[0], c[1], 7, 6.5);
+    S.shadeE('leather2', c[0]+2, c[1]-2, 4, 3.5);
+    S.shade('boot', [[c[0]-7, c[1]+3], [c[0]+7, c[1]+3], [c[0]+7, c[1]+7], [c[0]-7, c[1]+7]]);
+    S.end();
+  }
+  if (j.ball){
+    S.begin(); S.ell('white', j.ball[0], j.ball[1], 2.6, 2.6);
+    S.dot('#d8342c', j.ball[0]-1, j.ball[1], 3, 1); S.end();
+  }
+  leg(T(j.nKn), T(j.nAn), true);
+  return S.toCanvas();
+}
+// 5x7 digits for the back of the jersey
+const NUM = {
+  '0':[[0,0,3,1],[0,1,1,5],[2,1,1,5],[0,6,3,1]], '1':[[1,0,1,7],[0,1,1,1],[0,6,3,1]],
+  '2':[[0,0,3,1],[2,1,1,2],[0,3,3,1],[0,4,1,2],[0,6,3,1]], '3':[[0,0,3,1],[2,1,1,5],[0,3,2,1],[0,6,3,1]],
+  '4':[[0,0,1,4],[2,0,1,7],[0,3,3,1]], '5':[[0,0,3,1],[0,1,1,2],[0,3,3,1],[2,4,1,2],[0,6,3,1]],
+  '6':[[0,0,3,1],[0,1,1,5],[0,3,3,1],[2,4,1,2],[0,6,3,1]], '7':[[0,0,3,1],[2,1,1,6]],
+  '8':[[0,0,3,1],[0,1,1,5],[2,1,1,5],[0,3,3,1],[0,6,3,1]], '9':[[0,0,3,1],[0,1,1,2],[2,1,1,5],[0,3,3,1],[0,6,3,1]],
+};
+
+/* ── poses ──────────────────────────────────────────────────────────────────
+   One number drives each animation, so the motion is smooth instead of a few
+   stepped frames. The batter faces right; the pitcher is seen from the front.
+   ─────────────────────────────────────────────────────────────────────────── */
+const ease = t => t < .5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2;
+const seg = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
+const LP = (A, B, t) => [lerp(A[0], B[0], t), lerp(A[1], B[1], t)];
+
+/* The swing, as one value:
+   t < 0  idle, breathing;  0 → .22 load back;  .22 → .58 the swing;
+   .58 contact;  .58 → 1 the follow through.                                   */
+function batterPose(t, idle){
+  if (t == null){                                           // waiting for the pitch
+    const b = Math.sin(idle / 15), w = Math.sin(idle / 9);
+    return { crouch: 3 + b * .5, lean: -1,
+      hip:[54,56], chest:[55,34], neck:[55,27], head:[56,16],
+      nSh:[50,31], fSh:[59,30],
+      nEl:[46,39 + b], nHa:[44,27 + b * .6], fEl:[49,41 + b], fHa:[46,29 + b * .6],
+      nKn:[48,76], nAn:[45,99], fKn:[62,75], fAn:[66,99],
+      batA: -103 + w * 7, helmet:1 };
+  }
+  // four beats: stance -> load back -> stride and fire -> wrap it up
+  const ld = ease(seg(t, 0, .22)), sw = ease(seg(t, .22, .58)), fo = ease(seg(t, .58, 1));
+  const K = (a, b, c, d) => lerp(lerp(lerp(a, b, ld), c, sw), d, fo);
+  const J = (a, b, c, d) => [K(a[0], b[0], c[0], d[0]), K(a[1], b[1], c[1], d[1])];
+  // the hands load back, then fire out in front, then wrap around his shoulder
+  const hands = J([44,27], [41,24], [73,36], [76,20]);
+  // the bat goes back past his head, whips all the way through, and finishes behind him
+  const batA = K(-103, -126, 6, 128);
+  const hipX = K(54, 52, 58, 59);                              // weight shifts back, then drives forward
+  const open = K(0, -1, 7, 9);                                 // how far the shoulders have turned
+  return {
+    crouch: K(3, 5, 1, 2), lean: K(-1, -3, 3, 5),
+    hip:[hipX, 56], chest:[hipX + 1, 34], neck:[hipX + 1, 27], head:[56, K(16, 16, 15, 14)],
+    nSh:[50 + open, 31], fSh:[59 + open * .5, 30],
+    nEl:[K(46,44,62,60), K(39,37,42,34)], nHa:hands,
+    fEl:[K(49,47,64,62), K(41,39,44,36)], fHa:[hands[0] - 3, hands[1] + 3],
+    // back leg: heel comes up and the knee drives in behind the ball
+    nKn:[K(48, 47, 53, 55), K(76, 77, 78, 80)], nAn:[K(45, 44, 48, 50), K(99, 99, 97, 96)],
+    // front leg: lifts a little, strides out at the pitcher, then braces straight
+    fKn:[K(62, 62, 67, 69), K(75, 72, 76, 74)], fAn:[K(66, 65, 73, 73), K(99, 94, 99, 99)],
+    batA, helmet:1,
+  };
+}
+
+/* The windup, seen from the front: set, leg lift, stride, release, follow. */
+function pitcherPose(u){
+  const lift = seg(u, .10, .40), stride = seg(u, .40, .66), rel = seg(u, .66, .78), fol = seg(u, .78, 1);
+  const e = ease(lift), s = ease(stride), f = ease(fol);
+  // the glove hand and the throwing hand
+  let glove = LP([56,36], [58,24], e); glove = LP(glove, [44,30], s); glove = LP(glove, [40,46], rel);
+  let hand  = LP([56,36], [64,30], e); hand  = LP(hand, [78,18], s);
+  hand = LP(hand, [60,4], rel); hand = LP(hand, [42,44], f);
+  // the front leg lifts, then strides out toward the plate
+  let fKn = LP([60,76], [52,48], e); fKn = LP(fKn, [44,72], s);
+  let fAn = LP([62,99], [58,62], e); fAn = LP(fAn, [34,96], s);
+  const nKn = LP([50,76], [52,80], s), nAn = LP([48,99], [56,96], s);
+  const lean = lerp(0, -3, e) + s * 7 + f * 4;
+  return {
+    crouch: e * 2 + s * 4, lean,
+    hip:[55,56], chest:[56,34], neck:[56,27], head:[56,16],
+    nSh:[49,30], fSh:[63,30],
+    nEl:LP([52,42], [hand[0] - 6, hand[1] + 10], 1), nHa:hand,
+    fEl:[glove[0] + 5, glove[1] + 9], fHa:glove,
+    nKn, nAn, fKn, fAn,
+    gloveA: 150, front:1,
+    ball: u < .70 ? null : undefined,
+  };
+}
+
+// ── sprite cache: each pose is drawn once, then reused ─────────────────────
+const SPR = new Map();
+function sprite(key, make){
+  let c = SPR.get(key);
+  if (!c){ c = make(); SPR.set(key, c);
+    if (SPR.size > 420){ const k = SPR.keys().next().value; SPR.delete(k); } }
+  return c;
+}
+// players carry a short id so the same face always draws the same sprite
+let _lookN = 0;
+const lookKey = lk => lk.k || (lk.k = 'L' + (_lookN++) + lk.skin.slice(1,4) + lk.hair.slice(1,4) + (lk.beard||0));
+
+// draw a built sprite so its feet land on (x, y); flip mirrors it for lefties
+function blit(c, x, y, k, flip){
+  const w = Math.round(RW * k), h = Math.round(RH * k);
+  g.save();
+  g.translate(x | 0, y | 0);
+  if (flip) g.scale(-1, 1);
+  g.drawImage(c, Math.round(-56 * k), Math.round(-100 * k), Math.round(w), Math.round(h));
+  g.restore();
+}
+// the batter: swing is null when he is just standing in
+function drawBatter(x, y, p, c1, c2, swingT, idle, num){
+  const q = swingT == null ? -1 : Math.round(clamp(swingT, 0, 1) * 16) / 16;      // 17 steps is plenty
+  const idleQ = swingT == null ? Math.round(idle / 6) % 24 : 0;
+  const key = `B${lookKey(p.look)}|${c1}${c2}|${q}|${idleQ}|${num}`;
+  const c = sprite(key, () => buildPlayer(
+    swingT == null ? batterPose(null, idleQ * 6) : batterPose(q),
+    p.look, c1, c2, { number:num, helmet:1 }));
+  blit(c, x, y, .78, p.bats === 'L');
+}
+// the pitcher, from the front, at half size because he is out at the mound
+function drawPitcher(x, y, p, c1, c2, u, num){
+  const q = u == null ? 0 : Math.round(clamp(u, 0, 1) * 20) / 20;
+  const key = `P${lookKey(p.look)}|${c1}${c2}|${q}`;
+  const c = sprite(key, () => buildPlayer(pitcherPose(q), p.look, c1, c2, { front:1 }));
+  blit(c, x, y, .5, false);
+}
+// the catcher, crouched with his back to us
+function drawCatcher(x, y, p, c1, c2){
+  const key = `C${lookKey(p.look)}|${c1}${c2}`;
+  const c = sprite(key, () => buildPlayer({
+      crouch:0, lean:0,
+      hip:[56,74], chest:[56,54], neck:[56,45], head:[56,32],
+      nSh:[47,50], fSh:[65,50],
+      nEl:[36,62], nHa:[28,54], fEl:[76,62], fHa:[83,60],
+      nKn:[32,82], nAn:[41,101], fKn:[80,82], fAn:[71,101],
+      gloveA:200,
+    }, p.look, c1, c2, { back:1, hardhat:1 }));
+  blit(c, x, y, .62, false);
+}
+// a fielder far away in the replay: a few pixels, but still shaded
+function drawMini(x, y, lk, c1, c2){
+  R(x - 2, y - 11, 5, 3, shade(c1, .1));
+  R(x - 2, y - 8, 5, 6, c1); R(x + 1, y - 8, 2, 6, shade(c1, -.15));
+  R(x - 2, y - 2, 2, 3, '#e9ecf2'); R(x + 1, y - 2, 2, 3, '#e9ecf2');
+  R(x - 2, y, 5, 1, '#1d1a22');
+  R(x - 2, y - 15, 5, 4, lk.skin); R(x - 2, y - 16, 5, 2, c1);
 }
 
 // ── the ballpark seen from behind the batter ───────────────────────────────
 function drawStands(park, t){
-  // sky
   const night = park.night;
-  for (let i = 0; i < 46; i++){
-    const f = i / 46;
-    R(0, i, W, 1, night ? `rgb(${8 + f * 10 | 0},${12 + f * 16 | 0},${30 + f * 20 | 0})`
-                        : `rgb(${90 + f * 70 | 0},${150 + f * 70 | 0},${210 + f * 35 | 0})`);
+  // ---- sky: a soft gradient, warm at the horizon by day, deep blue at night
+  for (let i = 0; i < 44; i++){
+    const f = i / 44;
+    R(0, i, W, 1, night ? `rgb(${6 + f * 12 | 0},${10 + f * 18 | 0},${26 + f * 24 | 0})`
+                        : `rgb(${96 + f * 76 | 0},${154 + f * 62 | 0},${212 + f * 28 | 0})`);
   }
-  // crowd: rows of little heads that bob when excited
-  const exc = park.excite || 0;
+  if (night) for (let i = 0; i < 26; i++) R((i * 61 + 7) % W, (i * 13) % 20, 1, 1, '#2c3a60');
+  // ---- light towers
+  [W * .18, W * .82].forEach(x => {
+    R(x - 1, 22, 3, 14, night ? '#2a3040' : '#55606f');
+    R(x - 11, 17, 23, 6, night ? '#1d2330' : '#49525f');
+    for (let i = 0; i < 5; i++) R(x - 9 + i * 4, 18, 3, 3, night ? '#fff6c8' : '#aab3c0');
+    if (night) R(x - 13, 16, 27, 8, '#fff6c822');
+  });
+  // ---- the upper deck, then the crowd, then the lower bowl
+  R(0, 34, W, 4, night ? '#161b27' : '#49505f');
+  R(0, 34, W, 1, night ? '#222a3a' : '#5c6473');
   for (let row = 0; row < 5; row++){
-    const y = 30 + row * 6, dark = row / 5;
-    R(0, y, W, 6, night ? `rgb(${18 + dark * 8 | 0},${20 + dark * 8 | 0},${30 + dark * 6 | 0})`
-                        : `rgb(${54 + dark * 20 | 0},${58 + dark * 20 | 0},${72 + dark * 14 | 0})`);
-    for (let x = (row % 2) * 3; x < W; x += 6){
+    const y = 38 + row * 5, dim = .18 + row * .13;            // back rows sit in shadow
+    const base = night ? [20, 23, 33] : [78, 84, 99];
+    R(0, y, W, 5, `rgb(${base[0] * (1 - dim * .5) | 0},${base[1] * (1 - dim * .5) | 0},${base[2] * (1 - dim * .5) | 0})`);
+    for (let x = (row % 2) * 4; x < W; x += 7){
+      if (((x / 7) | 0) % 11 === 0) continue;                 // aisles between the sections
       const seed = (x * 7 + row * 31) % 97;
-      const bob = exc > 0 ? Math.sin(t / 90 + seed) * exc * 2 : 0;
-      const c = CROWD[(seed) % CROWD.length];
-      R(x, y + 1 - bob, 3, 3, night ? shade(c, -.28) : c);
+      const bob = park.excite > 0 ? Math.sin(t / 80 + seed) * park.excite * 2.2 : 0;
+      const c = CROWD[seed % CROWD.length];
+      R(x, y + 2 - bob, 2, 2, night ? mix(c, '#101420', .62) : mix(c, '#2a3040', dim));
+      R(x, y + 3 - bob, 2, 1, night ? '#12161f' : mix(c, '#000000', .55));
     }
   }
-  // the wall, with this park's own look
-  R(0, 60, W, park.wallH, park.wall);
-  R(0, 60, W, 1, shade(park.wall, .22));
-  R(0, 60 + park.wallH - 1, W, 1, shade(park.wall, -.3));
-  if (park.pad) for (let x = 6; x < W; x += 26) R(x, 62, 18, park.wallH - 5, shade(park.wall, -.08));
-  if (park.feature === 'scoreboard'){ R(300, 24, 92, 36, '#101418'); R(302, 26, 88, 32, '#1a2230');
-    for (let i = 0; i < 9; i++) R(306 + i * 9, 30, 6, 8, chance(.5) ? '#2a3550' : '#ffcf4a'); }
-  if (park.feature === 'waterfall'){ for (let i = 0; i < 5; i++) R(248 + i * 11, 40, 7, 20 + (i % 2) * 6, '#5fc8e8');
-    R(244, 58, 66, 4, '#8fe3ff'); }
-  if (park.feature === 'ivy'){ for (let x = 0; x < W; x += 5) R(x, 62 + (x % 3), 4, park.wallH - 6, '#1f5a2a'); }
-  // warning track and grass, mown in stripes
-  R(0, 60 + park.wallH, W, 7, '#8a5a3a');
-  const gy = 60 + park.wallH + 7;
-  for (let i = 0; i < 70; i++){
-    const y = gy + i, f = i / 70;
-    R(0, y, W, 1, i % 10 < 5 ? `rgb(${34 + f * 26 | 0},${96 + f * 40 | 0},${40 + f * 20 | 0})`
-                             : `rgb(${28 + f * 24 | 0},${84 + f * 38 | 0},${34 + f * 18 | 0})`);
+  // ---- the outfield wall
+  const wy = 61;
+  R(0, wy, W, park.wallH, park.wall);
+  R(0, wy, W, 2, shade(park.wall, .26));                      // the rail along the top
+  R(0, wy + 2, W, 1, shade(park.wall, -.18));
+  if (park.pad) for (let x = 4; x < W; x += 30){              // padding seams
+    R(x, wy + 4, 1, park.wallH - 6, shade(park.wall, -.22));
+    R(x + 1, wy + 4, 1, park.wallH - 6, shade(park.wall, .08));
   }
+  R(0, wy + park.wallH - 2, W, 2, shade(park.wall, -.34));
+  // the distance markers painted on the wall
+  const mk = (x, n) => { const d = String(n).split('');
+    d.forEach((c, i) => NUM[c].forEach(([dx, dy, w2, h2]) =>
+      R(x + i * 5 + dx, wy + park.wallH / 2 - 3 + dy, w2 || 1, h2 || 1, '#e8e4d6'))); };
+  mk(W * .13, park.lf); mk(W * .5 - 7, park.cf); mk(W * .85, park.rf);
+  // ---- this park's own feature
+  if (park.feature === 'scoreboard'){
+    const sx = W - 128, sy = 20;
+    R(sx, sy, 112, 42, '#0d1119'); R(sx + 2, sy + 2, 108, 38, night ? '#121a2c' : '#1b2436');
+    R(sx + 2, sy + 2, 108, 1, '#2b3850');
+    for (let i = 0; i < 10; i++) for (let j = 0; j < 3; j++)
+      R(sx + 6 + i * 10, sy + 7 + j * 11, 7, 8, ((i * 3 + j) % 4) ? (night ? '#1d2740' : '#263048') : (night ? '#ffcf4a' : '#d8b24a'));
+  }
+  if (park.feature === 'waterfall'){
+    for (let i = 0; i < 7; i++) R(W * .56 + i * 9, 38, 6, 18 + (i % 3) * 7, mix('#5fc8e8', '#ffffff', (i % 2) * .3));
+    R(W * .55, wy - 4, 70, 5, '#8fe3ff'); R(W * .55, wy - 1, 70, 2, '#5fc8e8');
+  }
+  if (park.feature === 'ivy') for (let x = 0; x < W; x += 4)
+    R(x, wy + 3 + (x % 3), 3, park.wallH - 6, mix('#1f5a2a', '#000000', (x % 7) / 22));
+  // ---- the warning track and the outfield grass, mown in stripes
+  R(0, wy + park.wallH, W, 7, '#95653f');
+  R(0, wy + park.wallH, W, 1, '#a9764c');
+  const gy = wy + park.wallH + 7;
+  for (let i = 0; i < 64; i++){
+    const y = gy + i, f = i / 64;
+    R(0, y, W, 1, i % 11 < 6 ? `rgb(${36 + f * 26 | 0},${102 + f * 42 | 0},${44 + f * 20 | 0})`
+                             : `rgb(${29 + f * 23 | 0},${88 + f * 38 | 0},${36 + f * 18 | 0})`);
+  }
+  // foul poles down each line
+  R(6, wy - 12, 2, park.wallH + 12, '#ffd23f'); R(W - 8, wy - 12, 2, park.wallH + 12, '#ffd23f');
 }
-const CROWD = ['#d8d2c4','#c9a9a9','#9fb4d0','#d6c489','#b8a2c8','#a9c6b0','#e0b9a0','#8f9bb3'];
+const CROWD = ['#c9c3b4','#b89a9a','#92a6c0','#c4b47c','#a894b8','#9ab8a2','#cfab94','#848fa6','#aeb6c4','#9c8f82'];
 
 // the infield dirt wedge and the mound, drawn in perspective from the batter's eye
 function drawInfield(park){
@@ -655,36 +1111,21 @@ function drawBatterView(dt){
   drawStands(park, frame);
   drawInfield(park);
 
-  // the pitcher on the mound, winding up
+  // the pitcher on the mound: he sets, winds up and releases as the pitch comes
   const pit = curPitcher(), ft = fldTeam();
-  const wind = P && P.thrown ? clamp(1 - P.t / 160, 0, 1) : (P && P.windupT ? 1 : 0);
-  drawPlayer(W / 2, 134, 1.15, pit.look, ft.c1, ft.c2, {});
-  if (P && !P.thrown) R(W / 2 + 7, 118 + Math.sin(frame / 8) * 2, 3, 3, '#f4f1e8');
+  let u = 0;
+  if (P && P.thrown) u = clamp(.70 + (P.t / P.dur) * .46, 0, 1);      // release, then follow through
+  else if (P) u = clamp((frame % 150) / 150 < .5 ? 0 : 0, 0, 1);      // set, waiting for the sign
+  drawPitcher(W / 2, 140, pit, ft.c1, ft.c2, u, pit.num);
 
-  // the catcher crouching right in front of us, seen from behind
-  const ft2 = fldTeam(), cc = shade(ft2.c1, .10), cy = H - 2;
-  R(W / 2 - 16, cy - 26, 32, 22, cc);                            // back and shoulders
-  R(W / 2 - 16, cy - 26, 32, 3, shade(ft2.c1, .26));
-  R(W / 2 - 13, cy - 6, 9, 6, '#d8d8d8'); R(W / 2 + 4, cy - 6, 9, 6, '#d8d8d8');   // shin guards
-  R(W / 2 - 20, cy - 18, 5, 12, shade(ft2.c1, -.04));            // arms
-  R(W / 2 + 15, cy - 18, 5, 12, shade(ft2.c1, -.04));
-  R(W / 2 - 9, cy - 38, 18, 13, '#5a6373');                      // helmet
-  R(W / 2 - 9, cy - 38, 18, 3, '#79839a');
-  for (let i = -6; i <= 6; i += 3) R(W / 2 + i, cy - 33, 1, 7, '#262a33');   // mask bars
-  R(W / 2 - 27, cy - 16, 10, 9, '#9a7a44');                      // mitt
-  R(W / 2 - 27, cy - 16, 10, 2, '#b89a5e');
+  // the catcher, crouched with his back to us right under the plate
+  const ft2 = fldTeam();
+  drawCatcher(W / 2, H + 4, M.catcher || ft2.lineup[0], ft2.c1, ft2.c2);
 
-  // the batter stands in the box, big in the foreground
+  // the batter, big in the foreground, swinging through the ball
   const bt = batTeam(), b = M.batter, side = b.bats === 'L' ? 1 : -1;
-  const bx = W / 2 + side * 56;
-  const sw = swing ? clamp(swing.t / 130, 0, 1) : 0;
-  // the bat is behind him at rest and swings across in front, never over his face
-  const ang = sw > 0 ? lerp(-2.5, 1.0, sw) : -2.5 + Math.sin(frame / 14) * .06;
-  if (sw < .35){ g.save(); g.translate(bx + side * 8, H - 48); g.rotate(ang * side);
-    R(0, -1, 30, 4, '#c89a5a'); R(23, -2, 8, 6, '#b8884a'); g.restore(); }
-  drawPlayer(bx, H - 10, 1.85, b.look, bt.c1, bt.c2, {});
-  if (sw >= .35){ g.save(); g.translate(bx + side * 8, H - 48); g.rotate(ang * side);
-    R(0, -1, 30, 4, '#c89a5a'); R(23, -2, 8, 6, '#b8884a'); g.restore(); }
+  const bx = W / 2 + side * 54;
+  drawBatter(bx, H - 6, b, bt.c1, bt.c2, swing ? clamp(swing.t / 220, 0, 1) : null, frame, b.num);
 
   // strike zone
   g.strokeStyle = '#ffffff44'; g.lineWidth = 1;
@@ -796,6 +1237,443 @@ function drawPlayView(t){
 // ───────────────────────────────────────────────────────────────────────────
 //  MENUS
 // ───────────────────────────────────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════════════════
+   CARDS, PACKS AND UPGRADES
+   Every player you own is a card. Packs come in four tiers, each card is
+   revealed by tapping it, and the longer it spins the better it is.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const CARD_W = 60, CARD_H = 100;                 // a card's size in game pixels
+const PACKS = {
+  bronze:  { n:'Bronze',  price:1000,  col:'#b07a46', col2:'#e0a86a', p:[.55,.30,.12,.025,.004,.001] },
+  silver:  { n:'Silver',  price:3000,  col:'#8d97a8', col2:'#d2dae6', p:[.30,.35,.25,.080,.017,.003] },
+  gold:    { n:'Gold',    price:8000,  col:'#b8902c', col2:'#ffd964', p:[.12,.25,.35,.220,.050,.010] },
+  diamond: { n:'Diamond', price:20000, col:'#49a7c8', col2:'#b6f0ff', p:[.02,.10,.28,.400,.160,.040] },
+};
+const BULK = [[1, 1], [5, .9], [10, .8]];        // buy 5 for 10% off, 10 for 20% off
+const TIER_LO = [60, 70, 80, 90, 100, 110], TIER_HI = [69, 79, 89, 99, 109, 120];
+const UP_COST = [300, 500, 700, 1000, 1300, 1700, 2100, 2600, 3100, 3700];
+
+let _cardId = 1;
+const cardById = id => G.cards.find(c => c.id === id);
+const ovrOf = c => c.pos === 'SP' || c.pos === 'RP' || c.pos === 'CP'
+  ? Math.round((c.velocity + c.control + c.stamina + c.batting) / 4)
+  : Math.round((c.contact + c.power + c.speed + c.fielding) / 4);
+const isPitcher = c => ['SP','RP','CP'].includes(c.pos);
+const statsOf = c => isPitcher(c)
+  ? [['VEL','velocity'], ['CTL','control'], ['STA','stamina'], ['BAT','batting']]
+  : [['CON','contact'], ['POW','power'], ['SPD','speed'], ['FLD','fielding']];
+const sellPrice = c => Math.round(Math.pow(Math.max(0, ovrOf(c) - 55), 2) * 1.1);
+const inUse = id => G.slots.lineup.includes(id) || G.slots.rot.includes(id) || G.slots.pen.includes(id);
+
+// roll one card out of a pack
+function rollCard(packKey){
+  const p = PACKS[packKey].p;
+  let r = Math.random(), a = 0, tier = 0;
+  for (let i = 0; i < 6; i++){ a += p[i]; if (r < a){ tier = i; break; } }
+  const lvl = TIER_LO[tier] + Math.floor(Math.random() * (TIER_HI[tier] - TIER_LO[tier] + 1));
+  // a quarter of the cards are pitchers, as on a real roster
+  const c = chance(.26) ? makePitcher(lvl, pick(['SP','SP','SP','RP','RP','CP']))
+                        : makeHitter(lvl, pick(POS));
+  // the rolled number is the card's headline rating, so the overall lands on it
+  const keys = statsOf(c).map(s => s[1]);
+  const cur = ovrOf(c), d = lvl - cur;
+  keys.forEach(k => c[k] = clamp(c[k] + d, 60, 120));
+  c.id = _cardId++; c.lvl = 0; c.ovr = ovrOf(c); c.num = ri(1, 72);
+  return c;
+}
+
+// ── card art ───────────────────────────────────────────────────────────────
+// a big portrait of the player, built with the same rig as the game sprites
+function cardArt(c, team){
+  const key = `A${lookKey(c.look)}|${team.c1}${team.c2}|${c.pos}|${c.num}`;
+  return sprite(key, () => {
+    const batting = !isPitcher(c);
+    return buildPlayer(batting
+      ? { crouch:0, lean:-1,
+          hip:[54,56], chest:[55,34], neck:[55,27], head:[56,16],
+          nSh:[50,31], fSh:[59,30],
+          nEl:[46,39], nHa:[44,26], fEl:[49,41], fHa:[46,28],
+          nKn:[48,76], nAn:[45,99], fKn:[62,75], fAn:[66,99], batA:-100, helmet:1 }
+      : { crouch:1, lean:-2,
+          hip:[55,56], chest:[56,34], neck:[56,27], head:[56,16],
+          nSh:[49,30], fSh:[63,30],
+          nEl:[50,43], nHa:[52,34], fEl:[62,42], fHa:[58,33],
+          nKn:[50,76], nAn:[48,99], fKn:[62,76], fAn:[64,99], gloveA:170, front:1 },
+      c.look, team.c1, team.c2, { number:c.num, front:!batting, helmet:batting });
+  });
+}
+
+// the frame around a card: plain at the bottom tier, holo and sparkling at the top
+function drawCard(x, y, c, w = CARD_W, h = CARD_H, t = 0, o = {}){
+  const ovr = ovrOf(c), ti = clamp(Math.floor((ovr - 60) / 10), 0, 5), tc = TIERS[ti].col;
+  const team = G.teams[G.team];
+  const k = w / CARD_W;
+  // backing
+  R(x, y, w, h, '#0c1019');
+  const bg1 = mix(tc, '#0b1018', ti >= 3 ? .62 : .76), bg2 = mix(tc, '#0b1018', ti >= 3 ? .40 : .60);
+  for (let i = 0; i < h - 4 * k; i++) R(x + 2 * k, y + 2 * k + i, w - 4 * k, 1, mix(bg1, bg2, i / h));
+  // the shine that sweeps across orange and red cards
+  if (ti >= 4){
+    const sw = ((t / 14 + x) % (w + 40)) - 20;
+    for (let i = 0; i < 14; i++){
+      const xx = x + sw + i, a = Math.sin(i / 14 * Math.PI) * (ti === 5 ? .30 : .18);
+      if (xx > x + 2 && xx < x + w - 2) R(xx, y + 2 * k, 1, h - 4 * k, `rgba(255,255,255,${a})`);
+    }
+  }
+  // the player, clipped into the card
+  g.save();
+  g.beginPath(); g.rect(x + 2 * k, y + 2 * k, w - 4 * k, h - 4 * k); g.clip();
+  const ak = (h * .72) / RH;
+  g.drawImage(cardArt(c, team), Math.round(x + w / 2 - 56 * ak), Math.round(y + h * .20),
+    Math.round(RW * ak), Math.round(RH * ak));
+  g.restore();
+  // frame: thicker and brighter the better the card
+  const fw = ti >= 3 ? 2 : 1;
+  for (let i = 0; i < fw; i++){
+    const cc = ti === 0 ? '#8e97a8' : ti >= 4 ? mix(tc, '#ffffff', .25 + .2 * Math.sin(t / 220 + i)) : tc;
+    g.strokeStyle = cc; g.lineWidth = 1;
+    g.strokeRect(x + i + .5, y + i + .5, w - 1 - i * 2, h - 1 - i * 2);
+  }
+  if (ti >= 2){                                  // corner notches
+    [[0,0],[1,0],[0,1],[1,1]].forEach(([cx, cy]) =>
+      R(x + (cx ? w - 5 : 1), y + (cy ? h - 5 : 1), 4, 4, tc));
+  }
+  if (ti === 5){                                 // sparkles on a red card
+    for (let i = 0; i < 5; i++){
+      const a = (t / 280 + i * 1.7), sx = x + 5 + ((i * 29) % (w - 10)), sy = y + 6 + ((i * 41) % (h - 14));
+      const s = (Math.sin(a) + 1) / 2;
+      if (s > .55){ R(sx, sy, 1, 1, '#fff'); R(sx - 1, sy, 3, 1, `rgba(255,255,255,${s * .55})`);
+        R(sx, sy - 1, 1, 3, `rgba(255,255,255,${s * .55})`); }
+    }
+  }
+  // name along the top, rating bottom-left, position bottom-right
+  R(x + 2 * k, y + 2 * k, w - 4 * k, 9 * k, '#0b1018cc');
+  const nm = c.name.split(' ');
+  textb(nm[nm.length - 1].slice(0, 10).toUpperCase(), x + w / 2, y + 3 * k, '#f2efe6', Math.round(7 * k), 'center');
+  R(x + 2 * k, y + h - 13 * k, w - 4 * k, 11 * k, '#0b1018cc');
+  textb(String(ovr), x + 5 * k, y + h - 12 * k, tc, Math.round(10 * k));
+  textb(c.pos, x + w - 5 * k, y + h - 11 * k, '#b9c2d2', Math.round(7 * k), 'right');
+  if (c.lvl) textb(`${c.lvl}/10`, x + w / 2 + 3 * k, y + h - 11 * k, '#7fd38f', Math.round(6 * k), 'center');
+  if (o.badge) textb(o.badge, x + w / 2, y + h / 2 - 4, '#ffd23f', 8, 'center');
+}
+
+// the back of a card: the season's numbers
+function drawCardBack(x, y, c, w, h){
+  const ovr = ovrOf(c), ti = clamp(Math.floor((ovr - 60) / 10), 0, 5), tc = TIERS[ti].col;
+  R(x, y, w, h, '#0c1019');
+  for (let i = 0; i < h - 4; i++) R(x + 2, y + 2 + i, w - 4, 1, mix('#121a28', '#0b1018', i / h));
+  g.strokeStyle = tc; g.strokeRect(x + .5, y + .5, w - 1, h - 1);
+  textb(c.name, x + w / 2, y + 6, '#f2efe6', 8, 'center');
+  const s = c.st || newStat();
+  const rows = isPitcher(c)
+    ? [['IP', s.ip], ['K', s.ko], ['ER', s.er], ['W-L', `${s.w}-${s.l}`]]
+    : [['AB', s.ab], ['H', s.h], ['HR', s.hr], ['RBI', s.rbi],
+       ['AVG', (s.ab ? s.h / s.ab : 0).toFixed(3).replace('0.', '.')]];
+  rows.forEach((r, i) => {
+    textb(r[0], x + 8, y + 22 + i * 12, '#8e97a8', 7);
+    textb(String(r[1]), x + w - 8, y + 22 + i * 12, '#f2efe6', 7, 'right');
+  });
+}
+
+// ── opening a pack ─────────────────────────────────────────────────────────
+let OPEN = null;      // { cards, i, spin, t, done }
+function buyPack(kind, n){
+  const cost = Math.round(PACKS[kind].price * BULK.find(b => b[0] === n)[1] * n);
+  if (G.coins < cost) return;
+  G.coins -= cost;
+  const cards = [];
+  for (let i = 0; i < n * 3; i++) cards.push(rollCard(kind));
+  OPEN = { kind, cards, i:0, t:0, spin:null, revealed:[] };
+  menu = 'open'; save();
+}
+function freePack(){
+  if (Date.now() < (G.freeAt || 0)) return;
+  G.freeAt = Date.now() + 24 * 3600 * 1000;
+  OPEN = { kind:'bronze', cards:[rollCard('bronze'), rollCard('bronze'), rollCard('bronze')], i:0, t:0, spin:null, revealed:[] };
+  menu = 'open'; save();
+}
+// tapping the face-down card starts the spin; better cards spin more and faster
+function revealNext(){
+  if (!OPEN || OPEN.spin) return;
+  const c = OPEN.cards[OPEN.i];
+  if (!c) return;
+  const ti = clamp(Math.floor((ovrOf(c) - 60) / 10), 0, 5);
+  const turns = 4 + ti * 1.2;                                  // 4 spins for a dud, 10 for a red
+  const dur = 1500 - ti * 90;                                  // and the great ones whip round faster
+  OPEN.spin = { t:0, turns, dur, ti, flash:0 };
+}
+function openTick(dt){
+  if (!OPEN) return;
+  OPEN.t += dt;
+  const sp = OPEN.spin;
+  if (!sp) return;
+  sp.t += dt;
+  if (sp.t >= sp.dur && !sp.landed){
+    sp.landed = true; sp.flash = 420;
+    const c = OPEN.cards[OPEN.i];
+    G.cards.push(c); OPEN.revealed.push(c); save();
+  }
+  if (sp.landed){
+    sp.flash -= dt;
+    if (sp.flash < -300){ OPEN.spin = null; OPEN.i++; if (OPEN.i >= OPEN.cards.length) OPEN.done = true; }
+  }
+}
+function drawOpen(){
+  btns = [];
+  R(0, 0, W, H, '#070a10');
+  const P2 = PACKS[OPEN.kind];
+  textb(`${P2.n.toUpperCase()} PACK`, W / 2, 8, P2.col2, 9, 'center');
+  textb(`${OPEN.i + (OPEN.spin ? 1 : 0)} / ${OPEN.cards.length}`, W / 2, 20, '#8e97a8', 7, 'center');
+
+  // the cards already turned over, lined up along the bottom
+  const shown = OPEN.revealed.slice(-10);
+  shown.forEach((c, i) => {
+    const w = 26, x = W / 2 - (shown.length * 29) / 2 + i * 29;
+    drawCard(x, H - 48, c, w, 44, OPEN.t);
+  });
+
+  if (OPEN.done){
+    textb('ALL YOURS', W / 2, H / 2 - 26, '#ffd23f', 16, 'center');
+    button(W / 2 - 50, H / 2 + 2, 100, 20, 'DONE', () => { OPEN = null; menu = 'shop'; }, '#2f6fe0');
+    return;
+  }
+  const cx = W / 2, cy = 112, sp = OPEN.spin;
+  if (!sp){
+    // face down, waiting for a tap
+    const bob = Math.sin(OPEN.t / 300) * 2;
+    const w = 72, h = 120;
+    R(cx - w/2, cy - h/2 + bob, w, h, '#101726');
+    g.strokeStyle = P2.col; g.lineWidth = 1; g.strokeRect(cx - w/2 + .5, cy - h/2 + bob + .5, w - 1, h - 1);
+    R(cx - w/2 + 4, cy - h/2 + bob + 4, w - 8, h - 8, mix(P2.col, '#0b1018', .55));
+    // a ball stitched on the back
+    g.fillStyle = mix(P2.col2, '#0b1018', .25); g.beginPath(); g.arc(cx, cy + bob, 17, 0, 7); g.fill();
+    g.fillStyle = '#0b1018'; g.beginPath(); g.arc(cx, cy + bob, 14, 0, 7); g.fill();
+    g.fillStyle = P2.col2; g.beginPath(); g.arc(cx, cy + bob, 11, 0, 7); g.fill();
+    R(cx - 11, cy + bob - 1, 22, 2, '#b8322f');
+    textb('TAP TO REVEAL', cx, cy + h/2 + bob + 8, '#8e97a8', 8, 'center');
+    btns.push({ x: cx - w/2, y: cy - h/2, w, h, fn: revealNext });
+    return;
+  }
+  // the spin: the card turns edge-on over and over, faster near the end
+  const f = clamp(sp.t / sp.dur, 0, 1);
+  const eased = 1 - Math.pow(1 - f, 2.1);                       // slows down as it lands
+  const ang = eased * sp.turns * Math.PI;
+  const sx = Math.abs(Math.cos(ang));
+  const w = 72, h = 120, tc = TIERS[sp.ti].col;
+  // glow builds as the better cards spin
+  if (sp.ti >= 3){
+    const gl = f * (sp.ti - 2) / 3;
+    for (let i = 6; i > 0; i--) R(cx - w/2 - i*2, cy - h/2 - i*2, w + i*4, h + i*4, `rgba(${sp.ti>=5?'255,77,77':sp.ti>=4?'255,147,48':'255,210,63'},${.05 * gl})`);
+  }
+  const cw = Math.max(2, Math.round(w * sx));
+  if (sp.landed){
+    // it lands: a flash in the card's colour, then the card itself
+    const fl = clamp(sp.flash / 420, 0, 1);
+    drawCard(cx - w/2, cy - h/2, OPEN.cards[OPEN.i], w, h, OPEN.t);
+    if (fl > 0) R(cx - w/2 - 4, cy - h/2 - 4, w + 8, h + 8, mix(tc, '#ffffff', .5).replace('#', 'rgba').length ? `rgba(255,255,255,${fl * .5})` : '#fff');
+    if (sp.flash <= 0) textb('TAP', cx, cy + h/2 + 10, '#8e97a8', 7, 'center');
+    btns.push({ x:0, y:0, w:W, h:H, fn: () => { if (sp.flash < 260) sp.flash = -400; } });
+  } else {
+    const face = Math.cos(ang) > 0;                             // front or back of the card
+    if (face) { g.save(); g.translate(cx, 0); g.scale(sx, 1); g.translate(-cx, 0);
+      drawCard(cx - w/2, cy - h/2, OPEN.cards[OPEN.i], w, h, OPEN.t); g.restore(); }
+    else { R(cx - cw/2, cy - h/2, cw, h, mix(P2.col, '#0b1018', .45));
+      g.strokeStyle = P2.col; g.strokeRect(cx - cw/2 + .5, cy - h/2 + .5, cw - 1, h - 1); }
+  }
+}
+
+// ── the shop ───────────────────────────────────────────────────────────────
+let shopSel = 'gold';
+function drawShop(){
+  btns = [];
+  R(0, 0, W, H, '#0b1018');
+  textb('SHOP', 10, 6, '#ffd23f', 11);
+  textb(`${G.coins.toLocaleString()} coins`, W - 10, 8, '#ffd23f', 9, 'right');
+  // a free bronze pack once a day
+  const left = (G.freeAt || 0) - Date.now();
+  const fx = 10, fy = 24;
+  R(fx, fy, 112, 26, left > 0 ? '#161c28' : '#2a4a2a');
+  textb('FREE BRONZE', fx + 6, fy + 5, left > 0 ? '#5c6473' : '#9ae6a0', 8);
+  textb(left > 0 ? `in ${Math.ceil(left / 3600000)}h` : 'ready — tap', fx + 6, fy + 15, left > 0 ? '#5c6473' : '#f2efe6', 7);
+  if (left <= 0) btns.push({ x:fx, y:fy, w:112, h:26, fn: freePack });
+
+  const keys = Object.keys(PACKS), cw = Math.min(96, (W - 24) / 4 - 4);
+  keys.forEach((k, i) => {
+    const x = 10 + i * (cw + 4), y = 58, on = shopSel === k, P2 = PACKS[k];
+    R(x, y, cw, 54, on ? mix(P2.col, '#0b1018', .55) : '#131924');
+    g.strokeStyle = on ? P2.col2 : '#2a3550'; g.lineWidth = 1; g.strokeRect(x + .5, y + .5, cw - 1, 53);
+    textb(P2.n, x + cw / 2, y + 5, P2.col2, 9, 'center');
+    textb(fmt(P2.price), x + cw / 2, y + 17, '#f2efe6', 8, 'center');
+    textb('3 cards', x + cw / 2, y + 28, '#8e97a8', 6, 'center');
+    // the chance of each colour, as a little bar
+    let bx = x + 6;
+    P2.p.forEach((pp, ti) => { const ww = Math.max(1, Math.round(pp * (cw - 12)));
+      R(bx, y + 38, ww, 5, TIERS[ti].col); bx += ww; });
+    textb(`${Math.round((P2.p[4] + P2.p[5]) * 100)}% orange+`, x + cw / 2, y + 45, '#b9c2d2', 6, 'center');
+    btns.push({ x, y, w:cw, h:54, fn: () => shopSel = k });
+  });
+  // buy one, five or ten
+  const P3 = PACKS[shopSel];
+  BULK.forEach(([n, mult], i) => {
+    const cost = Math.round(P3.price * mult * n), can = G.coins >= cost;
+    const x = 10 + i * ((W - 20) / 3), w = (W - 20) / 3 - 6;
+    button(x, 120, w, 26, `${n}x  ${fmt(cost)}`, () => buyPack(shopSel, n),
+      can ? mix(P3.col, '#0b1018', .35) : '#1a1f2a', can ? '#fff' : '#5c6473');
+    if (mult < 1) textb(`-${Math.round((1 - mult) * 100)}%`, x + w - 4, 122, '#7fd38f', 6, 'right');
+  });
+  textb('Odds are shown on each pack. Higher packs roll better, but any pack can give any card.',
+    W / 2, 154, '#5c6473', 6, 'center');
+  button(10, H - 24, 70, 18, 'BACK', () => menu = 'title');
+  button(W - 80, H - 24, 70, 18, 'MY CARDS', () => menu = 'cards', '#2f6fe0');
+}
+
+// ── the collection ─────────────────────────────────────────────────────────
+let colSort = 'ovr', colFilter = 'all', colSel = null, colScroll = 0, cardFlip = false;
+function myCards(){
+  let list = G.cards.slice();
+  if (colFilter === 'hit') list = list.filter(c => !isPitcher(c));
+  if (colFilter === 'pit') list = list.filter(isPitcher);
+  if (colFilter === 'bench') list = list.filter(c => !inUse(c.id));
+  list.sort((a, b) => colSort === 'ovr' ? ovrOf(b) - ovrOf(a) : a.pos.localeCompare(b.pos));
+  return list;
+}
+function drawCards(){
+  btns = [];
+  R(0, 0, W, H, '#0b1018');
+  textb('MY CARDS', 10, 6, '#ffd23f', 11);
+  textb(`${G.cards.length} cards · ${G.coins.toLocaleString()} coins`, W - 10, 8, '#ffd23f', 8, 'right');
+  [['all','All'], ['hit','Hitters'], ['pit','Pitchers'], ['bench','Bench']].forEach(([k, l], i) => {
+    const x = 10 + i * 62, on = colFilter === k;
+    R(x, 20, 58, 14, on ? '#2f6fe0' : '#131924');
+    textb(l, x + 29, 23, on ? '#fff' : '#8e97a8', 7, 'center');
+    btns.push({ x, y:20, w:58, h:14, fn: () => { colFilter = k; colScroll = 0; } });
+  });
+  const list = myCards(), cw = 42, ch = 70, per = Math.floor((W - 16) / (cw + 4));
+  const rows = Math.ceil(list.length / per), maxScroll = Math.max(0, rows * (ch + 6) - (H - 70));
+  colScroll = clamp(colScroll, 0, maxScroll);
+  g.save(); g.beginPath(); g.rect(0, 38, W, H - 62); g.clip();
+  list.forEach((c, i) => {
+    const x = 8 + (i % per) * (cw + 4), y = 42 + Math.floor(i / per) * (ch + 6) - colScroll;
+    if (y > H || y < 10) return;
+    drawCard(x, y, c, cw, ch, frame, { });
+    if (inUse(c.id)) R(x + cw - 8, y + 2, 6, 6, '#54d67a');
+    btns.push({ x, y, w:cw, h:ch, fn: () => { colSel = c.id; cardFlip = false; menu = 'card'; } });
+  });
+  g.restore();
+  if (maxScroll > 0){
+    button(W - 26, 42, 20, 20, '▲', () => colScroll = Math.max(0, colScroll - 60));
+    button(W - 26, H - 48, 20, 20, '▼', () => colScroll = Math.min(maxScroll, colScroll + 60));
+  }
+  button(10, H - 22, 70, 18, 'BACK', () => menu = 'title');
+  button(W - 86, H - 22, 76, 18, 'LINEUP', () => menu = 'lineup', '#2f6fe0');
+}
+
+// ── one card: upgrade, sell, put him in the lineup ────────────────────────
+let upStat = 0;
+function drawCardView(){
+  btns = [];
+  R(0, 0, W, H, '#0b1018');
+  const c = cardById(colSel);
+  if (!c){ menu = 'cards'; return; }
+  const cw = 92, chh = 152, cx = 18, cy = 40;
+  if (cardFlip) drawCardBack(cx, cy, c, cw, chh); else drawCard(cx, cy, c, cw, chh, frame);
+  btns.push({ x:cx, y:cy, w:cw, h:chh, fn: () => cardFlip = !cardFlip });
+  textb(cardFlip ? 'tap for the front' : 'tap for his stats', cx + cw / 2, cy + chh + 4, '#5c6473', 6, 'center');
+
+  const x0 = cx + cw + 16;
+  textb(c.name, x0, 16, '#f2efe6', 11);
+  textb(`${c.pos} · overall ${ovrOf(c)}`, x0, 30, colOf(ovrOf(c)), 8);
+  // each rating, with the colour of its own band
+  statsOf(c).forEach(([lbl, key], i) => {
+    const y = 48 + i * 17, v = c[key];
+    textb(lbl, x0, y + 2, '#8e97a8', 7);
+    R(x0 + 28, y + 2, 80, 7, '#182030');
+    R(x0 + 28, y + 2, Math.round(80 * clamp((v - 55) / 65, 0, 1)), 7, colOf(v));
+    textb(String(v), x0 + 114, y, colOf(v), 9);
+    if (c.lvl < 10){
+      const on = upStat === i;
+      R(x0 + 136, y, 16, 11, on ? '#2f6fe0' : '#1a2230');
+      textb('+', x0 + 144, y + 2, on ? '#fff' : '#8e97a8', 8, 'center');
+      btns.push({ x:x0 + 136, y, w:16, h:11, fn: () => upStat = i });
+    }
+  });
+  // upgrading: ten levels, each one dearer than the last
+  const y2 = 120;
+  if (c.lvl < 10){
+    const cost = UP_COST[c.lvl], can = G.coins >= cost;
+    textb(`Upgrade ${c.lvl}/10 · +2 ${statsOf(c)[upStat][0]}`, x0, y2, '#b9c2d2', 7);
+    button(x0, y2 + 10, 110, 20, `${fmt(cost)} coins`, () => {
+      if (G.coins < cost) return;
+      G.coins -= cost; c[statsOf(c)[upStat][1]] = clamp(c[statsOf(c)[upStat][1]] + 2, 60, 120);
+      c.lvl++; c.ovr = ovrOf(c); upFx = 600; save();
+    }, can ? '#2a6a3a' : '#1a1f2a', can ? '#fff' : '#5c6473');
+  } else textb('Fully upgraded', x0, y2 + 14, '#7fd38f', 8);
+
+  if (!inUse(c.id)){
+    button(x0 + 124, y2 + 10, 74, 20, `SELL ${fmt(sellPrice(c))}`, () => {
+      G.coins += sellPrice(c); G.cards = G.cards.filter(z => z.id !== c.id); menu = 'cards'; save();
+    }, '#4a2030');
+  } else textb('In your lineup', x0 + 124, y2 + 16, '#54d67a', 7);
+  button(10, H - 22, 70, 18, 'BACK', () => menu = 'cards');
+  if (upFx > 0){ upFx -= 16; R(cx - 3, cy - 3, cw + 6, chh + 6, `rgba(127,211,143,${clamp(upFx / 900, 0, .5)})`); }
+}
+let upFx = 0;
+
+// ── setting the lineup ─────────────────────────────────────────────────────
+let lineSel = null;    // { where:'lineup'|'rot'|'pen', i }
+function drawLineup(){
+  btns = [];
+  R(0, 0, W, H, '#0b1018');
+  textb('LINEUP', 10, 6, '#ffd23f', 11);
+  if (lineSel){
+    // picking a replacement for one slot
+    const want = lineSel.where === 'lineup' ? 'hit' : 'pit';
+    const list = G.cards.filter(c => (want === 'pit') === isPitcher(c) && !inUse(c.id))
+      .sort((a, b) => ovrOf(b) - ovrOf(a)).slice(0, 24);
+    textb('Pick a card for that spot', 10, 20, '#b9c2d2', 8);
+    const cw = 42, ch = 70, per = Math.floor((W - 16) / (cw + 4));
+    list.forEach((c, i) => {
+      const x = 8 + (i % per) * (cw + 4), y = 34 + Math.floor(i / per) * (ch + 6);
+      if (y + ch > H - 26) return;
+      drawCard(x, y, c, cw, ch, frame);
+      btns.push({ x, y, w:cw, h:ch, fn: () => {
+        G.slots[lineSel.where][lineSel.i] = c.id; rebuildTeam(); lineSel = null; save(); } });
+    });
+    if (!list.length) textb('No spare cards — open some packs!', W / 2, H / 2, '#5c6473', 8, 'center');
+    button(W - 80, H - 22, 70, 18, 'CANCEL', () => lineSel = null);
+    return;
+  }
+  const SW = 74;
+  const slot = (where, i, lbl, x, y) => {
+    const c = cardById(G.slots[where][i]);
+    R(x, y, SW, 16, '#131924');
+    R(x, y, 2, 16, '#2a3550');
+    textb(lbl, x + 4, y + 4, '#5c6473', 7);
+    if (c){
+      textb(c.name.split(' ').pop().slice(0, 7), x + 19, y + 4, '#f2efe6', 7);
+      textb(String(ovrOf(c)), x + SW - 4, y + 3, colOf(ovrOf(c)), 8, 'right');
+    } else textb('empty', x + 19, y + 4, '#3d4659', 7);
+    btns.push({ x, y, w:SW, h:16, fn: () => lineSel = { where, i } });
+  };
+  textb('BATTING ORDER', 10, 22, '#8e97a8', 7);
+  G.slots.lineup.forEach((id, i) => slot('lineup', i, String(i + 1), 10, 34 + i * 19));
+  textb('ROTATION', 92, 22, '#8e97a8', 7);
+  G.slots.rot.forEach((id, i) => slot('rot', i, 'SP', 92, 34 + i * 19));
+  textb('BULLPEN', 174, 22, '#8e97a8', 7);
+  G.slots.pen.forEach((id, i) => slot('pen', i, i === 4 ? 'CP' : 'RP', 174, 34 + i * 19));
+  // what the whole roster averages out to
+  const all = [...G.slots.lineup, ...G.slots.rot, ...G.slots.pen].map(cardById).filter(Boolean);
+  const team = all.length ? Math.round(all.reduce((s, c) => s + ovrOf(c), 0) / all.length) : 0;
+  textb('TEAM', 262, 22, '#8e97a8', 7);
+  textb(String(team), 262, 34, colOf(team), 22);
+  textb('overall', 262, 60, '#5c6473', 7);
+  textb('Tap a spot to swap in', 262, 80, '#5c6473', 7);
+  textb('any spare card.', 262, 90, '#5c6473', 7);
+  button(10, H - 22, 70, 18, 'BACK', () => menu = 'cards');
+  button(W - 86, H - 22, 76, 18, 'SHOP', () => menu = 'shop', '#2f6fe0');
+}
+const fmt = n => n >= 1000 ? (n / 1000).toFixed(n % 1000 ? 1 : 0) + 'k' : String(n);
+
 let menu = 'title', btns = [];
 function button(x, y, w, h, label, fn, col = '#1a2230', tc = '#fff'){
   R(x, y, w, h, col); R(x, y, w, 1, shade(col, .15)); R(x, y + h - 1, w, 1, shade(col, -.2));
@@ -816,10 +1694,13 @@ function drawMenu(){
         if (G.day >= G.seasonLen) return;
         const s = G.sched[G.day]; startGame(s.opp, s.home);
       }, '#2f6fe0');
-      button(W / 2 - 70, 142, 66, 18, 'ROSTER', () => menu = 'roster');
-      button(W / 2 + 4, 142, 66, 18, 'STANDINGS', () => menu = 'stand');
-      textb(`${G.coins.toLocaleString()} coins`, W / 2, 168, '#ffd23f', 8, 'center');
-      button(W / 2 - 40, 186, 80, 16, 'NEW TEAM', () => menu = 'pick', '#2a1a1a');
+      button(W / 2 - 108, 142, 68, 18, 'MY CARDS', () => menu = 'cards', '#243a5e');
+      button(W / 2 - 34, 142, 68, 18, 'SHOP', () => menu = 'shop', '#3a2f12');
+      button(W / 2 + 40, 142, 68, 18, 'LINEUP', () => menu = 'lineup', '#243a5e');
+      button(W / 2 - 108, 164, 68, 18, 'STANDINGS', () => menu = 'stand');
+      button(W / 2 - 34, 164, 68, 18, 'ROSTER', () => menu = 'roster');
+      button(W / 2 + 40, 164, 68, 18, 'NEW TEAM', () => menu = 'pick', '#2a1a1a');
+      textb(`${G.coins.toLocaleString()} coins`, W / 2, 190, '#ffd23f', 9, 'center');
     } else button(W / 2 - 70, 120, 140, 24, 'START', () => menu = 'pick', '#2f6fe0');
   }
   else if (menu === 'pick'){
@@ -850,6 +1731,11 @@ function drawMenu(){
     });
     button(W - 56, H - 20, 50, 16, 'BACK', () => menu = 'title');
   }
+  else if (menu === 'shop'){ drawShop(); return; }
+  else if (menu === 'cards'){ drawCards(); return; }
+  else if (menu === 'card'){ drawCardView(); return; }
+  else if (menu === 'lineup'){ drawLineup(); return; }
+  else if (menu === 'open'){ drawOpen(); return; }
   else if (menu === 'stand'){
     textb('STANDINGS', W / 2, 6, '#ffd23f', 10, 'center');
     const list = G.teams.map((t, i) => ({ ...t, i })).sort((a, b) => (b.w - b.l) - (a.w - a.l));
@@ -973,7 +1859,8 @@ addEventListener('keydown', e => {
   if (e.code === 'Space' || e.code === 'ArrowUp'){ e.preventDefault(); if (phase === 'atbat' && userBats()) doSwing(); }
 });
 // test hooks
-window.__rb = { get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
+window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
+  buyPack, revealNext, rollCard, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
@@ -989,7 +1876,7 @@ function loop(now){
 
   if (M) M.exc = Math.max(0, M.exc - dt / 1400);
 
-  if (phase === 'menu'){ drawMenu(); }
+  if (phase === 'menu'){ if (OPEN) openTick(dt); drawMenu(); }
   else if (phase === 'over'){ drawBatterViewSafe(dt); drawOver(); }
   else if (phase === 'gmenu'){ drawBatterViewSafe(dt); drawGameMenu(); }
   else if (phase === 'play'){
