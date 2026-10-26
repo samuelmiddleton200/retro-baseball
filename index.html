@@ -211,6 +211,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
+const BUILD = '10-26e';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -342,7 +343,8 @@ function mix(a, b, t){
 function palette(look, c1, c2){
   const [s1, s2, s3, s4, s5] = ramp(look.skin, [[-16,.8,.34],[-9,.9,.58],[-4,.95,.82],[0,1,1],[6,.9,0,.34]]);
   const [j1, j2, j3, j4] = ramp(c1, [[-5,.9,.5],[-2,.95,.74],[0,1,1],[5,.9,0,.3]]);
-  const pantBase = mix(c2 === '#ffffff' ? '#e9ecf2' : c2, '#ffffff', .45);
+  // pants are the classic off-white; the team colour only tints them a little
+  const pantBase = mix(c2 === '#ffffff' ? '#e9ecf2' : c2, '#f2f4f8', .88);
   const [p1, p2, p3] = ramp(pantBase, [[-3,.7,.62],[0,.8,1],[4,.6,0,.28]]);
   const hairBase = look.hair === '#120d0a' ? '#1d1510' : look.hair;
   const [r1, r2, r3] = ramp(hairBase, [[-5,.9,.55],[0,1,1],[5,.85,0,.3]]);
@@ -2267,6 +2269,7 @@ function drawMenu(){
   if (menu === 'title'){
     textb('RETRO', W / 2, 30, '#ffd23f', 26, 'center');
     textb('BASEBALL', W / 2, 58, '#fff', 26, 'center');
+    text('build ' + BUILD, W - 6, H - 10, '#3d4659', 6, 'right');
     const me = G && myTeam();
     if (me){
       textb(`${me.city} ${me.nick}   ${me.w}-${me.l}`, W / 2, 96, me.c2, 9, 'center');
