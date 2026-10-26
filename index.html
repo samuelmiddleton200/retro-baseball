@@ -1540,24 +1540,31 @@ function drawFieldHD(park, t){
     const p = dAng(a, wallDist(a)); g.fillText(String(d), p[0], p[1] - wallH / 2);
   });
 
-  // ── the grass, mown in stripes that fan toward the camera ─────────────────
+  // ── the grass, mown in clearly alternating light/dark stripes ─────────────
   const gTopY = wpts[0][1];
-  gr = g.createLinearGradient(0, gTopY, 0, DH);
-  gr.addColorStop(0, night ? '#1d4a28' : '#2f7a3c'); gr.addColorStop(1, night ? '#2a6038' : '#49a657');
-  g.fillStyle = gr; g.fillRect(0, gTopY, DW, DH - gTopY);
+  // two greens, lighter toward the camera; each vertical wedge is solid-filled
+  const lightA = night ? [34, 92, 48] : [92, 178, 96], darkA = night ? [22, 64, 34] : [58, 140, 70];
+  const lightB = night ? [26, 76, 40] : [74, 158, 82], darkB = night ? [16, 50, 28] : [44, 120, 58];
+  g.fillStyle = `rgb(${darkB[0]},${darkB[1]},${darkB[2]})`; g.fillRect(0, gTopY, DW, DH - gTopY);
   // warning track under the wall
   g.fillStyle = '#8f6240';
   g.beginPath(); g.moveTo(0, wpts[0][1]); wpts.forEach(p => g.lineTo(p[0], p[1]));
   g.lineTo(DW, wpts[wpts.length - 1][1]);
   wpts.slice().reverse().forEach(p => g.lineTo(p[0], p[1] + 4 * SC)); g.closePath(); g.fill();
-  // mow stripes: wedges from the plate fanning out, every other one darker
-  const hpd = dp(0, 0);
-  for (let s = -9; s <= 9; s++){
-    if ((s + 90) % 2) continue;
-    const a0 = s * 5, a1 = (s + 1) * 5;
-    const n0 = dAng(a0, 420), n1 = dAng(a1, 420), f0 = dAng(a0, 60), f1 = dAng(a1, 60);
-    g.fillStyle = 'rgba(0,0,0,0.05)';
-    g.beginPath(); g.moveTo(f0[0], f0[1]); g.lineTo(n0[0], n0[1]); g.lineTo(n1[0], n1[1]); g.lineTo(f1[0], f1[1]); g.closePath(); g.fill();
+  // vertical mow wedges fanning out from home plate; alternate the two shades,
+  // and blend toward the lighter pair as the grass comes toward the camera
+  const band = (a0, a1, near, far, col) => {
+    const n0 = dAng(a0, far), n1 = dAng(a1, far), f0 = dAng(a0, near), f1 = dAng(a1, near);
+    g.fillStyle = col; g.beginPath();
+    g.moveTo(f0[0], f0[1]); g.lineTo(n0[0], n0[1]); g.lineTo(n1[0], n1[1]); g.lineTo(f1[0], f1[1]); g.closePath(); g.fill();
+  };
+  const gcol = (arr, t) => `rgb(${arr[0]|0},${(arr[1] - 14 + t * 24)|0},${arr[2]|0})`;  // lighten toward camera
+  for (let s = -20; s <= 19; s++){
+    const a0 = s * 4.2, a1 = (s + 1) * 4.2, even = (s & 1) === 0;
+    for (let r = 0; r < 4; r++){
+      const near = [18, 90, 200, 360][r], far = [90, 200, 360, 600][r], t = r / 3;
+      band(a0, a1, near, far, gcol(even ? lightB : darkB, t));
+    }
   }
 
   // ── infield: dirt arc, grass diamond, base paths, mound, plate ────────────
