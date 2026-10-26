@@ -1,0 +1,1040 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- no zooming; the game fills the screen -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- opened from the home screen: no Safari bars, black status bar -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<!-- black-translucent: the page always runs under the status bar area, so iOS has no bar-sized strip to
+     leave behind when the app opens sideways (the game already keeps clear of the notch itself) -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Retro Baseball">
+<meta name="theme-color" content="#0b1018">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+  html,body{overscroll-behavior:none;touch-action:manipulation;-webkit-text-size-adjust:100%}   /* no bounce, no double-tap zoom */
+  /* like an app: the page itself never moves; long menus scroll inside the game area.
+     The page is pinned to the screen (position:fixed) so it cannot sit scrolled or pushed off to one side, and its
+     height comes from --app-h, the size the script below measures, because an iPhone opened sideways sometimes
+     hands the page a stale size or offset for a moment (the "whole screen shifted over" launch). */
+  html,body{position:fixed;left:0;top:0;width:100%;height:100%;height:var(--app-h,100%);overflow:hidden}
+  #ui{height:100%;height:100dvh;height:var(--app-h,100dvh);min-height:0 !important;overflow:hidden;overscroll-behavior:none}
+  #game{height:var(--app-h,100%);bottom:auto !important}
+  /* the stats list is the only screen allowed to scroll, and only up and down */
+</style>
+<script>
+  // Launch guard for the shifted screen: measure the real screen, pin the page to it, put the page back at 0,0,
+  // and if the iPhone is still reporting a stale size make it measure again. Runs at launch, a few more times in
+  // the first seconds, and whenever the app comes back, rotates or resizes. It never reloads the app.
+  (function(){
+    var root = document.documentElement, nudges = 0, last = '';
+    var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var standalone = function(){ return navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches); };
+    var angle = function(){ var a = (screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle : window.orientation; return typeof a === 'number' ? Math.abs(a) % 180 : null; };
+    // what the screen really is: on an iPhone home-screen app that is the whole display, turned the way the phone is held
+    function real(){
+      var w = window.innerWidth, h = window.innerHeight, a = angle();
+      if (ios && standalone() && a !== null && screen.width && screen.height) {
+        var long = Math.max(screen.width, screen.height), short = Math.min(screen.width, screen.height);
+        var ew = a === 90 ? long : short, eh = a === 90 ? short : long;
+        // only a big gap is a stale size (the page still thinks the phone is the other way up); small gaps are real bars
+        if (Math.abs(w - ew) > 60 || Math.abs(h - eh) > 60) return { w:ew, h:eh, stale:true };
+      }
+      return { w:w, h:h, stale:false };
+    }
+    function settle(){
+      try {
+        var r = real(), vv = window.visualViewport;
+        root.style.setProperty('--app-h', r.h + 'px');
+        var moved = window.scrollX || window.scrollY || root.scrollTop || (document.body && document.body.scrollTop) || (vv && (vv.offsetTop || vv.offsetLeft || vv.pageTop || vv.pageLeft));
+        if (moved) { window.scrollTo(0, 0); root.scrollTop = 0; if (document.body) document.body.scrollTop = 0; }
+        if ((r.stale || moved) && nudges < 6) {                      // make the iPhone lay the page out again
+          nudges++;
+          var m = document.querySelector('meta[name=viewport]'), c = m && m.getAttribute('content');
+          if (m) { m.setAttribute('content', c + ', height=device-height'); setTimeout(function(){ m.setAttribute('content', c); }, 60); }
+        }
+        var key = r.w + 'x' + r.h + (r.stale ? 's' : '') + (moved ? 'm' : '');
+        if (key !== last) { last = key; setTimeout(function(){ window.dispatchEvent(new Event('resize')); }, 80); }   // the game re-fits its court
+      } catch (e) {}
+    }
+    try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (e) {}
+    settle();
+    [0, 60, 150, 300, 600, 1000, 1600, 2500, 4000].forEach(function(ms){ setTimeout(settle, ms); });
+    ['DOMContentLoaded', 'load', 'pageshow', 'resize', 'orientationchange', 'focus'].forEach(function(ev){ window.addEventListener(ev, function(){ settle(); setTimeout(settle, 250); setTimeout(settle, 700); }); });
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) { nudges = 0; settle(); setTimeout(settle, 250); setTimeout(settle, 700); } });
+    if (window.visualViewport) { visualViewport.addEventListener('resize', settle); visualViewport.addEventListener('scroll', settle); }
+  })();
+</script>
+<script>
+  // No surprise updates: the app never reloads itself. A new version (only when we publish one) shows the
+  // next time the app is closed and opened again, because the game loads fresh from the server at launch.
+  if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js', { updateViaCache:'none' }).catch(() => {}));
+</script>
+<div id="ui">
+<canvas id="cv"></canvas>
+</div>
+<style>
+#ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
+    font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
+#cv{position:absolute;left:0;top:0;width:100%;height:100%;image-rendering:pixelated}
+</style>
+<script>
+(() => {
+"use strict";
+/* ───────────────────────────────────────────────────────────────────────────
+   RETRO BASEBALL
+   Swipe up to swing. Pick a pitch and a spot to pitch. Nine innings.
+   Everything is drawn as pixel art on one small canvas that is scaled up, so
+   the whole game stays sharp on a phone held sideways.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+let W = 428; const H = 240;                   // the pixel canvas: fixed height, width follows the screen
+const cv = document.getElementById('cv'), g = cv.getContext('2d', { alpha:false });
+let SC = 1, OX = 0, OY = 0;                   // scale and letterbox offset, for turning taps into pixels
+
+function fit(){
+  const w = innerWidth, h = innerHeight, dpr = Math.min(3, devicePixelRatio || 1);
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  W = clamp(Math.round(H * (cv.width / cv.height)), 300, 640);   // no black bars on any phone
+  SC = cv.height / H;
+  OX = (cv.width - W * SC) / 2; OY = 0;
+  ZONE.x = W / 2 - 26;
+  g.imageSmoothingEnabled = false;
+}
+// fit() is called once ZONE exists, further down
+
+// ── little helpers ─────────────────────────────────────────────────────────
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const rnd = (a = 1, b = 0) => b + Math.random() * (a - b);
+const ri = (a, b) => Math.floor(rnd(b + 1, a));
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const chance = p => Math.random() < p;
+// bell-curve random: averages out, so extremes are rare
+const bell = () => (Math.random() + Math.random() + Math.random()) / 3;
+
+// ── ratings and their colors (the user's scale) ────────────────────────────
+// 60-69 grey, 70-79 green, 80-89 blue, 90-99 yellow, 100-109 orange, 110-120 red
+const TIERS = [
+  { min:60,  col:'#9aa6bd', name:'Common' },
+  { min:70,  col:'#54d67a', name:'Green'  },
+  { min:80,  col:'#4aa3ff', name:'Blue'   },
+  { min:90,  col:'#ffd23f', name:'Gold'   },
+  { min:100, col:'#ff9330', name:'Orange' },
+  { min:110, col:'#ff4d4d', name:'Red'    },
+];
+const tierOf = v => TIERS[clamp(Math.floor((v - 60) / 10), 0, 5)];
+const colOf = v => tierOf(v).col;
+
+// ── the 30 real teams (names only; every player is made up) ────────────────
+const TEAMS = [
+  ['BAL','Baltimore','Orioles','#df4601','#000000','AL','E'], ['BOS','Boston','Red Sox','#bd3039','#0c2340','AL','E'],
+  ['NYY','New York','Yankees','#132448','#c4ced4','AL','E'],  ['TB','Tampa Bay','Rays','#092c5c','#8fbce6','AL','E'],
+  ['TOR','Toronto','Blue Jays','#134a8e','#e8291c','AL','E'], ['CWS','Chicago','White Sox','#27251f','#c4ced4','AL','C'],
+  ['CLE','Cleveland','Guardians','#0c2340','#e31937','AL','C'],['DET','Detroit','Tigers','#0c2340','#fa4616','AL','C'],
+  ['KC','Kansas City','Royals','#004687','#bd9b60','AL','C'], ['MIN','Minnesota','Twins','#002b5c','#d31145','AL','C'],
+  ['HOU','Houston','Astros','#002d62','#eb6e1f','AL','W'],    ['LAA','Los Angeles','Angels','#ba0021','#003263','AL','W'],
+  ['ATH','Athletics','Athletics','#003831','#efb21e','AL','W'],['SEA','Seattle','Mariners','#0c2c56','#005c5c','AL','W'],
+  ['TEX','Texas','Rangers','#003278','#c0111f','AL','W'],     ['ATL','Atlanta','Braves','#13274f','#ce1141','NL','E'],
+  ['MIA','Miami','Marlins','#00a3e0','#ef3340','NL','E'],     ['NYM','New York','Mets','#002d72','#ff5910','NL','E'],
+  ['PHI','Philadelphia','Phillies','#e81828','#002d72','NL','E'],['WSH','Washington','Nationals','#ab0003','#14225a','NL','E'],
+  ['CHC','Chicago','Cubs','#0e3386','#cc3433','NL','C'],      ['CIN','Cincinnati','Reds','#c6011f','#000000','NL','C'],
+  ['MIL','Milwaukee','Brewers','#12284b','#ffc52f','NL','C'], ['PIT','Pittsburgh','Pirates','#27251f','#fdb827','NL','C'],
+  ['STL','St. Louis','Cardinals','#c41e3a','#0c2340','NL','C'],['ARI','Arizona','Diamondbacks','#a71930','#e3d4ad','NL','W'],
+  ['COL','Colorado','Rockies','#333366','#c4ced4','NL','W'],  ['LAD','Los Angeles','Dodgers','#005a9c','#ffffff','NL','W'],
+  ['SD','San Diego','Padres','#2f241d','#ffc425','NL','W'],   ['SF','San Francisco','Giants','#fd5a1e','#27251f','NL','W'],
+].map(t => ({ ab:t[0], city:t[1], nick:t[2], c1:t[3], c2:t[4], lg:t[5], div:t[6] }));
+
+// ── made-up player names ───────────────────────────────────────────────────
+const FIRST = ['Cole','Hank','Marco','Ty','Deion','Rico','Jax','Nolan','Ozzie','Luis','Kai','Brett','Dax','Omar','Cruz','Sal',
+  'Rhett','Milo','Zeke','Trey','Dusty','Cash','Vance','Pablo','Rory','Kip','Sandy','Bo','Junior','Ace','Kenji','Isaia','Tito',
+  'Wes','Duke','Gus','Hollis','Reggie','Yuki','Diego','Shane','Buck','Moe','Elio','Rocco','Jett','Levi','Cy','Nico','Bram'];
+const LAST = ['Vasquez','Okafor','Brandt','Delgado','Cobb','Hollins','Tanaka','Mercer','Rios','Falk','Whitmore','Nakamura',
+  'Baptiste','Kowalski','Sutter','Ferrell','Ortiz','Grady','Lindqvist','Beaumont','Castillo','Pike','Mullen','Araya','Stroud',
+  'Vega','Barnhart','Oyelaran','Lacroix','Prescott','Guzman','Boone','Ishikawa','Reyes','Hatcher','Quill','Marchetti','Dupree',
+  'Salazar','Crowe','Abara','Thibault','Youngblood','Esparza','Mahoney','Nkemelu','Rask','Tovar','Winslow','Zamora'];
+const POS = ['C','1B','2B','3B','SS','LF','CF','RF','DH'];
+
+// how much each spot leans on each rating, so a shortstop fields and a corner bat hits
+const POSBIAS = {
+  C:  { fielding:8,  speed:-10, power:2,  contact:0 },  '1B': { fielding:-2, speed:-8, power:9,  contact:1 },
+  '2B':{ fielding:5,  speed:5,   power:-6, contact:4 },  '3B': { fielding:4,  speed:-2, power:6,  contact:0 },
+  SS: { fielding:9,  speed:6,   power:-5, contact:2 },  LF:  { fielding:-1, speed:2,  power:5,  contact:1 },
+  CF: { fielding:6,  speed:9,   power:-2, contact:2 },  RF:  { fielding:2,  speed:2,  power:7,  contact:0 },
+  DH: { fielding:-14,speed:-6,  power:9,  contact:5 },
+};
+
+function makeHitter(level, pos){
+  const base = () => clamp(Math.round(level + (bell() - .5) * 26), 60, 120);
+  const b = POSBIAS[pos] || POSBIAS.DH;
+  const p = {
+    name: pick(FIRST) + ' ' + pick(LAST), pos,
+    contact: clamp(base() + b.contact, 60, 120), power: clamp(base() + b.power, 60, 120),
+    speed: clamp(base() + b.speed, 60, 120),   fielding: clamp(base() + b.fielding, 60, 120),
+    bats: chance(.3) ? 'L' : 'R', look: look(),
+  };
+  p.ovr = Math.round((p.contact + p.power + p.speed + p.fielding) / 4);
+  p.st = newStat();
+  return p;
+}
+function makePitcher(level, role){
+  const base = () => clamp(Math.round(level + (bell() - .5) * 26), 60, 120);
+  const p = {
+    name: pick(FIRST) + ' ' + pick(LAST), pos: role,          // 'SP' | 'RP' | 'CP'
+    velocity: base(), control: base(), stamina: role === 'SP' ? base() : clamp(base() - 14, 60, 120),
+    batting: clamp(Math.round(62 + bell() * 16), 60, 120),
+    throws: chance(.28) ? 'L' : 'R', look: look(),
+  };
+  p.ovr = Math.round((p.velocity + p.control + p.stamina + p.batting) / 4);
+  // 2-4 pitches, each with its own rating; everybody owns a fastball
+  const all = ['FB','CV','SL','CH'];
+  const n = 2 + (p.ovr > 95 ? 2 : p.ovr > 80 ? 1 : 0) + (chance(.4) ? 1 : 0);
+  p.pitches = {};
+  ['FB', ...all.slice(1).sort(() => Math.random() - .5)].slice(0, clamp(n, 2, 4))
+    .forEach(k => p.pitches[k] = clamp(Math.round(p.ovr + (bell() - .5) * 22), 60, 120));
+  p.st = newStat();
+  return p;
+}
+const newStat = () => ({ ab:0, h:0, hr:0, rbi:0, r:0, bb:0, k:0, ip:0, er:0, ko:0, w:0, l:0, sb:0, pa:0 });
+// a face/body recipe so every player looks different
+function look(){
+  return { skin: pick(['#f2c9a0','#e0ad7e','#c88e5e','#9c6336','#6f4324','#4b2d18']),
+           hair: pick(['#120d0a','#2b1a10','#5a3a1c','#8a6a2a','#c8a04a','#d8d8d8','#120d0a','#2b1a10']),
+           beard: chance(.4) ? 1 : 0, bulk: rnd(1.15, .85) };
+}
+
+// ── season-long state ──────────────────────────────────────────────────────
+const SAVE = 'retrobaseball.v1';
+let G = null;
+
+function newGame(teamAb){
+  const lvl = () => 70 + bell() * 28;
+  const teams = TEAMS.map(t => {
+    const lineup = POS.map(p => makeHitter(lvl(), p));
+    const rot = [0,1,2,3,4].map(() => makePitcher(lvl(), 'SP'));
+    const pen = [0,1,2,3].map(() => makePitcher(lvl(), 'RP')).concat([makePitcher(lvl() + 6, 'CP')]);
+    return { ...t, lineup, rot, pen, w:0, l:0, rs:0, ra:0 };
+  });
+  G = { v:1, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:2500, seasonLen:25,
+        sched:[], rotIdx:0, cards:[], log:[] };
+  makeSchedule();
+  save();
+}
+function makeSchedule(){
+  // every day our team plays somebody; opponents rotate through the league
+  const me = G.team, others = G.teams.map((_, i) => i).filter(i => i !== me);
+  G.sched = [];
+  for (let d = 0; d < G.seasonLen; d++){
+    const opp = others[(d * 7 + 3) % others.length];
+    G.sched.push({ opp, home: d % 2 === 0, done:false, rs:0, ra:0 });
+  }
+}
+const save = () => { try { localStorage.setItem(SAVE, JSON.stringify(G)); } catch(e){} };
+const load = () => { try { const d = JSON.parse(localStorage.getItem(SAVE)); if (d && d.v === 1) G = d; } catch(e){} };
+const myTeam = () => G.teams[G.team];
+
+// ───────────────────────────────────────────────────────────────────────────
+//  PIXEL ART
+//  Everything is drawn with small rectangles so it stays crisp when scaled up.
+// ───────────────────────────────────────────────────────────────────────────
+const R = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x | 0, y | 0, Math.max(1, w | 0), Math.max(1, h | 0)); };
+const shade = (hex, amt) => {
+  const n = parseInt(hex.slice(1), 16);
+  const f = v => clamp(Math.round(v + 255 * amt), 0, 255);
+  return `rgb(${f(n >> 16 & 255)},${f(n >> 8 & 255)},${f(n & 255)})`;
+};
+function text(s, x, y, c = '#fff', size = 7, align = 'left'){
+  g.font = `${size}px ui-monospace, "Courier New", monospace`;
+  g.textAlign = align; g.textBaseline = 'top'; g.fillStyle = c;
+  g.fillText(s, x | 0, y | 0);
+}
+function textb(s, x, y, c = '#fff', size = 7, align = 'left'){   // with a dark outline so it reads on any background
+  g.font = `${size}px ui-monospace, "Courier New", monospace`;
+  g.textAlign = align; g.textBaseline = 'top';
+  g.fillStyle = '#000'; [[1,0],[-1,0],[0,1],[0,-1]].forEach(d => g.fillText(s, (x + d[0]) | 0, (y + d[1]) | 0));
+  g.fillStyle = c; g.fillText(s, x | 0, y | 0);
+}
+
+// a player seen from behind/side: head, cap, shoulders, arms, legs. `k` scales it.
+function drawPlayer(x, y, k, lk, c1, c2, o = {}){
+  const sk = lk.skin, hr = lk.hair, bw = Math.round(9 * k * lk.bulk);
+  const bodyY = y - Math.round(20 * k), headR = Math.round(4.2 * k);
+  // legs
+  const legW = Math.max(2, Math.round(3 * k)), legH = Math.round(10 * k);
+  R(x - bw / 2 + 1, y - legH, legW, legH, c2);
+  R(x + bw / 2 - legW - 1, y - legH, legW, legH, c2);
+  R(x - bw / 2 + 1, y - 2, legW, 2, '#1a1a1a'); R(x + bw / 2 - legW - 1, y - 2, legW, 2, '#1a1a1a');
+  // torso with a little shading down the right side
+  const trH = Math.round(13 * k);
+  R(x - bw / 2, y - legH - trH, bw, trH, c1);
+  R(x + bw / 2 - 2, y - legH - trH, 2, trH, shade(c1, -.12));
+  R(x - bw / 2, y - legH - trH, bw, 2, shade(c1, .12));
+  // arms
+  const armW = Math.max(2, Math.round(2.6 * k));
+  if (o.arms !== 'none'){
+    R(x - bw / 2 - armW, y - legH - trH + 2, armW, Math.round(8 * k), c1);
+    R(x + bw / 2, y - legH - trH + 2, armW, Math.round(8 * k), c1);
+    R(x - bw / 2 - armW, y - legH - trH + 2 + Math.round(8 * k), armW, Math.round(3 * k), sk);
+    R(x + bw / 2, y - legH - trH + 2 + Math.round(8 * k), armW, Math.round(3 * k), sk);
+  }
+  // head + cap + hair + (sometimes) beard
+  const hy = y - legH - trH - headR * 2 + 1;
+  R(x - headR, hy, headR * 2, headR * 2, sk);
+  R(x - headR, hy + headR * 2 - 1, headR * 2, 1, shade(sk, -.18));
+  if (lk.beard) R(x - headR, hy + headR, headR * 2, headR, shade(sk, -.3));
+  R(x - headR - 1, hy - 1, headR * 2 + 2, Math.round(headR * .9), hr);          // hair
+  R(x - headR - 1, hy - Math.round(headR * .7), headR * 2 + 2, Math.round(headR * .8), c1);   // cap
+  R(x - headR - 1, hy - Math.round(headR * .7), headR * 2 + 2, 1, shade(c1, .18));
+  if (o.brim !== 'none') R(x - headR - 1, hy + Math.round(headR * .1), headR * 2 + 3, 1, shade(c1, -.25));
+  return { headY: hy, topY: y - legH - trH };
+}
+
+// ── the ballpark seen from behind the batter ───────────────────────────────
+function drawStands(park, t){
+  // sky
+  const night = park.night;
+  for (let i = 0; i < 46; i++){
+    const f = i / 46;
+    R(0, i, W, 1, night ? `rgb(${8 + f * 10 | 0},${12 + f * 16 | 0},${30 + f * 20 | 0})`
+                        : `rgb(${90 + f * 70 | 0},${150 + f * 70 | 0},${210 + f * 35 | 0})`);
+  }
+  // crowd: rows of little heads that bob when excited
+  const exc = park.excite || 0;
+  for (let row = 0; row < 5; row++){
+    const y = 30 + row * 6, dark = row / 5;
+    R(0, y, W, 6, night ? `rgb(${18 + dark * 8 | 0},${20 + dark * 8 | 0},${30 + dark * 6 | 0})`
+                        : `rgb(${54 + dark * 20 | 0},${58 + dark * 20 | 0},${72 + dark * 14 | 0})`);
+    for (let x = (row % 2) * 3; x < W; x += 6){
+      const seed = (x * 7 + row * 31) % 97;
+      const bob = exc > 0 ? Math.sin(t / 90 + seed) * exc * 2 : 0;
+      const c = CROWD[(seed) % CROWD.length];
+      R(x, y + 1 - bob, 3, 3, night ? shade(c, -.28) : c);
+    }
+  }
+  // the wall, with this park's own look
+  R(0, 60, W, park.wallH, park.wall);
+  R(0, 60, W, 1, shade(park.wall, .22));
+  R(0, 60 + park.wallH - 1, W, 1, shade(park.wall, -.3));
+  if (park.pad) for (let x = 6; x < W; x += 26) R(x, 62, 18, park.wallH - 5, shade(park.wall, -.08));
+  if (park.feature === 'scoreboard'){ R(300, 24, 92, 36, '#101418'); R(302, 26, 88, 32, '#1a2230');
+    for (let i = 0; i < 9; i++) R(306 + i * 9, 30, 6, 8, chance(.5) ? '#2a3550' : '#ffcf4a'); }
+  if (park.feature === 'waterfall'){ for (let i = 0; i < 5; i++) R(248 + i * 11, 40, 7, 20 + (i % 2) * 6, '#5fc8e8');
+    R(244, 58, 66, 4, '#8fe3ff'); }
+  if (park.feature === 'ivy'){ for (let x = 0; x < W; x += 5) R(x, 62 + (x % 3), 4, park.wallH - 6, '#1f5a2a'); }
+  // warning track and grass, mown in stripes
+  R(0, 60 + park.wallH, W, 7, '#8a5a3a');
+  const gy = 60 + park.wallH + 7;
+  for (let i = 0; i < 70; i++){
+    const y = gy + i, f = i / 70;
+    R(0, y, W, 1, i % 10 < 5 ? `rgb(${34 + f * 26 | 0},${96 + f * 40 | 0},${40 + f * 20 | 0})`
+                             : `rgb(${28 + f * 24 | 0},${84 + f * 38 | 0},${34 + f * 18 | 0})`);
+  }
+}
+const CROWD = ['#d8d2c4','#c9a9a9','#9fb4d0','#d6c489','#b8a2c8','#a9c6b0','#e0b9a0','#8f9bb3'];
+
+// the infield dirt wedge and the mound, drawn in perspective from the batter's eye
+function drawInfield(park){
+  const hy = 186;                                  // home plate row
+  // grass everywhere below the outfield first, so the corners beside the infield are green
+  for (let y = 120; y < H; y++){
+    const f = (y - 120) / (H - 120);
+    R(0, y, W, 1, y % 10 < 5 ? `rgb(${40 + f * 20 | 0},${112 + f * 30 | 0},${46 + f * 14 | 0})`
+                             : `rgb(${34 + f * 18 | 0},${100 + f * 28 | 0},${40 + f * 12 | 0})`);
+  }
+  for (let y = 120; y < H; y++){
+    const f = (y - 120) / (H - 120);
+    const half = lerp(60, 330, f * f * .8 + f * .2);
+    R(W / 2 - half, y, half * 2, 1, `rgb(${150 + f * 26 | 0},${104 + f * 22 | 0},${70 + f * 16 | 0})`);
+  }
+  // mound
+  R(W / 2 - 30, 126, 60, 12, '#b9815a'); R(W / 2 - 24, 124, 48, 4, '#c89166');
+  R(W / 2 - 8, 132, 16, 3, '#eee8dd');             // rubber
+  // chalk lines running out to the corners
+  g.strokeStyle = '#eee8dd'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(W / 2 - 10, hy + 6); g.lineTo(-20, 150); g.stroke();
+  g.beginPath(); g.moveTo(W / 2 + 10, hy + 6); g.lineTo(W + 20, 150); g.stroke();
+  // home plate and the batter's boxes
+  R(W / 2 - 9, hy + 6, 18, 5, '#f4f1e8');
+  g.strokeStyle = '#ffffff55';
+  g.strokeRect(W / 2 - 46, hy - 2, 26, 22); g.strokeRect(W / 2 + 20, hy - 2, 26, 22);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+//  GAME (one nine-inning game)
+// ───────────────────────────────────────────────────────────────────────────
+const ZONE = { x: 188, y: 126, w: 52, h: 44 };                 // the strike zone (x is set in fit())
+const PITCHES = { FB:{ n:'Fastball', mph:[90,102], br:[0,0],     col:'#ff6b5a' },
+                  CV:{ n:'Curve',    mph:[74,84],  br:[0,22],    col:'#5ad2ff' },
+                  SL:{ n:'Slider',   mph:[82,90],  br:[-20,8],   col:'#c48bff' },
+                  CH:{ n:'Change',   mph:[78,86],  br:[4,10],    col:'#8ef08a' } };
+
+addEventListener('resize', fit); fit();
+let M = null;                                      // the match in progress
+
+function startGame(oppIdx, home, opts = {}){
+  const me = myTeam(), opp = G.teams[oppIdx];
+  M = {
+    home: home ? me : opp, away: home ? opp : me, meHome: home,
+    inning:1, top:true, outs:0, bases:[null,null,null], score:{ home:0, away:0 },
+    balls:0, strikes:0, lineHome:0, lineAway:0,
+    pitcherHome: home ? me.rot[G.rotIdx % 5] : opp.rot[ri(0,4)],
+    pitcherAway: home ? opp.rot[ri(0,4)] : me.rot[G.rotIdx % 5],
+    pcHome:0, pcAway:0, line:[], mode: opts.mode || 'full',       // full | offense | defense
+    park: makePark(home ? me : opp), msg:null, msgT:0, over:false, exc:0,
+  };
+  M.pitcherHome.st.ip = M.pitcherHome.st.ip || 0;
+  phase = 'atbat'; setupAtBat();
+}
+function makePark(team){
+  const kinds = [
+    { wall:'#1f5a2a', wallH:26, feature:'ivy',        pad:0, lf:300, cf:400, rf:330 },
+    { wall:'#1c6e4a', wallH:34, feature:'none',       pad:1, lf:310, cf:390, rf:302 },   // tall left wall
+    { wall:'#17324f', wallH:20, feature:'scoreboard', pad:1, lf:330, cf:410, rf:318 },
+    { wall:'#2a4a6a', wallH:22, feature:'waterfall',  pad:1, lf:322, cf:404, rf:322 },
+    { wall:'#3a2a2a', wallH:18, feature:'none',       pad:1, lf:295, cf:396, rf:314 },   // short porch
+  ];
+  const k = kinds[Math.abs(team.ab.charCodeAt(0) + team.ab.charCodeAt(1)) % kinds.length];
+  return { ...k, night: (team.ab.charCodeAt(0) % 2) === 0, excite:0 };
+}
+
+const batTeam = () => M.top ? M.away : M.home;
+const fldTeam = () => M.top ? M.home : M.away;
+const curPitcher = () => M.top ? M.pitcherHome : M.pitcherAway;
+const weBat = () => (M.top && !M.meHome) || (!M.top && M.meHome);
+// who is actually played by the user right now
+const userBats = () => weBat() && (M.mode === 'full' || M.mode === 'offense');
+const userPitches = () => !weBat() && (M.mode === 'full' || M.mode === 'defense');
+
+function lineupOf(team){ return team.lineup; }
+function batterIdx(team){ team._bi = team._bi || 0; return team._bi; }
+function curBatter(){ const t = batTeam(); return t.lineup[batterIdx(t) % 9]; }
+function nextBatter(){ const t = batTeam(); t._bi = (batterIdx(t) + 1) % 9; }
+
+// ── one pitch ──────────────────────────────────────────────────────────────
+let P = null;        // the pitch in the air
+let phase = 'menu';  // menu | atbat | pitching | flight | play | between | over
+let swing = null;
+
+function setupAtBat(){
+  M.balls = 0; M.strikes = 0;
+  M.batter = curBatter();
+  nextPitch();
+}
+function fatigue(){
+  const p = curPitcher(), pc = M.top ? M.pcHome : M.pcAway;
+  const cap = 40 + (p.stamina - 60) * 1.6;              // ~40 pitches at 60 stamina, ~135 at 120
+  return clamp(pc / cap, 0, 1.8);
+}
+// how tight the pitcher can hit a spot: great control = about a twentieth of the zone,
+// poor control = about a third of it, and tiredness widens it
+function spread(p){
+  const base = lerp(34, 7, clamp((p.control - 60) / 60, 0, 1));
+  return base * (1 + fatigue() * .55);
+}
+function nextPitch(){
+  const p = curPitcher();
+  P = { t:0, thrown:false, type:'FB', tx:0, ty:0, ax:0, ay:0, dur:1, result:null, mph:0 };
+  swing = null;
+  if (userPitches()) phase = 'pitching';
+  else { aiPitch(); phase = 'atbat'; }
+}
+// the computer picks a pitch and a spot: mostly strikes, more care against good hitters
+function aiPitch(){
+  const p = curPitcher(), b = M.batter;
+  const keys = Object.keys(p.pitches);
+  const type = M.strikes === 2 && chance(.55) ? pick(keys.filter(k => k !== 'FB').concat(['FB'])) : pick(keys);
+  // 60% strikes, fewer against dangerous hitters, more when behind in the count
+  let sp = .6 - clamp((b.ovr - 85) / 100, 0, .18) + (M.balls >= 2 ? .18 : 0) - (M.strikes === 2 ? .12 : 0);
+  const strike = chance(clamp(sp, .3, .9));
+  const ax = strike ? rnd(.8, -.8) : (chance(.5) ? rnd(1.9, 1.15) : rnd(-1.15, -1.9));
+  const ay = strike ? rnd(.8, -.8) : (chance(.5) ? rnd(1.8, 1.15) : rnd(-1.15, -1.8));
+  throwPitch(type, ax, ay);
+}
+// aim is in zone units: -1..1 is inside the strike zone
+function throwPitch(type, ax, ay){
+  const p = curPitcher(), info = PITCHES[type], q = p.pitches[type] || 70;
+  const s = spread(p) / 26;                                 // turn pixels into zone units
+  // aiming at a corner with a bad pitcher is much worse than aiming down the middle
+  const edge = clamp((Math.abs(ax) + Math.abs(ay)) / 2, 0, 1.4);
+  const miss = s * (1 + edge * 1.1);
+  P.type = type;
+  P.tx = ax + (bell() - .5) * 2 * miss;
+  P.ty = ay + (bell() - .5) * 2 * miss;
+  P.mph = Math.round(lerp(info.mph[0], info.mph[1], clamp((p.velocity - 60) / 60, 0, 1)) - fatigue() * 3);
+  P.dur = lerp(1050, 620, clamp((P.mph - 72) / 32, 0, 1));  // ms from hand to plate
+  P.br = [info.br[0] * lerp(.6, 1.3, (q - 60) / 60), info.br[1] * lerp(.6, 1.3, (q - 60) / 60)];
+  P.quality = q;
+  P.thrown = true; P.t = 0; P.windup = 420;
+  if (M.top) M.pcHome++; else M.pcAway++;
+}
+
+// where the ball is on screen at time f (0 = hand, 1 = plate)
+function ballAt(f){
+  const e = f * f;                                           // comes at you, so it speeds up on screen
+  const x = lerp(W / 2, ZONE.x + ZONE.w / 2 + P.tx * ZONE.w / 2 + P.br[0] * e, e);
+  const y = lerp(134, ZONE.y + ZONE.h / 2 + P.ty * ZONE.h / 2 + P.br[1] * e, e);
+  const r = lerp(1.2, 5.2, e);
+  return { x, y, r };
+}
+const inZone = () => Math.abs(P.tx) <= 1 && Math.abs(P.ty) <= 1;
+
+// ── swinging ───────────────────────────────────────────────────────────────
+function doSwing(){
+  if (!P || !P.thrown || swing || P.result) return;
+  const f = P.t / P.dur;
+  swing = { f, t:0 };
+  resolveSwing(f);
+}
+function resolveSwing(f){
+  const b = M.batter;
+  const err = Math.abs(f - 1) * P.dur;                       // ms away from perfect
+  const win = lerp(90, 165, clamp((b.contact - 60) / 60, 0, 1));   // the good-timing window
+  const far = Math.abs(P.tx) > 1.35 || Math.abs(P.ty) > 1.35;      // way off the plate
+  if (err > win * 1.9 || (far && err > win * .7)){ P.result = 'swingmiss'; return finishPitch(); }
+  const qual = clamp(1 - err / (win * 1.35), 0, 1) * (far ? .45 : 1) * lerp(.75, 1, clamp((b.contact - 60) / 60, 0, 1));
+  if (qual < .22 || chance(.1 - qual * .08)){ P.result = 'foul'; return finishPitch(); }
+  P.result = 'hit';
+  contact(qual, f);
+}
+// turn the swing into a ball in play
+function contact(qual, f){
+  const b = M.batter;
+  // early swing pulls the ball, late swing goes the other way
+  const pull = clamp((1 - f) * 5, -1, 1) * (b.bats === 'L' ? -1 : 1);
+  const angleDeg = clamp(pull * 40 + (bell() - .5) * 26, -46, 46);      // -45 = left line, +45 = right line
+  // launch angle: good contact gives line drives
+  const la = lerp(-12, 42, bell()) + qual * 10 - (P.ty > .4 ? 8 : 0);
+  // distance: power matters but it is a roll of the dice, so a weak hitter can still go deep
+  const pw = clamp((b.power - 60) / 60, 0, 1);
+  const roll = bell() * .55 + Math.random() * .45;
+  const ev = lerp(58, 108, clamp(qual * .55 + pw * .3 + roll * .35, 0, 1));
+  const dist = ev * ev / 24 * clamp(Math.cos((la - 28) * Math.PI / 110), .35, 1) * lerp(.9, 1.12, qual);
+  P.ball = { angle: angleDeg, la, ev, dist, qual };
+  playBall();
+}
+
+// ── what happens to a ball in play ─────────────────────────────────────────
+function wallDist(angle){
+  const p = M.park, a = clamp(angle, -45, 45);
+  return a < 0 ? lerp(p.lf, p.cf, (a + 45) / 45) : lerp(p.cf, p.rf, a / 45);
+}
+function playBall(){
+  const bb = P.ball, b = M.batter, f = fldTeam();
+  const need = wallDist(bb.angle);
+  const fld = f.lineup.reduce((s, p) => s + p.fielding, 0) / 9;
+  const spd = clamp((b.speed - 60) / 60, 0, 1);
+  let res;
+  if (bb.la < 8){                                             // ground ball
+    const through = clamp(.30 + bb.ev / 300 - (fld - 85) / 300 + spd * .07, .1, .62);
+    if (chance(.04 + (110 - fld) / 900)) res = 'error';
+    else if (chance(through)) res = chance(.08 + spd * .08) ? 'double' : 'single';
+    else if (M.bases[0] && M.outs < 2 && chance(.42)) res = 'dp';
+    else res = 'groundout';
+  } else if (bb.la > 36 || bb.ev < 72){                       // fly ball or pop up
+    if (bb.dist > need && bb.la > 15 && bb.la < 44) res = 'hr';
+    else if (bb.dist > need * .86 && chance(.38)) res = chance(.4) ? 'triple' : 'double';
+    else if (bb.dist > need * .72 && chance(.26)) res = 'single';
+    else res = 'flyout';
+  } else {                                                    // line drive
+    if (bb.dist > need && bb.la > 15) res = 'hr';
+    else if (bb.dist > need * .92 && chance(.5)) res = chance(.3) ? 'triple' : 'double';
+    else if (chance(.62 - (fld - 85) / 400)) res = chance(.26) ? 'double' : 'single';
+    else res = 'lineout';
+  }
+  P.play = res;
+  phase = 'play'; P.playT = 0;
+}
+
+// ── applying the result ────────────────────────────────────────────────────
+function advance(n, batterSafe = true, rbiCap = 9){
+  // move every runner up n bases; anybody past third scores
+  let runs = 0;
+  const b = M.bases;
+  for (let i = 2; i >= 0; i--){
+    if (!b[i]) continue;
+    const to = i + n;
+    if (to >= 3){ runs++; score(b[i]); b[i] = null; }
+    else { b[to] = b[i]; b[i] = null; }
+  }
+  if (batterSafe){ if (n - 1 >= 3){ runs++; score(M.batter); } else b[n - 1] = M.batter; }
+  return runs;
+}
+function score(p){
+  if (M.top) M.score.away++; else M.score.home++;
+  p.st.r++;
+  M.exc = 1;
+}
+function applyPlay(res){
+  const b = M.batter, st = b.st, p = curPitcher();
+  let runs = 0, out = 0, txt = '';
+  st.pa++;
+  switch(res){
+    case 'hr': { st.ab++; st.h++; st.hr++; const before = M.bases.filter(Boolean).length;
+      runs = advance(4); st.rbi += before + 1; txt = before === 3 ? 'GRAND SLAM!' : 'GONE!'; M.exc = 1.4; break; }
+    case 'triple': st.ab++; st.h++; runs = advance(3); st.rbi += runs; txt = 'TRIPLE!'; M.exc = 1; break;
+    case 'double': { st.ab++; st.h++;
+      // a runner on first usually scores on a double, more often if he can run
+      const r1 = M.bases[0];
+      if (r1 && chance(.45 + clamp((r1.speed - 85) / 300, -.1, .12))){ score(r1); M.bases[0] = null; runs++; }
+      runs += advance(2); st.rbi += runs; txt = 'DOUBLE!'; M.exc = .8; break; }
+    case 'single': { st.ab++; st.h++;
+      // a runner on second often scores on a single, and sometimes first to third
+      const r2 = M.bases[1];
+      if (r2 && chance(.55 + clamp((r2.speed - 85) / 300, -.12, .15))){ score(r2); M.bases[1] = null; runs++; }
+      else if (M.bases[0] && !M.bases[1] && chance(.28)){ M.bases[1] = M.bases[0]; M.bases[0] = null; }
+      runs += advance(1); st.rbi += runs; txt = 'BASE HIT'; M.exc = .6; break; }
+    case 'error':  st.ab++; runs = advance(1); txt = 'ERROR!'; break;
+    case 'dp':     st.ab++; out = 2; M.bases[0] = null; txt = 'DOUBLE PLAY'; break;
+    case 'groundout': case 'flyout': case 'lineout':
+      st.ab++; out = 1;
+      if (res === 'flyout' && M.bases[2] && M.outs < 2 && chance(.55)){ runs += advance(1, false); st.rbi += runs; txt = 'SAC FLY'; }
+      else txt = res === 'groundout' ? 'GROUND OUT' : res === 'flyout' ? 'FLY OUT' : 'LINE OUT';
+      break;
+    case 'k':   st.ab++; st.k++; p.st.ko++; out = 1; txt = 'STRIKE THREE!'; break;
+    case 'bb':  st.bb++; { const forced = M.bases[0] && (!M.bases[1] || M.bases[2] !== null);
+      runs = walkAdvance(); } txt = 'WALK'; break;
+    case 'hbp': runs = walkAdvance(); txt = 'HIT BY PITCH'; break;
+  }
+  if (runs) p.st.er += runs;
+  M.outs += out;
+  say(txt);
+  if (weBat()) G.coins += ({ single:25, double:40, triple:75, hr:200 })[res] || 0;
+  if (!weBat() && res === 'k') G.coins += 30;
+  nextBatter();
+  if (M.outs >= 3) endHalf(); else setupAtBat();
+}
+function walkAdvance(){
+  // the batter takes first; runners only move when they are forced
+  const b = M.bases; let runs = 0;
+  if (!b[0]) { b[0] = M.batter; return 0; }
+  if (!b[1]) { b[1] = b[0]; b[0] = M.batter; return 0; }
+  if (!b[2]) { b[2] = b[1]; b[1] = b[0]; b[0] = M.batter; return 0; }
+  score(b[2]); b[2] = b[1]; b[1] = b[0]; b[0] = M.batter; return 1;
+}
+function say(t){ M.msg = t; M.msgT = 0; }
+function finishPitch(){
+  if (P.result === 'ball'){ M.balls++; if (M.balls >= 4) return applyPlay('bb'); }
+  else if (P.result === 'swingmiss' || P.result === 'called'){ M.strikes++; if (M.strikes >= 3) return applyPlay('k'); }
+  else if (P.result === 'foul'){ if (M.strikes < 2) M.strikes++; }
+  P.done = true; P.waitT = 0;
+}
+function endHalf(){
+  const p = curPitcher(); p.st.ip += 1;
+  M.outs = 0; M.bases = [null,null,null];
+  if (!M.top){ M.inning++; }
+  M.top = !M.top;
+  // game over?
+  const i = M.inning, s = M.score;
+  const mercy = i > 7 && Math.abs(s.home - s.away) >= 10;
+  if (mercy || (i > 9 && s.home !== s.away) || (i >= 9 && !M.top && s.home > s.away)) return gameOver();
+  setupAtBat();
+}
+function gameOver(){
+  M.over = true; phase = 'over';
+  const me = myTeam(), myRuns = M.meHome ? M.score.home : M.score.away, oth = M.meHome ? M.score.away : M.score.home;
+  const won = myRuns > oth;
+  me[won ? 'w' : 'l']++; me.rs += myRuns; me.ra += oth;
+  G.coins += won ? 500 : 120;
+  if (!M.meHome ? M.score.home === 0 : M.score.away === 0) G.coins += 500;      // shutout
+  const sg = G.sched[G.day]; if (sg){ sg.done = true; sg.rs = myRuns; sg.ra = oth; }
+  G.day++; G.rotIdx++;
+  save();
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+//  DRAWING THE GAME
+// ───────────────────────────────────────────────────────────────────────────
+let frame = 0;
+
+function drawBatterView(dt){
+  const park = M.park; park.excite = M.exc;
+  drawStands(park, frame);
+  drawInfield(park);
+
+  // the pitcher on the mound, winding up
+  const pit = curPitcher(), ft = fldTeam();
+  const wind = P && P.thrown ? clamp(1 - P.t / 160, 0, 1) : (P && P.windupT ? 1 : 0);
+  drawPlayer(W / 2, 134, 1.15, pit.look, ft.c1, ft.c2, {});
+  if (P && !P.thrown) R(W / 2 + 7, 118 + Math.sin(frame / 8) * 2, 3, 3, '#f4f1e8');
+
+  // the catcher crouching right in front of us, seen from behind
+  const ft2 = fldTeam(), cc = shade(ft2.c1, .10), cy = H - 2;
+  R(W / 2 - 16, cy - 26, 32, 22, cc);                            // back and shoulders
+  R(W / 2 - 16, cy - 26, 32, 3, shade(ft2.c1, .26));
+  R(W / 2 - 13, cy - 6, 9, 6, '#d8d8d8'); R(W / 2 + 4, cy - 6, 9, 6, '#d8d8d8');   // shin guards
+  R(W / 2 - 20, cy - 18, 5, 12, shade(ft2.c1, -.04));            // arms
+  R(W / 2 + 15, cy - 18, 5, 12, shade(ft2.c1, -.04));
+  R(W / 2 - 9, cy - 38, 18, 13, '#5a6373');                      // helmet
+  R(W / 2 - 9, cy - 38, 18, 3, '#79839a');
+  for (let i = -6; i <= 6; i += 3) R(W / 2 + i, cy - 33, 1, 7, '#262a33');   // mask bars
+  R(W / 2 - 27, cy - 16, 10, 9, '#9a7a44');                      // mitt
+  R(W / 2 - 27, cy - 16, 10, 2, '#b89a5e');
+
+  // the batter stands in the box, big in the foreground
+  const bt = batTeam(), b = M.batter, side = b.bats === 'L' ? 1 : -1;
+  const bx = W / 2 + side * 56;
+  const sw = swing ? clamp(swing.t / 130, 0, 1) : 0;
+  // the bat is behind him at rest and swings across in front, never over his face
+  const ang = sw > 0 ? lerp(-2.5, 1.0, sw) : -2.5 + Math.sin(frame / 14) * .06;
+  if (sw < .35){ g.save(); g.translate(bx + side * 8, H - 48); g.rotate(ang * side);
+    R(0, -1, 30, 4, '#c89a5a'); R(23, -2, 8, 6, '#b8884a'); g.restore(); }
+  drawPlayer(bx, H - 10, 1.85, b.look, bt.c1, bt.c2, {});
+  if (sw >= .35){ g.save(); g.translate(bx + side * 8, H - 48); g.rotate(ang * side);
+    R(0, -1, 30, 4, '#c89a5a'); R(23, -2, 8, 6, '#b8884a'); g.restore(); }
+
+  // strike zone
+  g.strokeStyle = '#ffffff44'; g.lineWidth = 1;
+  g.strokeRect(ZONE.x + .5, ZONE.y + .5, ZONE.w, ZONE.h);
+
+  // the pitch
+  if (P && P.thrown && !P.done && P.t < P.dur){
+    const f = P.t / P.dur, p = ballAt(f);
+    // a short trail so you can read the speed
+    for (let i = 1; i <= 3; i++){
+      const q = ballAt(clamp(f - i * .05, 0, 1));
+      R(q.x - q.r / 2, q.y - q.r / 2, q.r, q.r, `rgba(255,255,255,${.1 * (4 - i)})`);
+    }
+    g.fillStyle = '#fdfdf5'; g.beginPath(); g.arc(p.x, p.y, p.r, 0, 7); g.fill();
+    R(p.x - p.r, p.y - 1, p.r * 2, 1, '#e0533f');       // the seams
+  }
+  drawHUD();
+  if (M.msg){ textb(M.msg, W / 2, 86, M.msg.includes('!') ? '#ffd23f' : '#fff', 13, 'center'); }
+}
+
+// the top bar: score, inning, count, bases
+function drawHUD(){
+  R(0, 0, W, 16, '#0b1018dd');
+  const a = M.away, h = M.home;
+  textb(a.ab, 6, 4, a.c2 === '#ffffff' ? '#fff' : a.c2, 8); textb(String(M.score.away), 36, 4, '#fff', 8);
+  textb(h.ab, 56, 4, h.c2 === '#ffffff' ? '#fff' : h.c2, 8); textb(String(M.score.home), 86, 4, '#fff', 8);
+  textb((M.top ? '▲' : '▼') + M.inning, 108, 4, '#ffd23f', 8);
+  textb(`${M.balls}-${M.strikes}`, 140, 4, '#fff', 8);
+  for (let i = 0; i < M.outs; i++) R(166 + i * 6, 6, 4, 4, '#ff6b5a');
+  // the diamond of bases
+  const bx = 200, by = 8;
+  [[0, 5, -0], [1, 0, -5], [2, -5, 0]].forEach(([i, dx, dy]) => {
+    g.save(); g.translate(bx + dx, by + dy); g.rotate(Math.PI / 4);
+    g.fillStyle = M.bases[i] ? '#ffd23f' : '#ffffff33'; g.fillRect(-3, -3, 6, 6); g.restore();
+  });
+  // who is up / who is pitching
+  const b = M.batter, p = curPitcher();
+  textb(`${b.name}  ${b.pos}`, 232, 2, '#fff', 7);
+  textb(`AVG ${(b.st.ab ? b.st.h / b.st.ab : 0).toFixed(3).slice(1)}`, 232, 9, '#9aa6bd', 6);
+  textb(`P ${p.name}`, W - 6, 2, '#fff', 7, 'right');
+  textb(`${M.top ? M.pcHome : M.pcAway} pitches`, W - 6, 9, fatigue() > 1 ? '#ff6b5a' : '#9aa6bd', 6, 'right');
+}
+
+// ── the pitching controls ──────────────────────────────────────────────────
+let aim = { x:0, y:0 }, pitchSel = 'FB';
+function drawPitchUI(){
+  const p = curPitcher(), keys = Object.keys(p.pitches);
+  R(0, H - 34, W, 34, '#0b1018e8');
+  const bw2 = 66;
+  keys.forEach((k, i) => {
+    const x = 6 + i * (bw2 + 4), on = pitchSel === k;
+    R(x, H - 30, bw2, 15, on ? PITCHES[k].col : '#1a2230');
+    R(x, H - 30, bw2, 1, on ? shade(PITCHES[k].col, .2) : '#2a3550');
+    const T = on ? text : textb;
+    T(PITCHES[k].n, x + 5, H - 26, on ? '#0b1018' : '#fff', 7);
+    T(String(p.pitches[k]), x + bw2 - 4, H - 26, on ? '#0b1018' : colOf(p.pitches[k]), 7, 'right');
+  });
+  textb('tap the zone to throw', W / 2, H - 12, '#9aa6bd', 7, 'center');
+  // the circle showing where it might actually go
+  const s = spread(p) * (1 + clamp((Math.abs(aim.x) + Math.abs(aim.y)) / 2, 0, 1.4) * 1.1);
+  const cx = ZONE.x + ZONE.w / 2 + aim.x * ZONE.w / 2, cy = ZONE.y + ZONE.h / 2 + aim.y * ZONE.h / 2;
+  g.strokeStyle = s > 26 ? '#ff6b5a99' : s > 15 ? '#ffd23f99' : '#54d67a99'; g.lineWidth = 1;
+  g.beginPath(); g.arc(cx, cy, s, 0, 7); g.stroke();
+  R(cx - 1, cy - 1, 2, 2, '#fff');
+}
+
+// ── the top-down replay of a ball in play ──────────────────────────────────
+function drawPlayView(t){
+  const bb = P.ball, park = M.park;
+  R(0, 0, W, H, '#0e1a14');
+  const hx = W / 2, hy = H - 26, sc = .42;                    // home plate on screen, feet -> pixels
+  // grass wedge
+  g.fillStyle = '#2c7a3c'; g.beginPath(); g.moveTo(hx, hy);
+  for (let a = -45; a <= 45; a += 3){ const d = wallDist(a) * sc, r = (a - 90) * Math.PI / 180;
+    g.lineTo(hx + Math.cos(r + Math.PI / 2) * d * -1, hy - Math.sin(r + Math.PI / 2) * d * -1); }
+  g.closePath(); g.fill();
+  // infield dirt
+  g.fillStyle = '#b9815a'; g.beginPath(); g.moveTo(hx, hy);
+  for (let a = -45; a <= 45; a += 5){ const d = 95 * sc * 2.1, r = a * Math.PI / 180;
+    g.lineTo(hx + Math.sin(r) * d, hy - Math.cos(r) * d); }
+  g.closePath(); g.fill();
+  // bases
+  const basePt = i => { const a = [-45, 0, 45][i] * Math.PI / 180, d = 90 * sc * 2.1;
+    return { x: hx + Math.sin(a) * d, y: hy - Math.cos(a) * d }; };
+  [0,1,2].forEach(i => { const b = basePt(i); g.save(); g.translate(b.x, b.y); g.rotate(Math.PI/4);
+    g.fillStyle = '#f4f1e8'; g.fillRect(-3,-3,6,6); g.restore(); });
+  // fielders
+  const ft = fldTeam();
+  [[-32,120],[-14,165],[0,185],[16,165],[34,120],[-26,70],[-8,58],[12,58],[28,70]].forEach(([a, d], i) => {
+    const r = a * Math.PI / 180, x = hx + Math.sin(r) * d * sc * 2.1, y = hy - Math.cos(r) * d * sc * 2.1;
+    R(x - 2, y - 4, 4, 6, ft.c1); R(x - 2, y - 7, 4, 3, ft.look || '#e0ad7e');
+  });
+  // the ball's path
+  const f = clamp(t / 1500, 0, 1);
+  const a = bb.angle * Math.PI / 180, dist = bb.dist * f * sc;
+  const bxp = hx + Math.sin(a) * dist, byp = hy - Math.cos(a) * dist;
+  const hop = Math.sin(f * Math.PI) * clamp(bb.la, 0, 45) * .7;
+  for (let i = 0; i < 10; i++){
+    const q = clamp(f - i * .03, 0, 1), d2 = bb.dist * q * sc;
+    const x2 = hx + Math.sin(a) * d2, y2 = hy - Math.cos(a) * d2 - Math.sin(q * Math.PI) * clamp(bb.la, 0, 45) * .7;
+    R(x2 - 1, y2 - 1, 2, 2, `rgba(255,255,255,${.08 * (10 - i)})`);
+  }
+  R(bxp - 2, byp - hop - 2, 4, 4, '#fdfdf5');
+  R(bxp - 2, byp - 1, 4, 1, '#00000055');                     // shadow on the grass
+  textb(`${Math.round(bb.ev)} MPH  ${Math.round(bb.dist)} FT`, W / 2, 10, '#9aa6bd', 8, 'center');
+  if (M.msg) textb(M.msg, W / 2, 24, '#ffd23f', 14, 'center');
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+//  MENUS
+// ───────────────────────────────────────────────────────────────────────────
+let menu = 'title', btns = [];
+function button(x, y, w, h, label, fn, col = '#1a2230', tc = '#fff'){
+  R(x, y, w, h, col); R(x, y, w, 1, shade(col, .15)); R(x, y + h - 1, w, 1, shade(col, -.2));
+  textb(label, x + w / 2, y + h / 2 - 4, tc, 8, 'center');
+  btns.push({ x, y, w, h, fn });
+}
+function drawMenu(){
+  btns = [];
+  R(0, 0, W, H, '#0b1018');
+  for (let i = 0; i < 60; i++) R(0, i, W, 1, `rgb(${11 + i / 3 | 0},${16 + i / 2 | 0},${24 + i | 0})`);
+  if (menu === 'title'){
+    textb('RETRO', W / 2, 30, '#ffd23f', 26, 'center');
+    textb('BASEBALL', W / 2, 58, '#fff', 26, 'center');
+    const me = G && myTeam();
+    if (me){
+      textb(`${me.city} ${me.nick}   ${me.w}-${me.l}`, W / 2, 96, me.c2, 9, 'center');
+      button(W / 2 - 70, 116, 140, 22, G.day < G.seasonLen ? `PLAY GAME ${G.day + 1}/${G.seasonLen}` : 'SEASON DONE', () => {
+        if (G.day >= G.seasonLen) return;
+        const s = G.sched[G.day]; startGame(s.opp, s.home);
+      }, '#2f6fe0');
+      button(W / 2 - 70, 142, 66, 18, 'ROSTER', () => menu = 'roster');
+      button(W / 2 + 4, 142, 66, 18, 'STANDINGS', () => menu = 'stand');
+      textb(`${G.coins.toLocaleString()} coins`, W / 2, 168, '#ffd23f', 8, 'center');
+      button(W / 2 - 40, 186, 80, 16, 'NEW TEAM', () => menu = 'pick', '#2a1a1a');
+    } else button(W / 2 - 70, 120, 140, 24, 'START', () => menu = 'pick', '#2f6fe0');
+  }
+  else if (menu === 'pick'){
+    textb('PICK YOUR TEAM', W / 2, 8, '#ffd23f', 10, 'center');
+    TEAMS.forEach((t, i) => {
+      const x = 8 + (i % 6) * 70, y = 26 + Math.floor(i / 6) * 32;
+      R(x, y, 66, 28, t.c1); R(x, y, 66, 3, t.c2);
+      textb(t.ab, x + 33, y + 8, '#fff', 9, 'center');
+      textb(t.nick.slice(0, 9), x + 33, y + 19, '#ffffffaa', 6, 'center');
+      btns.push({ x, y, w:66, h:28, fn: () => { newGame(t.ab); menu = 'title'; } });
+    });
+  }
+  else if (menu === 'roster'){
+    const me = myTeam();
+    textb(`${me.city} ${me.nick}`, 8, 6, me.c2, 10);
+    textb('LINEUP', 8, 22, '#9aa6bd', 7); textb('CON POW SPD FLD', 150, 22, '#9aa6bd', 7);
+    me.lineup.forEach((p, i) => {
+      const y = 32 + i * 11;
+      textb(p.pos, 8, y, '#ffd23f', 7); textb(p.name, 26, y, '#fff', 7);
+      [p.contact, p.power, p.speed, p.fielding].forEach((v, j) => textb(String(v), 158 + j * 26, y, colOf(v), 7));
+      textb(String(p.ovr), 266, y, colOf(p.ovr), 8);
+    });
+    textb('ROTATION', 290, 22, '#9aa6bd', 7); textb('VEL CTL STA', 360, 22, '#9aa6bd', 7);
+    me.rot.concat(me.pen).slice(0, 10).forEach((p, i) => {
+      const y = 32 + i * 11;
+      textb(p.pos, 290, y, '#54d67a', 6); textb(p.name.split(' ')[1].slice(0, 8), 306, y, '#fff', 7);
+      [p.velocity, p.control, p.stamina].forEach((v, j) => textb(String(v), 362 + j * 22, y, colOf(v), 7));
+    });
+    button(W - 56, H - 20, 50, 16, 'BACK', () => menu = 'title');
+  }
+  else if (menu === 'stand'){
+    textb('STANDINGS', W / 2, 6, '#ffd23f', 10, 'center');
+    const list = G.teams.map((t, i) => ({ ...t, i })).sort((a, b) => (b.w - b.l) - (a.w - a.l));
+    list.slice(0, 15).forEach((t, i) => {
+      const y = 22 + i * 13, mine = t.i === G.team;
+      textb(`${t.ab}`, 20, y, mine ? '#ffd23f' : '#fff', 8);
+      textb(`${t.w}-${t.l}`, 60, y, '#9aa6bd', 8);
+      textb(t.nick, 100, y, mine ? '#ffd23f' : '#9aa6bd', 7);
+    });
+    list.slice(15).forEach((t, i) => {
+      const y = 22 + i * 13, mine = t.i === G.team;
+      textb(`${t.ab}`, 230, y, mine ? '#ffd23f' : '#fff', 8);
+      textb(`${t.w}-${t.l}`, 270, y, '#9aa6bd', 8);
+      textb(t.nick, 310, y, mine ? '#ffd23f' : '#9aa6bd', 7);
+    });
+    button(W - 56, H - 20, 50, 16, 'BACK', () => menu = 'title');
+  }
+}
+function drawOver(){
+  btns = [];
+  R(0, 0, W, H, '#0b1018ee');
+  const my = M.meHome ? M.score.home : M.score.away, ot = M.meHome ? M.score.away : M.score.home;
+  textb(my > ot ? 'WIN' : 'LOSS', W / 2, 46, my > ot ? '#54d67a' : '#ff6b5a', 24, 'center');
+  textb(`${M.away.ab} ${M.score.away}   -   ${M.home.ab} ${M.score.home}`, W / 2, 84, '#fff', 12, 'center');
+  textb(`+${my > ot ? 500 : 120} coins`, W / 2, 108, '#ffd23f', 9, 'center');
+  button(W / 2 - 50, 140, 100, 22, 'CONTINUE', () => { M = null; phase = 'menu'; menu = 'title'; }, '#2f6fe0');
+}
+
+// in-game menu button (switch to sim / offense only / defense only)
+function drawGameMenuBtn(){
+  R(W - 22, H - 18, 18, 14, '#0b1018cc'); textb('☰', W - 13, H - 15, '#fff', 8, 'center');
+  btns.push({ x: W - 24, y: H - 20, w: 22, h: 18, fn: () => { phase = 'gmenu'; } });
+}
+function drawGameMenu(){
+  btns = [];
+  R(0, 0, W, H, '#0b1018e8');
+  textb('WHAT DO YOU WANT TO PLAY?', W / 2, 36, '#ffd23f', 10, 'center');
+  const opts = [['PLAY EVERYTHING','full'],['OFFENSE ONLY','offense'],['DEFENSE ONLY','defense'],['SIM THE REST','sim']];
+  opts.forEach(([l, m], i) => button(W / 2 - 80, 62 + i * 26, 160, 20, l, () => {
+    if (m === 'sim'){ simRest(); return; }
+    M.mode = m; phase = 'atbat'; nextPitch();
+  }, M.mode === m ? '#2f6fe0' : '#1a2230'));
+  button(W / 2 - 40, 174, 80, 18, 'BACK', () => { phase = userPitches() ? 'pitching' : 'atbat'; });
+}
+
+// ── simulating ─────────────────────────────────────────────────────────────
+function simPitch(){
+  // A quick at-bat with no animation. The base rates are the ones the user wants: about a
+  // .300 average, one home run per team per game and 22% strikeouts. A player's ratings push
+  // each rate up or down from there.
+  const b = M.batter, p = curPitcher();
+  // Ratings swing the result hard: a lineup of red cards (110+) should bury an average team,
+  // and a green-card lineup (70s) should get buried. 85 is the middle of the league.
+  const con = (b.contact - 85) / 30, pow = (b.power - 85) / 30, spd = (b.speed - 85) / 30;
+  const vel = (p.velocity - 85) / 30, ctl = (p.control - 85) / 30, tired = fatigue() * .35;
+  let k  = clamp(.22 - con * .040 + vel * .060 - tired * .05, .02, .55);
+  let bb = clamp(.085 + con * .010 - ctl * .034 + tired * .10, .01, .30);
+  let hr = clamp(.026 + pow * .015 - vel * .014 + tired * .012, .001, .20);
+  let h1 = clamp(.190 + con * .032 + spd * .012 - ctl * .034 + tired * .03, .03, .36);
+  let h2 = clamp(.055 + con * .010 + pow * .008 - ctl * .013, .006, .14);
+  let h3 = clamp(.005 + spd * .004, 0, .03);
+  // test hook: pretend the person playing is better than the computer would be with the same cards
+  if (window.__EDGE && weBat()){ const e = window.__EDGE; h1 *= e; h2 *= e; h3 *= e; hr *= e; k /= e; }
+  if (window.__EDGE && !weBat()) k *= window.__EDGE;
+  const r = Math.random();
+  let a = k;                       if (r < a) return applyPlay('k');
+  a += bb;                         if (r < a) return applyPlay(chance(.07) ? 'hbp' : 'bb');
+  a += hr;                         if (r < a) return applyPlay('hr');
+  a += h1;                         if (r < a) return applyPlay('single');
+  a += h2;                         if (r < a) return applyPlay('double');
+  a += h3;                         if (r < a) return applyPlay('triple');
+  a += .012;                       if (r < a) return applyPlay('error');
+  // everything left is an out in play; with a runner on first a grounder can turn two
+  if (M.bases[0] && M.outs < 2 && chance(.22)) return applyPlay('dp');
+  return applyPlay(pick(['groundout','groundout','flyout','flyout','lineout']));
+}
+function simRest(){
+  let guard = 0;
+  while (!M.over && guard++ < 4000) simPitch();
+  if (!M.over) gameOver();
+  phase = 'over';
+}
+function simHalfIfNeeded(){
+  // if the user only plays one side, sim the other side's half inning
+  if (M.over) return false;
+  if ((M.mode === 'offense' && !weBat()) || (M.mode === 'defense' && weBat())){
+    const side = M.top, inn = M.inning;
+    let guard = 0;
+    while (!M.over && M.top === side && M.inning === inn && guard++ < 300) simPitch();
+    return true;
+  }
+  return false;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+//  INPUT
+// ───────────────────────────────────────────────────────────────────────────
+let touch = null;
+const toPix = e => ({ x: ((e.clientX * (devicePixelRatio || 1)) - OX) / SC, y: ((e.clientY * (devicePixelRatio || 1)) - OY) / SC });
+
+function down(e){
+  const p = toPix(e);
+  touch = { x0:p.x, y0:p.y, x:p.x, y:p.y, t:performance.now(), used:false };
+  for (const b of btns) if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h){ b.fn(); touch.used = true; return; }
+  if (phase === 'pitching'){
+    // tap inside the zone area to aim and throw
+    if (p.y > 100 && p.y < H - 36){
+      aim.x = clamp((p.x - (ZONE.x + ZONE.w / 2)) / (ZONE.w / 2), -2, 2);
+      aim.y = clamp((p.y - (ZONE.y + ZONE.h / 2)) / (ZONE.h / 2), -2, 2);
+      throwPitch(pitchSel, aim.x, aim.y); phase = 'atbat'; touch.used = true;
+    }
+  }
+}
+function move(e){ if (!touch) return; const p = toPix(e); touch.x = p.x; touch.y = p.y;
+  if (!touch.used && phase === 'atbat' && userBats() && touch.y0 - touch.y > 16){ doSwing(); touch.used = true; } }
+function up(){ touch = null; }
+cv.addEventListener('pointerdown', e => { e.preventDefault(); down(e); });
+cv.addEventListener('pointermove', e => { e.preventDefault(); move(e); });
+cv.addEventListener('pointerup', e => { e.preventDefault(); up(); });
+addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp'){ e.preventDefault(); if (phase === 'atbat' && userBats()) doSwing(); }
+});
+// test hooks
+window.__rb = { get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
+  newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
+  tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
+
+// ───────────────────────────────────────────────────────────────────────────
+//  MAIN LOOP
+// ───────────────────────────────────────────────────────────────────────────
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(50, now - last); last = now; frame++;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = '#05070b'; g.fillRect(0, 0, cv.width, cv.height);
+  g.setTransform(SC, 0, 0, SC, OX, OY);
+
+  if (M) M.exc = Math.max(0, M.exc - dt / 1400);
+
+  if (phase === 'menu'){ drawMenu(); }
+  else if (phase === 'over'){ drawBatterViewSafe(dt); drawOver(); }
+  else if (phase === 'gmenu'){ drawBatterViewSafe(dt); drawGameMenu(); }
+  else if (phase === 'play'){
+    P.playT += dt;
+    drawPlayView(P.playT);
+    if (P.playT > 400 && !P.applied){ P.applied = true; applyPlay(P.play); }
+    if (P.playT > 1900){ if (!M.over){ if (!simHalfIfNeeded()) {} if (!M.over) nextPitch(); if (!M.over && phase === 'play') phase = userPitches() ? 'pitching' : 'atbat'; } }
+    btns = []; drawGameMenuBtn();
+  }
+  else if (M){
+    // the pitch flying in
+    if (P && P.thrown && !P.done){
+      P.t += dt;
+      if (swing) swing.t += dt;
+      const f = P.t / P.dur;
+      if (f >= 1 && !P.result){
+        // nobody swung: ball or called strike
+        P.result = inZone() ? 'called' : 'ball';
+        say(P.result === 'called' ? 'STRIKE' : 'BALL');
+        finishPitch();
+      }
+    }
+    if (P && P.done){
+      P.waitT += dt;
+      if (P.waitT > 700){
+        if (!M.over){ if (!simHalfIfNeeded() || !M.over){ if (!M.over) nextPitch(); } }
+      }
+    }
+    M.msgT += dt; if (M.msgT > 1400) M.msg = null;
+    drawBatterView(dt);
+    btns = [];
+    if (phase === 'pitching') drawPitchUI();
+    else if (userBats() && !swing) textb('SWIPE UP TO SWING', W - 30, H - 14, '#ffffff55', 7, 'right');
+    drawGameMenuBtn();
+    if (phase === 'pitching'){
+      const p = curPitcher(), keys = Object.keys(p.pitches);
+      keys.forEach((k, i) => btns.push({ x: 6 + i * 70, y: H - 30, w:66, h:15, fn: () => pitchSel = k }));
+    }
+  }
+  requestAnimationFrame(loop);
+}
+function drawBatterViewSafe(dt){ try { drawBatterView(dt); } catch(e){ R(0,0,W,H,'#0b1018'); } }
+
+// ── boot ───────────────────────────────────────────────────────────────────
+load();
+requestAnimationFrame(loop);
+})();
+</script>
