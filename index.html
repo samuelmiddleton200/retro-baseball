@@ -102,7 +102,7 @@ function fit(){
   W = clamp(Math.round(H * (cv.width / cv.height)), 300, 640);   // no black bars on any phone
   SC = cv.height / H;
   OX = (cv.width - W * SC) / 2; OY = 0;
-  ZONE.x = W / 2 - 26;
+  ZONE.x = W / 2 - ZONE.w / 2;
   g.imageSmoothingEnabled = false;
 }
 // fit() is called once ZONE exists, further down
@@ -685,7 +685,7 @@ function drawBatter(x, y, p, c1, c2, swingT, idle, num){
   const c = sprite(key, () => buildPlayer(
     swingT == null ? batterPose(null, idleQ * 6) : batterPose(q),
     p.look, c1, c2, { number:num, helmet:1 }));
-  blit(c, x, y, .78, p.bats === 'L');
+  blit(c, x, y, .70, p.bats === 'L');
 }
 // the pitcher, from the front, at half size because he is out at the mound
 function drawPitcher(x, y, p, c1, c2, u, num){
@@ -705,124 +705,214 @@ function drawCatcher(x, y, p, c1, c2){
       nKn:[32,82], nAn:[41,101], fKn:[80,82], fAn:[71,101],
       gloveA:200,
     }, p.look, c1, c2, { back:1, hardhat:1 }));
-  blit(c, x, y, .62, false);
+  blit(c, x, y, .52, false);
 }
 // a fielder far away in the replay: a few pixels, but still shaded
-function drawMini(x, y, lk, c1, c2){
-  R(x - 2, y - 11, 5, 3, shade(c1, .1));
-  R(x - 2, y - 8, 5, 6, c1); R(x + 1, y - 8, 2, 6, shade(c1, -.15));
-  R(x - 2, y - 2, 2, 3, '#e9ecf2'); R(x + 1, y - 2, 2, 3, '#e9ecf2');
-  R(x - 2, y, 5, 1, '#1d1a22');
-  R(x - 2, y - 15, 5, 4, lk.skin); R(x - 2, y - 16, 5, 2, c1);
+function drawMini(x, y, lk, c1, c2, k = 1){
+  k = clamp(k, .5, 1.5);                                  // close up, the big sprites take over
+  const w = Math.max(3, Math.round(5 * k)), u = Math.max(1, Math.round(k));
+  const leg = Math.max(2, Math.round(3 * k)), tor = Math.max(3, Math.round(6 * k));
+  const hd = Math.max(2, Math.round(4 * k));
+  R(x - w / 2, y - leg, leg > 2 ? Math.round(w / 2.4) : 1, leg, '#e9ecf2');
+  R(x + w / 2 - Math.round(w / 2.4), y - leg, leg > 2 ? Math.round(w / 2.4) : 1, leg, '#e9ecf2');
+  R(x - w / 2, y - leg - tor, w, tor, c1);
+  R(x + w / 2 - u, y - leg - tor, u, tor, shade(c1, -.18));
+  R(x - w / 2, y - leg - tor, w, u, shade(c1, .16));
+  R(x - w / 2, y - 1, w, 1, '#1d1a22');
+  R(x - hd / 2, y - leg - tor - hd, hd, hd, lk.skin);
+  R(x - hd / 2 - u, y - leg - tor - hd - u, hd + u * 2, Math.max(1, Math.round(2 * k)), c1);
+  R(x - w / 2 - u, y - leg - tor + u, u, Math.round(tor * .6), '#8a5f33');   // his glove
 }
 
 // ── the ballpark seen from behind the batter ───────────────────────────────
-function drawStands(park, t){
-  const night = park.night;
-  // ---- sky: a soft gradient, warm at the horizon by day, deep blue at night
-  for (let i = 0; i < 44; i++){
-    const f = i / 44;
-    R(0, i, W, 1, night ? `rgb(${6 + f * 12 | 0},${10 + f * 18 | 0},${26 + f * 24 | 0})`
-                        : `rgb(${96 + f * 76 | 0},${154 + f * 62 | 0},${212 + f * 28 | 0})`);
-  }
-  if (night) for (let i = 0; i < 26; i++) R((i * 61 + 7) % W, (i * 13) % 20, 1, 1, '#2c3a60');
-  // ---- light towers
-  [W * .18, W * .82].forEach(x => {
-    R(x - 1, 22, 3, 14, night ? '#2a3040' : '#55606f');
-    R(x - 11, 17, 23, 6, night ? '#1d2330' : '#49525f');
-    for (let i = 0; i < 5; i++) R(x - 9 + i * 4, 18, 3, 3, night ? '#fff6c8' : '#aab3c0');
-    if (night) R(x - 13, 16, 27, 8, '#fff6c822');
-  });
-  // ---- the upper deck, then the crowd, then the lower bowl
-  R(0, 34, W, 4, night ? '#161b27' : '#49505f');
-  R(0, 34, W, 1, night ? '#222a3a' : '#5c6473');
-  for (let row = 0; row < 5; row++){
-    const y = 38 + row * 5, dim = .18 + row * .13;            // back rows sit in shadow
-    const base = night ? [20, 23, 33] : [78, 84, 99];
-    R(0, y, W, 5, `rgb(${base[0] * (1 - dim * .5) | 0},${base[1] * (1 - dim * .5) | 0},${base[2] * (1 - dim * .5) | 0})`);
-    for (let x = (row % 2) * 4; x < W; x += 7){
-      if (((x / 7) | 0) % 11 === 0) continue;                 // aisles between the sections
-      const seed = (x * 7 + row * 31) % 97;
-      const bob = park.excite > 0 ? Math.sin(t / 80 + seed) * park.excite * 2.2 : 0;
-      const c = CROWD[seed % CROWD.length];
-      R(x, y + 2 - bob, 2, 2, night ? mix(c, '#101420', .62) : mix(c, '#2a3040', dim));
-      R(x, y + 3 - bob, 2, 1, night ? '#12161f' : mix(c, '#000000', .55));
-    }
-  }
-  // ---- the outfield wall
-  const wy = 61;
-  R(0, wy, W, park.wallH, park.wall);
-  R(0, wy, W, 2, shade(park.wall, .26));                      // the rail along the top
-  R(0, wy + 2, W, 1, shade(park.wall, -.18));
-  if (park.pad) for (let x = 4; x < W; x += 30){              // padding seams
-    R(x, wy + 4, 1, park.wallH - 6, shade(park.wall, -.22));
-    R(x + 1, wy + 4, 1, park.wallH - 6, shade(park.wall, .08));
-  }
-  R(0, wy + park.wallH - 2, W, 2, shade(park.wall, -.34));
-  // the distance markers painted on the wall
-  const mk = (x, n) => { const d = String(n).split('');
-    d.forEach((c, i) => NUM[c].forEach(([dx, dy, w2, h2]) =>
-      R(x + i * 5 + dx, wy + park.wallH / 2 - 3 + dy, w2 || 1, h2 || 1, '#e8e4d6'))); };
-  mk(W * .13, park.lf); mk(W * .5 - 7, park.cf); mk(W * .85, park.rf);
-  // ---- this park's own feature
-  if (park.feature === 'scoreboard'){
-    const sx = W - 128, sy = 20;
-    R(sx, sy, 112, 42, '#0d1119'); R(sx + 2, sy + 2, 108, 38, night ? '#121a2c' : '#1b2436');
-    R(sx + 2, sy + 2, 108, 1, '#2b3850');
-    for (let i = 0; i < 10; i++) for (let j = 0; j < 3; j++)
-      R(sx + 6 + i * 10, sy + 7 + j * 11, 7, 8, ((i * 3 + j) % 4) ? (night ? '#1d2740' : '#263048') : (night ? '#ffcf4a' : '#d8b24a'));
-  }
-  if (park.feature === 'waterfall'){
-    for (let i = 0; i < 7; i++) R(W * .56 + i * 9, 38, 6, 18 + (i % 3) * 7, mix('#5fc8e8', '#ffffff', (i % 2) * .3));
-    R(W * .55, wy - 4, 70, 5, '#8fe3ff'); R(W * .55, wy - 1, 70, 2, '#5fc8e8');
-  }
-  if (park.feature === 'ivy') for (let x = 0; x < W; x += 4)
-    R(x, wy + 3 + (x % 3), 3, park.wallH - 6, mix('#1f5a2a', '#000000', (x % 7) / 22));
-  // ---- the warning track and the outfield grass, mown in stripes
-  R(0, wy + park.wallH, W, 7, '#95653f');
-  R(0, wy + park.wallH, W, 1, '#a9764c');
-  const gy = wy + park.wallH + 7;
-  for (let i = 0; i < 64; i++){
-    const y = gy + i, f = i / 64;
-    R(0, y, W, 1, i % 11 < 6 ? `rgb(${36 + f * 26 | 0},${102 + f * 42 | 0},${44 + f * 20 | 0})`
-                             : `rgb(${29 + f * 23 | 0},${88 + f * 38 | 0},${36 + f * 18 | 0})`);
-  }
-  // foul poles down each line
-  R(6, wy - 12, 2, park.wallH + 12, '#ffd23f'); R(W - 8, wy - 12, 2, park.wallH + 12, '#ffd23f');
-}
 const CROWD = ['#c9c3b4','#b89a9a','#92a6c0','#c4b47c','#a894b8','#9ab8a2','#cfab94','#848fa6','#aeb6c4','#9c8f82'];
 
-// the infield dirt wedge and the mound, drawn in perspective from the batter's eye
-function drawInfield(park){
-  const hy = 186;                                  // home plate row
-  // grass everywhere below the outfield first, so the corners beside the infield are green
-  for (let y = 120; y < H; y++){
-    const f = (y - 120) / (H - 120);
-    R(0, y, W, 1, y % 10 < 5 ? `rgb(${40 + f * 20 | 0},${112 + f * 30 | 0},${46 + f * 14 | 0})`
-                             : `rgb(${34 + f * 18 | 0},${100 + f * 28 | 0},${40 + f * 12 | 0})`);
+/* ───────────────────────────────────────────────────────────────────────────
+   THE FIELD, seen from up behind the batter.
+   Everything is placed in real feet from home plate and projected onto the
+   screen, so the diamond, the mound and the wall all sit where they should.
+   ─────────────────────────────────────────────────────────────────────────── */
+const HOME_Y = 198, HORIZON = 70, PC = 56, PK = 3.25;
+const pscale = d => PC / (PC + d);
+// d = feet out from home plate, lat = feet to the right of the middle
+function proj(d, lat){
+  const s = pscale(d);
+  return { x: W / 2 + lat * s * PK, y: HOME_Y - (HOME_Y - HORIZON) * (1 - s), s };
+}
+// a point on the field given an angle off dead centre (-45 = left line, +45 = right)
+const atAng = (ang, dist) => {
+  const r = ang * Math.PI / 180;
+  return proj(dist * Math.cos(r), dist * Math.sin(r));
+};
+const FIELDERS = [                                   // where the defence stands, in feet
+  [100, 52, '1B'], [128, 34, '2B'], [128, -34, 'SS'], [100, -52, '3B'],
+  [275, -150, 'LF'], [318, 4, 'CF'], [275, 150, 'RF'],
+];
+
+function drawField(park, t){
+  const night = park.night;
+  // ── where the wall sits on every column of the screen ───────────────────
+  // (sampling by angle alone leaves gaps, so we work out a y per column)
+  const baseY = new Float32Array(W + 1), topY = new Float32Array(W + 1);
+  {
+    const pts = [];
+    for (let a = -58; a <= 58; a += .5){
+      const d = wallDist(clamp(a, -45, 45)), p = atAng(a, d);
+      pts.push({ x:p.x, y:p.y, h: clamp(park.wallH * p.s * 6.2, 9, 34) });
+    }
+    for (let x = 0; x <= W; x++){
+      let lo = pts[0], hi = pts[pts.length - 1];
+      for (let i = 0; i < pts.length - 1; i++)
+        if (pts[i].x <= x && pts[i + 1].x >= x){ lo = pts[i]; hi = pts[i + 1]; break; }
+      const k = hi.x === lo.x ? 0 : (x - lo.x) / (hi.x - lo.x);
+      baseY[x] = lerp(lo.y, hi.y, clamp(k, 0, 1));
+      topY[x] = baseY[x] - lerp(lo.h, hi.h, clamp(k, 0, 1));
+    }
   }
-  for (let y = 120; y < H; y++){
-    const f = (y - 120) / (H - 120);
-    const half = lerp(60, 330, f * f * .8 + f * .2);
-    R(W / 2 - half, y, half * 2, 1, `rgb(${150 + f * 26 | 0},${104 + f * 22 | 0},${70 + f * 16 | 0})`);
+  let minTop = 1e9;
+  for (let x = 0; x <= W; x++) minTop = Math.min(minTop, topY[x]);
+
+  // ── sky ─────────────────────────────────────────────────────────────────
+  for (let i = 0; i < minTop; i++){
+    const f = i / Math.max(1, minTop);
+    R(0, i, W, 1, night ? `rgb(${6 + f * 13 | 0},${10 + f * 20 | 0},${26 + f * 26 | 0})`
+                        : `rgb(${92 + f * 80 | 0},${150 + f * 66 | 0},${210 + f * 30 | 0})`);
   }
-  // mound
-  R(W / 2 - 30, 126, 60, 12, '#b9815a'); R(W / 2 - 24, 124, 48, 4, '#c89166');
-  R(W / 2 - 8, 132, 16, 3, '#eee8dd');             // rubber
-  // chalk lines running out to the corners
-  g.strokeStyle = '#eee8dd'; g.lineWidth = 1;
-  g.beginPath(); g.moveTo(W / 2 - 10, hy + 6); g.lineTo(-20, 150); g.stroke();
-  g.beginPath(); g.moveTo(W / 2 + 10, hy + 6); g.lineTo(W + 20, 150); g.stroke();
-  // home plate and the batter's boxes
-  R(W / 2 - 9, hy + 6, 18, 5, '#f4f1e8');
-  g.strokeStyle = '#ffffff55';
-  g.strokeRect(W / 2 - 46, hy - 2, 26, 22); g.strokeRect(W / 2 + 20, hy - 2, 26, 22);
+  if (night) for (let i = 0; i < 30; i++)
+    R((i * 61 + 7) % W, (i * 11) % Math.max(4, minTop - 6), 1, 1, '#2c3a60');
+  else for (let i = 0; i < 4; i++){
+    const cx = (i * 113 + 50) % W, cy = 8 + (i * 9) % 14;
+    for (let j = 0; j < 4; j++) R(cx + j * 7 - 10, cy + (j % 2), 12, 4, '#ffffff26');
+  }
+  [W * .17, W * .83].forEach(x => {                       // light towers over the stands
+    R(x - 1, minTop - 20, 2, 20, night ? '#2a3040' : '#5a6472');
+    R(x - 10, minTop - 26, 21, 6, night ? '#1d2330' : '#4c5663');
+    for (let i = 0; i < 5; i++) R(x - 8 + i * 4, minTop - 25, 3, 3, night ? '#fff6c8' : '#aeb7c4');
+    if (night) R(x - 12, minTop - 27, 25, 8, '#fff6c822');
+  });
+
+  // ── the stands, filled column by column down to the top of the wall ─────
+  const standTop = Math.max(0, Math.floor(minTop) - 30);
+  for (let x = 0; x <= W; x++){
+    const top = topY[x];
+    for (let y = standTop; y < top; y++){
+      const f = (y - standTop) / Math.max(1, top - standTop);
+      const row = Math.min(5, Math.floor(f * 6)), dim = .12 + row * .11;
+      const b = night ? [19, 22, 32] : [74, 80, 95];
+      R(x, y, 1, 1, `rgb(${b[0] * (1 - dim * .5) | 0},${b[1] * (1 - dim * .5) | 0},${b[2] * (1 - dim * .5) | 0})`);
+      if (row === 2 && y % 3 === 0) R(x, y, 1, 1, night ? '#2a3348' : '#9aa3b4');   // the rail between decks
+    }
+  }
+
+  // the people: a loose grid of little heads and shoulders
+  for (let x = 1; x < W; x += 3){
+    const top = topY[x];
+    for (let y = standTop + 1; y < top - 1; y += 3){
+      if (((x / 3 | 0) % 14) === 0) continue;                       // leave the aisles empty
+      const f = (y - standTop) / Math.max(1, top - standTop);
+      const c = CROWD[Math.abs((x * 7 + Math.round(y) * 13)) % CROWD.length];
+      const lit = night ? mix(c, '#141a28', .50) : mix(c, '#20273a', .18 + f * .26);
+      const bob = park.excite > 0 && Math.sin(t / 70 + x * .7) > .3 ? 1 : 0;
+      R(x, y - bob, 2, 2, lit);
+      R(x, y + 2 - bob, 2, 1, night ? '#0e1220' : mix(c, '#000000', .62));
+    }
+  }
+
+  // ── the wall ────────────────────────────────────────────────────────────
+  for (let x = 0; x <= W; x++){
+    const top = topY[x], bot = baseY[x];
+    R(x, top, 1, Math.max(1, bot - top), park.wall);
+    R(x, top, 1, 2, shade(park.wall, .3));
+    R(x, bot - 2, 1, 2, shade(park.wall, -.34));
+    if (park.pad && x % 26 < 1) R(x, top + 3, 1, Math.max(1, bot - top - 5), shade(park.wall, -.2));
+    if (park.feature === 'ivy' && x % 3 !== 2)
+      for (let y = top + 2; y < bot - 1; y += 2) R(x, y, 1, 2, mix('#1f5a2a', '#000000', (x % 9) / 24));
+  }
+  const mark = (ang, n) => {
+    const p = atAng(ang, wallDist(ang)), d = String(n).split('');
+    const cx = clamp(p.x | 0, 0, W);
+    const x0 = Math.round(p.x - d.length * 2.5), y0 = Math.round((topY[cx] + baseY[cx]) / 2 - 3);
+    d.forEach((c, i) => NUM[c].forEach(([dx, dy, w2, h2]) => R(x0 + i * 5 + dx, y0 + dy, w2 || 1, h2 || 1, '#e8e4d6')));
+  };
+  mark(-38, park.lf); mark(-12, park.cf); mark(38, park.rf);
+  if (park.feature === 'scoreboard'){
+    const p = atAng(16, wallDist(16)), bw = 78, bh = 30, cx = clamp(p.x | 0, 0, W);
+    const bx = Math.round(p.x - bw / 2), by = Math.round(topY[cx] - bh);
+    R(bx, by, bw, bh, '#0d1119'); R(bx + 2, by + 2, bw - 4, bh - 4, night ? '#121a2c' : '#1b2436');
+    for (let i = 0; i < 7; i++) for (let j = 0; j < 3; j++)
+      R(bx + 5 + i * 10, by + 5 + j * 8, 7, 6, ((i * 3 + j) % 4) ? (night ? '#1d2740' : '#263048') : (night ? '#ffcf4a' : '#d8b24a'));
+  }
+  if (park.feature === 'waterfall'){
+    const p = atAng(24, wallDist(24)), cx = clamp(p.x | 0, 0, W);
+    const bx = Math.round(p.x), by = Math.round(topY[cx]);
+    for (let i = 0; i < 6; i++) R(bx - 22 + i * 8, by - 15, 6, 17 + (i % 3) * 4, mix('#5fc8e8', '#ffffff', (i % 2) * .3));
+    R(bx - 24, by - 3, 48, 4, '#8fe3ff');
+  }
+
+  // ── warning track and grass, from the foot of the wall down ─────────────
+  for (let x = 0; x <= W; x++){
+    const bot = Math.round(baseY[x]);
+    for (let i = 0; i < 5; i++) R(x, bot + i, 1, 1, i < 4 ? '#8f6240' : '#7d5435');
+    for (let y = bot + 5; y < H; y++){
+      const f = (y - bot) / Math.max(1, H - bot);
+      R(x, y, 1, 1, ((y / 8) | 0) % 2 ? `rgb(${32 + f * 24 | 0},${94 + f * 42 | 0},${38 + f * 18 | 0})`
+                                      : `rgb(${38 + f * 27 | 0},${108 + f * 46 | 0},${44 + f * 21 | 0})`);
+    }
+  }
+
+  // ── the infield ─────────────────────────────────────────────────────────
+  const HP = proj(0, 0);
+  g.fillStyle = '#b07a4e'; g.beginPath(); g.moveTo(HP.x, HP.y + 12);
+  for (let a = -48; a <= 48; a += 2){ const q = atAng(a, 97); g.lineTo(q.x, q.y); }
+  g.closePath(); g.fill();
+  g.fillStyle = '#bd855a'; g.beginPath(); g.moveTo(HP.x, HP.y + 12);
+  for (let a = -48; a <= 48; a += 2){ const q = atAng(a, 72); g.lineTo(q.x, q.y); }
+  g.closePath(); g.fill();
+  const B1 = atAng(45, 90), B2 = atAng(0, 127), B3 = atAng(-45, 90);
+  g.fillStyle = '#3aa44c'; g.beginPath();
+  g.moveTo(HP.x, HP.y + 4); g.lineTo(B1.x, B1.y); g.lineTo(B2.x, B2.y); g.lineTo(B3.x, B3.y);
+  g.closePath(); g.fill();
+  const path = (A, B) => { g.strokeStyle = '#b07a4e'; g.lineWidth = Math.max(2, 6 * A.s);
+    g.beginPath(); g.moveTo(A.x, A.y); g.lineTo(B.x, B.y); g.stroke(); };
+  path(HP, B1); path(B1, B2); path(B2, B3); path(B3, HP);
+  // the dirt around home plate
+  g.fillStyle = '#bd855a'; g.beginPath(); g.ellipse(HP.x, HP.y + 3, 58, 21, 0, 0, 7); g.fill();
+  g.fillStyle = '#b07a4e'; g.beginPath(); g.ellipse(HP.x, HP.y + 10, 58, 15, 0, 0, 7); g.fill();
+
+  const M0 = proj(60.5, 0), mr = Math.max(9, 18 * M0.s * PK / 2);
+  g.fillStyle = '#bd855a'; g.beginPath(); g.ellipse(M0.x, M0.y + 2, mr, mr * .40, 0, 0, 7); g.fill();
+  g.fillStyle = '#a97245'; g.beginPath(); g.ellipse(M0.x, M0.y + mr * .22, mr, mr * .3, 0, 0, 7); g.fill();
+  R(Math.round(M0.x - 4), Math.round(M0.y - 2), 8, 2, '#eee8dd');
+
+  g.strokeStyle = '#f2efe6'; g.lineWidth = 1;
+  [-45, 45].forEach(a => { const far = atAng(a, wallDist(a));
+    g.beginPath(); g.moveTo(HP.x, HP.y + 4); g.lineTo(far.x, far.y); g.stroke(); });
+  [B1, B2, B3].forEach(bs => { const s2 = Math.max(3, 8 * bs.s);
+    R(bs.x - s2 / 2, bs.y - s2 / 3, s2, s2 * .6, '#f4f1e8');
+    R(bs.x - s2 / 2, bs.y + s2 * .27 - s2 / 3, s2, 1, '#c9c4b4'); });
+
+  g.strokeStyle = '#a97245'; g.lineWidth = 1;
+  g.beginPath(); g.ellipse(HP.x, HP.y + 3, 56, 20, 0, Math.PI, 0); g.stroke();
+  g.strokeStyle = '#ffffff44';
+  g.strokeRect(HP.x - 42.5, HP.y - 9.5, 26, 24); g.strokeRect(HP.x + 16.5, HP.y - 9.5, 26, 24);
+  g.fillStyle = '#f4f1e8'; g.beginPath();
+  g.moveTo(HP.x - 10, HP.y - 1); g.lineTo(HP.x + 10, HP.y - 1);
+  g.lineTo(HP.x + 10, HP.y + 3); g.lineTo(HP.x, HP.y + 7); g.lineTo(HP.x - 10, HP.y + 3);
+  g.closePath(); g.fill();
+}
+
+// the seven fielders standing out there, small and in perspective
+function drawFielders(team){
+  FIELDERS.forEach(([d, lat], i) => {
+    const p = proj(d, lat);
+    drawMini(p.x, p.y, (team.lineup[i] || team.lineup[0]).look, team.c1, team.c2, p.s * 2.4);
+  });
 }
 
 // ───────────────────────────────────────────────────────────────────────────
 //  GAME (one nine-inning game)
 // ───────────────────────────────────────────────────────────────────────────
-const ZONE = { x: 188, y: 126, w: 52, h: 44 };                 // the strike zone (x is set in fit())
+const ZONE = { x: 190, y: 160, w: 40, h: 34 };                 // right over the plate (x set in fit())
 const PITCHES = { FB:{ n:'Fastball', mph:[90,102], br:[0,0],     col:'#ff6b5a' },
                   CV:{ n:'Curve',    mph:[74,84],  br:[0,22],    col:'#5ad2ff' },
                   SL:{ n:'Slider',   mph:[82,90],  br:[-20,8],   col:'#c48bff' },
@@ -875,9 +965,13 @@ let P = null;        // the pitch in the air
 let phase = 'menu';  // menu | atbat | pitching | flight | play | between | over
 let swing = null;
 
+const PITCH_GAP = 5000;         // five seconds from one pitch to the next
 function setupAtBat(){
   M.balls = 0; M.strikes = 0;
   M.batter = curBatter();
+  M.catcher = fldTeam().lineup[0];
+  // the two cards face off first; tap to step in
+  if (M.mode !== 'sim' && (userBats() || userPitches())){ phase = 'matchup'; P = null; swing = null; return; }
   nextPitch();
 }
 function fatigue(){
@@ -892,11 +986,11 @@ function spread(p){
   return base * (1 + fatigue() * .55);
 }
 function nextPitch(){
-  const p = curPitcher();
-  P = { t:0, thrown:false, type:'FB', tx:0, ty:0, ax:0, ay:0, dur:1, result:null, mph:0 };
+  P = { t:0, thrown:false, type:'FB', tx:0, ty:0, br:[0,0], dur:1, result:null, mph:0,
+        windup:0, ready:0, caught:0 };
   swing = null;
   if (userPitches()) phase = 'pitching';
-  else { aiPitch(); phase = 'atbat'; }
+  else { phase = 'atbat'; }          // the computer winds up first, then throws
 }
 // the computer picks a pitch and a spot: mostly strikes, more care against good hitters
 function aiPitch(){
@@ -921,7 +1015,7 @@ function throwPitch(type, ax, ay){
   P.tx = ax + (bell() - .5) * 2 * miss;
   P.ty = ay + (bell() - .5) * 2 * miss;
   P.mph = Math.round(lerp(info.mph[0], info.mph[1], clamp((p.velocity - 60) / 60, 0, 1)) - fatigue() * 3);
-  P.dur = lerp(1050, 620, clamp((P.mph - 72) / 32, 0, 1));  // ms from hand to plate
+  P.dur = lerp(1260, 820, clamp((P.mph - 72) / 32, 0, 1));  // ms from hand to plate
   P.br = [info.br[0] * lerp(.6, 1.3, (q - 60) / 60), info.br[1] * lerp(.6, 1.3, (q - 60) / 60)];
   P.quality = q;
   P.thrown = true; P.t = 0; P.windup = 420;
@@ -930,12 +1024,15 @@ function throwPitch(type, ax, ay){
 
 // where the ball is on screen at time f (0 = hand, 1 = plate)
 function ballAt(f){
-  const e = f * f;                                           // comes at you, so it speeds up on screen
-  const x = lerp(W / 2, ZONE.x + ZONE.w / 2 + P.tx * ZONE.w / 2 + P.br[0] * e, e);
-  const y = lerp(134, ZONE.y + ZONE.h / 2 + P.ty * ZONE.h / 2 + P.br[1] * e, e);
-  const r = lerp(1.2, 5.2, e);
-  return { x, y, r };
+  const e = f * f;                                           // it comes at you, so it speeds up on screen
+  const rel = releasePt();
+  const tx = ZONE.x + ZONE.w / 2 + P.tx * ZONE.w / 2, ty = ZONE.y + ZONE.h / 2 + P.ty * ZONE.h / 2;
+  return { x: lerp(rel.x, tx + P.br[0] * e, e), y: lerp(rel.y, ty + P.br[1] * e, e), r: lerp(1, 5, e) };
 }
+// where the ball leaves his hand, out at the mound
+function releasePt(){ const m = proj(60.5, 0); return { x: m.x + 5, y: m.y - 22 }; }
+// the catcher's mitt, just under the zone
+const mittPt = () => ({ x: ZONE.x + ZONE.w / 2 - 12, y: ZONE.y + ZONE.h + 14 });
 const inZone = () => Math.abs(P.tx) <= 1 && Math.abs(P.ty) <= 1;
 
 // ── swinging ───────────────────────────────────────────────────────────────
@@ -1108,42 +1205,127 @@ let frame = 0;
 
 function drawBatterView(dt){
   const park = M.park; park.excite = M.exc;
-  drawStands(park, frame);
-  drawInfield(park);
+  drawField(park, frame);
+  const ft = fldTeam(), bt = batTeam();
+  drawFielders(ft);
 
-  // the pitcher on the mound: he sets, winds up and releases as the pitch comes
-  const pit = curPitcher(), ft = fldTeam();
+  // ── the pitcher on the mound ────────────────────────────────────────────
+  const pit = curPitcher(), M0 = proj(60.5, 0);
   let u = 0;
-  if (P && P.thrown) u = clamp(.70 + (P.t / P.dur) * .46, 0, 1);      // release, then follow through
-  else if (P) u = clamp((frame % 150) / 150 < .5 ? 0 : 0, 0, 1);      // set, waiting for the sign
-  drawPitcher(W / 2, 140, pit, ft.c1, ft.c2, u, pit.num);
+  if (P && P.thrown) u = clamp(.70 + (P.t / P.dur) * .44, 0, 1);
+  else if (P) u = clamp((P.windup || 0) * .70, 0, .70);
+  drawPitcher(M0.x, M0.y + 3, pit, ft.c1, ft.c2, u, .62);
 
-  // the catcher, crouched with his back to us right under the plate
-  const ft2 = fldTeam();
-  drawCatcher(W / 2, H + 4, M.catcher || ft2.lineup[0], ft2.c1, ft2.c2);
+  // ── the umpire, then the catcher crouched under the plate ───────────────
+  const HP = proj(0, 0);
+  drawUmp(HP.x - 2, H + 20, ft);
+  drawCatcher(HP.x - 8, H + 4, M.catcher || ft.lineup[0], ft.c1, ft.c2);
 
-  // the batter, big in the foreground, swinging through the ball
-  const bt = batTeam(), b = M.batter, side = b.bats === 'L' ? 1 : -1;
-  const bx = W / 2 + side * 54;
-  drawBatter(bx, H - 6, b, bt.c1, bt.c2, swing ? clamp(swing.t / 220, 0, 1) : null, frame, b.num);
+  // ── the batter in the box ───────────────────────────────────────────────
+  const b = M.batter, side = b.bats === 'L' ? 1 : -1;
+  const bx = HP.x + side * 44;
+  drawBatter(bx, HOME_Y + 20, b, bt.c1, bt.c2, swing ? clamp(swing.t / 220, 0, 1) : null, frame, b.num);
 
-  // strike zone
-  g.strokeStyle = '#ffffff44'; g.lineWidth = 1;
+  // ── the strike zone, floating over the plate ────────────────────────────
+  const live = P && (P.thrown || P.winding || phase === 'pitching');
+  g.strokeStyle = live ? '#ffffff66' : '#ffffff33'; g.lineWidth = 1;
   g.strokeRect(ZONE.x + .5, ZONE.y + .5, ZONE.w, ZONE.h);
+  [[ZONE.w/3,0],[ZONE.w*2/3,0]].forEach(([dx]) => {           // faint thirds, like a real zone grid
+    g.strokeStyle = '#ffffff1e';
+    g.beginPath(); g.moveTo(ZONE.x + dx + .5, ZONE.y); g.lineTo(ZONE.x + dx + .5, ZONE.y + ZONE.h); g.stroke(); });
+  [[0,ZONE.h/3],[0,ZONE.h*2/3]].forEach(([, dy]) => {
+    g.strokeStyle = '#ffffff1e';
+    g.beginPath(); g.moveTo(ZONE.x, ZONE.y + dy + .5); g.lineTo(ZONE.x + ZONE.w, ZONE.y + dy + .5); g.stroke(); });
 
-  // the pitch
-  if (P && P.thrown && !P.done && P.t < P.dur){
-    const f = P.t / P.dur, p = ballAt(f);
-    // a short trail so you can read the speed
-    for (let i = 1; i <= 3; i++){
-      const q = ballAt(clamp(f - i * .05, 0, 1));
-      R(q.x - q.r / 2, q.y - q.r / 2, q.r, q.r, `rgba(255,255,255,${.1 * (4 - i)})`);
+  // ── the ball ────────────────────────────────────────────────────────────
+  if (P && P.thrown && P.t < P.dur && !P.hitAway){
+    const f = P.t / P.dur, q = ballAt(f);
+    for (let i = 1; i <= 4; i++){                              // a short trail reads as speed
+      const o = ballAt(clamp(f - i * .045, 0, 1));
+      R(o.x - o.r / 2, o.y - o.r / 2, o.r, o.r, `rgba(255,255,255,${.09 * (5 - i)})`);
     }
-    g.fillStyle = '#fdfdf5'; g.beginPath(); g.arc(p.x, p.y, p.r, 0, 7); g.fill();
-    R(p.x - p.r, p.y - 1, p.r * 2, 1, '#e0533f');       // the seams
+    g.fillStyle = '#fdfdf5'; g.beginPath(); g.arc(q.x, q.y, q.r, 0, 7); g.fill();
+    if (q.r > 2.4) R(q.x - q.r, q.y - 1, q.r * 2, 1, '#d8342c');
   }
+  // the catcher takes it: the ball carries on into his mitt with a little pop
+  else if (P && P.caught > 0 && !P.hitAway){
+    const k = clamp(1 - P.caught / 260, 0, 1), end = mittPt(), from = ballAt(1);
+    const x = lerp(from.x, end.x, k), y = lerp(from.y, end.y, k);
+    g.fillStyle = '#fdfdf5'; g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill();
+    if (k > .9){ const pop = (k - .9) * 10;
+      g.strokeStyle = `rgba(255,255,255,${(1 - pop) * .7})`; g.lineWidth = 1;
+      g.beginPath(); g.arc(end.x, end.y, 4 + pop * 8, 0, 7); g.stroke(); }
+  }
+
   drawHUD();
-  if (M.msg){ textb(M.msg, W / 2, 86, M.msg.includes('!') ? '#ffd23f' : '#fff', 13, 'center'); }
+  if (M.msg) textb(M.msg, W / 2, 74, M.msg.includes('!') ? '#ffd23f' : '#fff', 14, 'center');
+}
+
+// the umpire leaning in behind the catcher
+function drawUmp(x, y, ft){
+  const key = `U${ft.ab}`;
+  const c = sprite(key, () => buildPlayer({
+      crouch:0, lean:0,
+      hip:[56,70], chest:[56,50], neck:[56,42], head:[56,30],
+      nSh:[46,46], fSh:[66,46],
+      nEl:[38,58], nHa:[34,50], fEl:[74,58], fHa:[78,50],
+      nKn:[36,80], nAn:[44,101], fKn:[76,80], fAn:[68,101],
+    }, { skin:'#c88e5e', hair:'#1d1510', beard:0, bulk:1.1 }, '#242832', '#1b1f28', { back:1, hardhat:1 }));
+  blit(c, x, y, .54, false);
+}
+
+// ── the two cards facing off before an at-bat ──────────────────────────────
+function drawMatchup(){
+  btns = [];
+  drawField(M.park, frame);
+  drawFielders(fldTeam());
+  R(0, 0, W, H, '#060a12cc');
+  const ft = fldTeam(), bt = batTeam(), pit = curPitcher(), b = M.batter;
+  textb(`${M.inning > 9 ? 'EXTRAS' : (M.top ? 'TOP ' : 'BOT ') + M.inning}  ·  ${M.outs} OUT`,
+    W / 2, 10, '#8e97a8', 8, 'center');
+  const cw = 72, ch = 118, y = 30;
+  // the pitcher on the left, the batter on the right
+  drawCardFor(W / 2 - cw - 26, y, pit, ft, cw, ch);
+  drawCardFor(W / 2 + 26, y, b, bt, cw, ch);
+  textb('PITCHING', W / 2 - cw / 2 - 26, y - 11, '#ff8f6a', 7, 'center');
+  textb('AT BAT', W / 2 + cw / 2 + 26, y - 11, '#6fd3ff', 7, 'center');
+  textb('VS', W / 2, y + ch / 2 - 8, '#5c6473', 12, 'center');
+  // a line of numbers under each
+  const ps = pit.st, bs = b.st;
+  textb(`${ps.ko} K`, W / 2 - cw / 2 - 26, y + ch + 5, '#8e97a8', 7, 'center');
+  textb(`${bs.ab ? (bs.h / bs.ab).toFixed(3).replace('0.', '.') : '.000'}  ${bs.hr} HR`,
+    W / 2 + cw / 2 + 26, y + ch + 5, '#8e97a8', 7, 'center');
+  const hint = userBats() ? 'TAP TO STEP IN' : 'TAP TO PITCH';
+  textb(hint, W / 2, H - 28, Math.sin(frame / 14) > 0 ? '#ffd23f' : '#c8a52f', 10, 'center');
+  btns.push({ x:0, y:0, w:W, h:H, fn: () => { nextPitch(); } });
+}
+// a card drawn straight from a player, using his own team's colours
+function drawCardFor(x, y, p, team, w, h){
+  const saved = G.teams[G.team];
+  const ovr = ovrOf(p), ti = clamp(Math.floor((ovr - 60) / 10), 0, 5), tc = TIERS[ti].col;
+  R(x, y, w, h, '#0c1019');
+  const bg1 = mix(tc, '#0b1018', .70), bg2 = mix(tc, '#0b1018', .50);
+  for (let i = 0; i < h - 4; i++) R(x + 2, y + 2 + i, w - 4, 1, mix(bg1, bg2, i / h));
+  g.save(); g.beginPath(); g.rect(x + 2, y + 2, w - 4, h - 4); g.clip();
+  const ak = (h * .74) / RH;
+  const art = sprite(`MU${lookKey(p.look)}|${team.c1}${team.c2}|${p.pos}|${p.num}`, () => buildPlayer(
+    isPitcher(p)
+      ? { crouch:1, lean:-2, hip:[55,56], chest:[56,34], neck:[56,27], head:[56,16],
+          nSh:[49,30], fSh:[63,30], nEl:[50,43], nHa:[52,34], fEl:[62,42], fHa:[58,33],
+          nKn:[50,76], nAn:[48,99], fKn:[62,76], fAn:[64,99], gloveA:170, front:1 }
+      : { crouch:0, lean:-1, hip:[54,56], chest:[55,34], neck:[55,27], head:[56,16],
+          nSh:[50,31], fSh:[59,30], nEl:[46,39], nHa:[44,26], fEl:[49,41], fHa:[46,28],
+          nKn:[48,76], nAn:[45,99], fKn:[62,75], fAn:[66,99], batA:-100, helmet:1 },
+    p.look, team.c1, team.c2, { number:p.num, front:isPitcher(p), helmet:!isPitcher(p) }));
+  g.drawImage(art, Math.round(x + w / 2 - 56 * ak), Math.round(y + h * .18), Math.round(RW * ak), Math.round(RH * ak));
+  g.restore();
+  g.strokeStyle = tc; g.lineWidth = 1; g.strokeRect(x + .5, y + .5, w - 1, h - 1);
+  if (ti >= 3) g.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+  R(x + 2, y + 2, w - 4, 9, '#0b1018cc');
+  textb(p.name.split(' ').pop().slice(0, 10).toUpperCase(), x + w / 2, y + 3, '#f2efe6', 7, 'center');
+  R(x + 2, y + h - 13, w - 4, 11, '#0b1018cc');
+  textb(String(ovr), x + 5, y + h - 12, tc, 10);
+  textb(p.pos, x + w - 5, y + h - 11, '#b9c2d2', 7, 'right');
 }
 
 // the top bar: score, inning, count, bases
@@ -1192,46 +1374,73 @@ function drawPitchUI(){
   R(cx - 1, cy - 1, 2, 2, '#fff');
 }
 
-// ── the top-down replay of a ball in play ──────────────────────────────────
-function drawPlayView(t){
-  const bb = P.ball, park = M.park;
-  R(0, 0, W, H, '#0e1a14');
-  const hx = W / 2, hy = H - 26, sc = .42;                    // home plate on screen, feet -> pixels
-  // grass wedge
-  g.fillStyle = '#2c7a3c'; g.beginPath(); g.moveTo(hx, hy);
-  for (let a = -45; a <= 45; a += 3){ const d = wallDist(a) * sc, r = (a - 90) * Math.PI / 180;
-    g.lineTo(hx + Math.cos(r + Math.PI / 2) * d * -1, hy - Math.sin(r + Math.PI / 2) * d * -1); }
-  g.closePath(); g.fill();
-  // infield dirt
-  g.fillStyle = '#b9815a'; g.beginPath(); g.moveTo(hx, hy);
-  for (let a = -45; a <= 45; a += 5){ const d = 95 * sc * 2.1, r = a * Math.PI / 180;
-    g.lineTo(hx + Math.sin(r) * d, hy - Math.cos(r) * d); }
-  g.closePath(); g.fill();
-  // bases
-  const basePt = i => { const a = [-45, 0, 45][i] * Math.PI / 180, d = 90 * sc * 2.1;
-    return { x: hx + Math.sin(a) * d, y: hy - Math.cos(a) * d }; };
-  [0,1,2].forEach(i => { const b = basePt(i); g.save(); g.translate(b.x, b.y); g.rotate(Math.PI/4);
-    g.fillStyle = '#f4f1e8'; g.fillRect(-3,-3,6,6); g.restore(); });
-  // fielders
-  const ft = fldTeam();
-  [[-32,120],[-14,165],[0,185],[16,165],[34,120],[-26,70],[-8,58],[12,58],[28,70]].forEach(([a, d], i) => {
-    const r = a * Math.PI / 180, x = hx + Math.sin(r) * d * sc * 2.1, y = hy - Math.cos(r) * d * sc * 2.1;
-    R(x - 2, y - 4, 4, 6, ft.c1); R(x - 2, y - 7, 4, 3, ft.look || '#e0ad7e');
+// ── a ball in play, on the same field you are looking at ──────────────────
+// The ball arcs out, a fielder breaks on it, and you see the catch, the hop,
+// or the ball clearing the wall. No separate top-down screen.
+function playFielder(bb){
+  // whoever is closest to where the ball is going breaks on it
+  let best = 0, bd = 1e9;
+  FIELDERS.forEach(([d, lat], i) => {
+    const ang = Math.atan2(lat, d) * 180 / Math.PI, dist = Math.hypot(d, lat);
+    const miss = Math.abs(ang - bb.angle) * 2.2 + Math.abs(dist - bb.dist) * .35;
+    if (miss < bd){ bd = miss; best = i; }
   });
-  // the ball's path
-  const f = clamp(t / 1500, 0, 1);
-  const a = bb.angle * Math.PI / 180, dist = bb.dist * f * sc;
-  const bxp = hx + Math.sin(a) * dist, byp = hy - Math.cos(a) * dist;
-  const hop = Math.sin(f * Math.PI) * clamp(bb.la, 0, 45) * .7;
-  for (let i = 0; i < 10; i++){
-    const q = clamp(f - i * .03, 0, 1), d2 = bb.dist * q * sc;
-    const x2 = hx + Math.sin(a) * d2, y2 = hy - Math.cos(a) * d2 - Math.sin(q * Math.PI) * clamp(bb.la, 0, 45) * .7;
-    R(x2 - 1, y2 - 1, 2, 2, `rgba(255,255,255,${.08 * (10 - i)})`);
+  return best;
+}
+function drawPlay(t){
+  const bb = P.ball, park = M.park;
+  park.excite = M.exc;
+  drawField(park, frame);
+  const ft = fldTeam(), bt = batTeam();
+
+  const f = clamp(t / 1700, 0, 1);
+  const flight = clamp(t / 950, 0, 1);              // how far along its flight the ball is
+  const need = wallDist(bb.angle), gone = P.play === 'hr';
+  const travel = bb.dist * (gone ? Math.min(1, flight * 1.25) : flight);
+  const r = bb.angle * Math.PI / 180;
+  const land = proj(travel * Math.cos(r), travel * Math.sin(r));
+  // the arc: how high it is above the ground, in screen pixels
+  const hop = Math.sin(flight * Math.PI) * clamp(bb.la, 2, 45) * 1.5 * land.s * 2.2;
+
+  // the fielders, with the one on the ball running to meet it
+  const who = playFielder(bb);
+  FIELDERS.forEach(([d, lat], i) => {
+    let px, py, ps;
+    if (i === who && !gone){
+      const k = ease(clamp(flight * 1.15, 0, 1));
+      const td = lerp(d, travel * Math.cos(r), k), tl = lerp(lat, travel * Math.sin(r), k);
+      const q = proj(td, tl); px = q.x; py = q.y; ps = q.s;
+    } else { const q = proj(d, lat); px = q.x; py = q.y; ps = q.s; }
+    drawMini(px, py, (ft.lineup[i] || ft.lineup[0]).look, ft.c1, ft.c2, ps * 2.4);
+  });
+
+  // the batter running up the line once he has hit it
+  if (!gone || f > .4){
+    const run = clamp((t - 180) / 1400, 0, 1);
+    const rp = proj(90 * run * .72, 90 * run * .72);
+    drawMini(rp.x, rp.y, M.batter.look, bt.c1, bt.c2, rp.s * 2.6);
   }
-  R(bxp - 2, byp - hop - 2, 4, 4, '#fdfdf5');
-  R(bxp - 2, byp - 1, 4, 1, '#00000055');                     // shadow on the grass
-  textb(`${Math.round(bb.ev)} MPH  ${Math.round(bb.dist)} FT`, W / 2, 10, '#9aa6bd', 8, 'center');
-  if (M.msg) textb(M.msg, W / 2, 24, '#ffd23f', 14, 'center');
+  // and anybody who was already on base
+  M.bases.forEach((p2, i) => { if (!p2) return;
+    const base = [atAng(45, 90), atAng(0, 127), atAng(-45, 90)][i];
+    drawMini(base.x, base.y - 2, p2.look, bt.c1, bt.c2, base.s * 2.4); });
+
+  // the ball, with a shadow on the grass under it
+  if (flight < 1 || gone){
+    R(land.x - 2, land.y - 1, 4, 2, '#00000044');
+    const br = Math.max(1.5, 4 * land.s * 2.2);
+    g.fillStyle = '#fdfdf5';
+    g.beginPath(); g.arc(land.x, land.y - hop, br, 0, 7); g.fill();
+  }
+  // how hard it was hit
+  textb(`${Math.round(bb.ev)} MPH   ${Math.round(bb.dist)} FT`, W / 2, 22, '#d6dcea', 8, 'center');
+  if (gone && flight > .75){
+    textb('GONE!', W / 2, 46, '#ffd23f', 22, 'center');
+    // a few sparks over the wall
+    for (let i = 0; i < 8; i++){ const a2 = i * .8 + t / 90;
+      R(land.x + Math.cos(a2) * (14 + i * 3), land.y - hop + Math.sin(a2) * (10 + i * 2), 2, 2, i % 2 ? '#ffd23f' : '#fff'); }
+  } else if (M.msg && t > 380) textb(M.msg, W / 2, 46, '#ffd23f', 17, 'center');
+  drawHUD();
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -1492,7 +1701,9 @@ function drawShop(){
   // a free bronze pack once a day
   const left = (G.freeAt || 0) - Date.now();
   const fx = 10, fy = 24;
-  R(fx, fy, 112, 26, left > 0 ? '#161c28' : '#2a4a2a');
+  const fb = left > 0 ? '#161c28' : '#2a4a2a';
+  R(fx, fy, 112, 26, shade(fb, -.3)); R(fx + 1, fy + 1, 110, 24, fb);
+  R(fx + 1, fy + 1, 110, 1, shade(fb, .3)); R(fx + 1, fy + 24, 110, 1, shade(fb, -.24));
   textb('FREE BRONZE', fx + 6, fy + 5, left > 0 ? '#5c6473' : '#9ae6a0', 8);
   textb(left > 0 ? `in ${Math.ceil(left / 3600000)}h` : 'ready — tap', fx + 6, fy + 15, left > 0 ? '#5c6473' : '#f2efe6', 7);
   if (left <= 0) btns.push({ x:fx, y:fy, w:112, h:26, fn: freePack });
@@ -1500,16 +1711,23 @@ function drawShop(){
   const keys = Object.keys(PACKS), cw = Math.min(96, (W - 24) / 4 - 4);
   keys.forEach((k, i) => {
     const x = 10 + i * (cw + 4), y = 58, on = shopSel === k, P2 = PACKS[k];
-    R(x, y, cw, 54, on ? mix(P2.col, '#0b1018', .55) : '#131924');
+    const base = on ? mix(P2.col, '#0b1018', .52) : '#131924';
+    R(x, y, cw, 54, shade(base, -.3));
+    R(x + 1, y + 1, cw - 2, 52, base);
+    R(x + 1, y + 1, cw - 2, 1, shade(base, .3));
+    R(x + 1, y + 1, 1, 52, shade(base, .16));
+    R(x + 1, y + 52, cw - 2, 1, shade(base, -.24));
+    R(x + cw - 2, y + 2, 1, 51, shade(base, -.18));
     g.strokeStyle = on ? P2.col2 : '#2a3550'; g.lineWidth = 1; g.strokeRect(x + .5, y + .5, cw - 1, 53);
-    textb(P2.n, x + cw / 2, y + 5, P2.col2, 9, 'center');
-    textb(fmt(P2.price), x + cw / 2, y + 17, '#f2efe6', 8, 'center');
-    textb('3 cards', x + cw / 2, y + 28, '#8e97a8', 6, 'center');
+    const T2 = on ? text : textb;
+    T2(P2.n, x + cw / 2, y + 5, P2.col2, 9, 'center');
+    T2(fmt(P2.price), x + cw / 2, y + 17, '#f2efe6', 8, 'center');
+    T2('3 cards', x + cw / 2, y + 28, on ? '#d8d2c0' : '#8e97a8', 6, 'center');
     // the chance of each colour, as a little bar
     let bx = x + 6;
     P2.p.forEach((pp, ti) => { const ww = Math.max(1, Math.round(pp * (cw - 12)));
       R(bx, y + 38, ww, 5, TIERS[ti].col); bx += ww; });
-    textb(`${Math.round((P2.p[4] + P2.p[5]) * 100)}% orange+`, x + cw / 2, y + 45, '#b9c2d2', 6, 'center');
+    T2(`${Math.round((P2.p[4] + P2.p[5]) * 100)}% orange+`, x + cw / 2, y + 45, on ? '#e8e2d0' : '#b9c2d2', 6, 'center');
     btns.push({ x, y, w:cw, h:54, fn: () => shopSel = k });
   });
   // buy one, five or ten
@@ -1675,9 +1893,15 @@ function drawLineup(){
 const fmt = n => n >= 1000 ? (n / 1000).toFixed(n % 1000 ? 1 : 0) + 'k' : String(n);
 
 let menu = 'title', btns = [];
-function button(x, y, w, h, label, fn, col = '#1a2230', tc = '#fff'){
-  R(x, y, w, h, col); R(x, y, w, 1, shade(col, .15)); R(x, y + h - 1, w, 1, shade(col, -.2));
-  textb(label, x + w / 2, y + h / 2 - 4, tc, 8, 'center');
+function button(x, y, w, h, label, fn, col = '#1a2230', tc = '#fff', size = 8){
+  R(x, y, w, h, shade(col, -.34));                       // the dark edge all the way round
+  R(x + 1, y + 1, w - 2, h - 2, col);
+  R(x + 1, y + 1, w - 2, 1, shade(col, .26));            // light catches the top
+  R(x + 1, y + 1, 1, h - 2, shade(col, .14));
+  R(x + 1, y + h - 2, w - 2, 1, shade(col, -.22));       // shadow along the bottom
+  R(x + w - 2, y + 2, 1, h - 3, shade(col, -.16));
+  R(x + 1, y + 1, 1, 1, shade(col, .4)); R(x + w - 2, y + h - 2, 1, 1, shade(col, -.3));
+  (size >= 10 ? textb : text)(label, x + w / 2, y + (h - size) / 2 - 1, tc, size, 'center');
   btns.push({ x, y, w, h, fn });
 }
 function drawMenu(){
@@ -1845,7 +2069,7 @@ function down(e){
     if (p.y > 100 && p.y < H - 36){
       aim.x = clamp((p.x - (ZONE.x + ZONE.w / 2)) / (ZONE.w / 2), -2, 2);
       aim.y = clamp((p.y - (ZONE.y + ZONE.h / 2)) / (ZONE.h / 2), -2, 2);
-      throwPitch(pitchSel, aim.x, aim.y); phase = 'atbat'; touch.used = true;
+      P.winding = { t:0, ax:aim.x, ay:aim.y }; phase = 'atbat'; touch.used = true;
     }
   }
 }
@@ -1860,7 +2084,9 @@ addEventListener('keydown', e => {
 });
 // test hooks
 window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
-  buyPack, revealNext, rollCard, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
+  buyPack, revealNext, rollCard, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
+  testPlay(res, angle, dist, la){ P = P || {}; P.ball = { angle, la, ev:100, dist, qual:.9 };
+    P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
@@ -1879,19 +2105,27 @@ function loop(now){
   if (phase === 'menu'){ if (OPEN) openTick(dt); drawMenu(); }
   else if (phase === 'over'){ drawBatterViewSafe(dt); drawOver(); }
   else if (phase === 'gmenu'){ drawBatterViewSafe(dt); drawGameMenu(); }
+  else if (phase === 'matchup'){ drawMatchup(); drawGameMenuBtn(); }
   else if (phase === 'play'){
     P.playT += dt;
-    drawPlayView(P.playT);
+    drawPlay(P.playT);
     if (P.playT > 400 && !P.applied){ P.applied = true; applyPlay(P.play); }
     if (P.playT > 1900){ if (!M.over){ if (!simHalfIfNeeded()) {} if (!M.over) nextPitch(); if (!M.over && phase === 'play') phase = userPitches() ? 'pitching' : 'atbat'; } }
     btns = []; drawGameMenuBtn();
   }
   else if (M){
+    // the computer takes its time, winds up, then lets go
+    if (P && !P.thrown && !userPitches()){
+      P.ready += dt;
+      if (P.ready > 1500){ P.windup = clamp((P.ready - 1500) / 900, 0, 1);
+        if (P.windup >= 1) aiPitch(); }
+    }
     // the pitch flying in
     if (P && P.thrown && !P.done){
       P.t += dt;
       if (swing) swing.t += dt;
       const f = P.t / P.dur;
+      if (f >= 1 && !P.hitAway) P.caught += dt;
       if (f >= 1 && !P.result){
         // nobody swung: ball or called strike
         P.result = inZone() ? 'called' : 'ball';
@@ -1899,9 +2133,14 @@ function loop(now){
         finishPitch();
       }
     }
+    // our own windup, then the release
+    if (P && P.winding && !P.thrown){
+      P.winding.t += dt; P.windup = clamp(P.winding.t / 900, 0, 1);
+      if (P.windup >= 1){ throwPitch(pitchSel, P.winding.ax, P.winding.ay); P.winding = null; }
+    }
     if (P && P.done){
       P.waitT += dt;
-      if (P.waitT > 700){
+      if (P.waitT > PITCH_GAP){
         if (!M.over){ if (!simHalfIfNeeded() || !M.over){ if (!M.over) nextPitch(); } }
       }
     }
