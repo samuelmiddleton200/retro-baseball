@@ -1472,9 +1472,125 @@ function gameOver(){
 // ───────────────────────────────────────────────────────────────────────────
 let frame = 0;
 
+// ── high-resolution stadium, drawn live in full device pixels ──────────────
+// Surfaces use crisp vector fills so they sharpen to the phone's real pixels
+// instead of the blocky ~5x upscale. Perspective matches proj() exactly, so
+// the players (drawn afterward in logical space) still line up on the field.
+function drawFieldHD(park, t){
+  const night = park.night;
+  const DW = cv.width, DH = cv.height;
+  const DX = lx => OX + lx * SC, DY = ly => OY + ly * SC;      // logical -> device
+  const dp = (d, lat) => { const p = proj(d, lat); return [DX(p.x), DY(p.y), p.s]; };
+  const dAng = (a, dist) => { const p = atAng(a, dist); return [DX(p.x), DY(p.y), p.s]; };
+  g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.imageSmoothingEnabled = true;
+  const hz = DY(HORIZON);                                       // horizon in device px
+
+  // ── sky ──────────────────────────────────────────────────────────────────
+  let gr = g.createLinearGradient(0, 0, 0, hz);
+  if (night){ gr.addColorStop(0, '#0a1430'); gr.addColorStop(1, '#1c2c52'); }
+  else { gr.addColorStop(0, '#2f6fc4'); gr.addColorStop(.7, '#6fa8de'); gr.addColorStop(1, '#a9ccec'); }
+  g.fillStyle = gr; g.fillRect(0, 0, DW, hz);
+
+  // ── the outfield wall, as one smooth curve across the screen ──────────────
+  const wpts = [];
+  for (let a = -60; a <= 60; a += 1.5) wpts.push(dAng(a, wallDist(a)));
+  const wallH = 26 * SC;
+  g.beginPath(); g.moveTo(0, wpts[0][1]);
+  wpts.forEach(p => g.lineTo(p[0], p[1])); g.lineTo(DW, wpts[wpts.length - 1][1]);
+  // ── the crowd: a dense band above the wall ────────────────────────────────
+  const crowdTop = Math.max(hz, wpts[0][1] - wallH - 46 * SC);
+  g.fillStyle = night ? '#141a26' : '#2a3140';
+  g.fillRect(0, crowdTop, DW, (wpts[0][1] - wallH) - crowdTop + 2);
+  const PAL = night
+    ? ['#3a2430','#2c3a52','#4a4036','#38324a','#2e3e34']
+    : ['#c85450','#d8d4c8','#4a6aa8','#d0a848','#8a5aa0','#5a9a6c','#d49a86','#7a85a0','#b86a6a','#5a84b4'];
+  const cw = Math.max(2, Math.round(2.4 * SC));
+  for (let y = crowdTop + 2; y < wpts[0][1] - wallH; y += cw + 1){
+    const f = (y - crowdTop) / Math.max(1, (wpts[0][1] - wallH) - crowdTop);
+    for (let x = 0; x < DW; x += cw + 1){
+      if (((x / (cw + 1) | 0) % 13) === 0) continue;            // aisles
+      const h = (x * 73 + (y | 0) * 131) % 100;
+      if (h < 52){
+        const c = PAL[(x * 7 + (y | 0) * 3) % PAL.length];
+        g.fillStyle = mix(c, night ? '#0e1420' : '#1c2230', night ? .25 : .18 + f * .2);
+        g.fillRect(x, y, cw, cw);
+        g.fillStyle = mix(night ? '#1a0f0a' : '#3a2a22', '#000000', .2);  // a head
+        g.fillRect(x, y - Math.max(1, cw - 1), cw - 1, Math.max(1, cw - 1));
+      }
+    }
+  }
+  // the wall face
+  g.beginPath(); g.moveTo(0, wpts[0][1] - wallH);
+  wpts.forEach(p => g.lineTo(p[0], p[1] - wallH)); g.lineTo(DW, wpts[wpts.length - 1][1] - wallH);
+  wpts.slice().reverse().forEach(p => g.lineTo(p[0], p[1])); g.lineTo(0, wpts[0][1]); g.closePath();
+  g.fillStyle = park.wall; g.fill();
+  // top rail (bright)
+  g.lineWidth = Math.max(1, 2 * SC); g.strokeStyle = shade(park.wall, .3);
+  g.beginPath(); g.moveTo(0, wpts[0][1] - wallH); wpts.forEach(p => g.lineTo(p[0], p[1] - wallH)); g.lineTo(DW, wpts[wpts.length - 1][1] - wallH); g.stroke();
+  // ad panels + padding seams
+  for (let i = 0; i < wpts.length; i += 6){
+    const p = wpts[i]; if (!p) continue;
+    g.fillStyle = shade(park.wall, -.18);
+    g.fillRect(p[0] - .5 * SC, p[1] - wallH + 3 * SC, SC, wallH - 6 * SC);
+  }
+  // distance markers
+  g.fillStyle = '#e6e8df'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = `bold ${Math.round(9 * SC)}px ui-monospace, monospace`;
+  [[-34, park.lf], [0, park.cf], [34, park.rf]].forEach(([a, d]) => {
+    const p = dAng(a, wallDist(a)); g.fillText(String(d), p[0], p[1] - wallH / 2);
+  });
+
+  // ── the grass, mown in stripes that fan toward the camera ─────────────────
+  const gTopY = wpts[0][1];
+  gr = g.createLinearGradient(0, gTopY, 0, DH);
+  gr.addColorStop(0, night ? '#1d4a28' : '#2f7a3c'); gr.addColorStop(1, night ? '#2a6038' : '#49a657');
+  g.fillStyle = gr; g.fillRect(0, gTopY, DW, DH - gTopY);
+  // warning track under the wall
+  g.fillStyle = '#8f6240';
+  g.beginPath(); g.moveTo(0, wpts[0][1]); wpts.forEach(p => g.lineTo(p[0], p[1]));
+  g.lineTo(DW, wpts[wpts.length - 1][1]);
+  wpts.slice().reverse().forEach(p => g.lineTo(p[0], p[1] + 4 * SC)); g.closePath(); g.fill();
+  // mow stripes: wedges from the plate fanning out, every other one darker
+  const hpd = dp(0, 0);
+  for (let s = -9; s <= 9; s++){
+    if ((s + 90) % 2) continue;
+    const a0 = s * 5, a1 = (s + 1) * 5;
+    const n0 = dAng(a0, 420), n1 = dAng(a1, 420), f0 = dAng(a0, 60), f1 = dAng(a1, 60);
+    g.fillStyle = 'rgba(0,0,0,0.05)';
+    g.beginPath(); g.moveTo(f0[0], f0[1]); g.lineTo(n0[0], n0[1]); g.lineTo(n1[0], n1[1]); g.lineTo(f1[0], f1[1]); g.closePath(); g.fill();
+  }
+
+  // ── infield: dirt arc, grass diamond, base paths, mound, plate ────────────
+  const poly = (fn) => { g.beginPath(); fn(); g.closePath(); g.fill(); };
+  g.fillStyle = '#b07a4e';
+  poly(() => { const h = dp(0, 0); g.moveTo(h[0], h[1] + 10 * SC); for (let a = -48; a <= 48; a += 2){ const p = dAng(a, 97); g.lineTo(p[0], p[1]); } });
+  g.fillStyle = '#bd855a';
+  poly(() => { const h = dp(0, 0); g.moveTo(h[0], h[1] + 10 * SC); for (let a = -48; a <= 48; a += 2){ const p = dAng(a, 72); g.lineTo(p[0], p[1]); } });
+  const B1 = dAng(45, 90), B2 = dAng(0, 127), B3 = dAng(-45, 90), HPd = dp(0, 0);
+  g.fillStyle = night ? '#2a6a38' : '#3aa44c';
+  poly(() => { g.moveTo(HPd[0], HPd[1] + 4 * SC); g.lineTo(B1[0], B1[1]); g.lineTo(B2[0], B2[1]); g.lineTo(B3[0], B3[1]); });
+  g.strokeStyle = '#b07a4e'; g.lineWidth = Math.max(2, 5 * SC);
+  [[HPd, B1], [B1, B2], [B2, B3], [B3, HPd]].forEach(([a, b]) => { g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); });
+  const M0 = dp(60.5, 0), mr = Math.max(9 * SC, 18 * M0[2] * PK / 2 * SC);
+  g.fillStyle = '#bd855a'; g.beginPath(); g.ellipse(M0[0], M0[1] + 2 * SC, mr, mr * .4, 0, 0, 7); g.fill();
+  g.fillStyle = '#a97245'; g.beginPath(); g.ellipse(M0[0], M0[1] + mr * .22, mr, mr * .3, 0, 0, 7); g.fill();
+  g.fillStyle = '#eee8dd'; g.fillRect(M0[0] - 4 * SC, M0[1] - 2 * SC, 8 * SC, 2 * SC);
+  g.strokeStyle = '#f2efe6'; g.lineWidth = Math.max(1, SC);
+  [-45, 45].forEach(a => { const far = dAng(a, wallDist(a)); g.beginPath(); g.moveTo(HPd[0], HPd[1] + 4 * SC); g.lineTo(far[0], far[1]); g.stroke(); });
+  g.fillStyle = '#f4f1e8';
+  [B1, B2, B3].forEach(b => { const s = Math.max(3, 8 * SC); g.fillRect(b[0] - s / 2, b[1] - s / 3, s, s * .6); });
+  g.beginPath(); g.moveTo(HPd[0] - 10 * SC, HPd[1] - SC); g.lineTo(HPd[0] + 10 * SC, HPd[1] - SC);
+  g.lineTo(HPd[0] + 10 * SC, HPd[1] + 3 * SC); g.lineTo(HPd[0], HPd[1] + 7 * SC); g.lineTo(HPd[0] - 10 * SC, HPd[1] + 3 * SC); g.closePath(); g.fill();
+  g.strokeStyle = '#ffffff55'; g.lineWidth = Math.max(1, SC);
+  g.strokeRect(HPd[0] - 42 * SC, HPd[1] - 9 * SC, 26 * SC, 24 * SC);
+  g.strokeRect(HPd[0] + 16 * SC, HPd[1] - 9 * SC, 26 * SC, 24 * SC);
+
+  g.restore(); g.imageSmoothingEnabled = false;                 // back to logical space + crisp sprites
+}
+
 function drawBatterView(dt){
   const park = M.park; park.excite = M.exc;
-  drawField(park, frame);
+  drawFieldHD(park, frame);
   const ft = fldTeam(), bt = batTeam();
   drawFielders(ft);
 
@@ -1546,7 +1662,7 @@ function drawUmp(x, y, ft){
 // ── the two cards facing off before an at-bat ──────────────────────────────
 function drawMatchup(){
   btns = [];
-  drawField(M.park, frame);
+  drawFieldHD(M.park, frame);
   drawFielders(fldTeam());
   R(0, 0, W, H, '#060a12cc');
   const ft = fldTeam(), bt = batTeam(), pit = curPitcher(), b = M.batter;
@@ -1694,7 +1810,7 @@ function drawPlay(){
   const B = BALL;
   if (!B){ drawBatterView(16); return; }
   const park = M.park; park.excite = M.exc;
-  drawField(park, frame);
+  drawFieldHD(park, frame);
   const ft = fldTeam(), bt = batTeam();
 
   // the defence where the simulation has them
