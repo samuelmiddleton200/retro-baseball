@@ -699,8 +699,9 @@ function blitImg(im, cx, footY, h, flip){
 }
 // the batter: swingT null = standing in; else 0..1 drives the swing frames
 function drawBatter(x, y, p, c1, c2, swingT, idle, num){
-  const im = swingT == null ? IMG.swing1
-           : swingT < .30 ? IMG.swing2 : swingT < .52 ? IMG.swing3 : IMG.swing4;
+  // swing2 (turned, bat cocked up) reads closest to the reference stance; swing1 was a flat back view
+  const im = swingT == null ? IMG.swing2
+           : swingT < .22 ? IMG.swing2 : swingT < .52 ? IMG.swing3 : IMG.swing4;
   if (blitImg(im, x, y, 92, p.bats === 'L')) return;
   const c = sprite(`B${lookKey(p.look)}|${c1}${c2}`, () => buildPlayer(batterPose(swingT), p.look, c1, c2, { number:num, helmet:1 }));
   blit(c, x, y, .70, p.bats === 'L');           // rig fallback until the image loads
@@ -1635,7 +1636,7 @@ function drawBatterView(dt){
 
   // ── the batter in the box ───────────────────────────────────────────────
   const b = M.batter, side = b.bats === 'L' ? 1 : -1;
-  const bx = HP.x + side * 44;
+  const bx = HP.x + side * 62;                               // inside the box, clear of the catcher and the zone
   drawBatter(bx, HOME_Y + 20, b, bt.c1, bt.c2, swing ? clamp(swing.t / 220, 0, 1) : null, frame, b.num);
 
   // ── the strike zone, floating over the plate ────────────────────────────
