@@ -211,7 +211,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27b';
+const BUILD = '10-27c';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -735,11 +735,11 @@ function drawPitcherAt(xL, yL, u){
   return drawTG(name, xL, yL, figH(yL / TU) * TGM[name].h / 65, false);
 }
 // the batter: four frames, ready / load / contact / follow-through. The bat is part of each frame.
-const PX_BAT = 3.15;                                              // target px per art px, so he is as tall as the target's batter
+const PX_BAT = 2.75;                                              // target px per art px, so he is as tall as the target's batter
 function drawBatter(p, swingT, idle){
   const k = swingT == null ? 0 : swingT < .20 ? 1 : swingT < .55 ? 2 : 3;
   const name = 'bat' + (k + 1); if (!ready(TG[name])) return false;
-  const lefty = p.bats === 'L', cxT = tx(300), cx = lefty ? W - cxT : cxT;
+  const lefty = p.bats === 'L', cxT = tx(252), cx = lefty ? W - cxT : cxT;
   const bob = swingT == null ? Math.sin(idle / 16) * .5 : 0;     // he rocks a little while he waits
   return drawTG(name, cx, ty(449) + bob, TGM[name].h * PX_BAT, lefty);
 }
@@ -1002,7 +1002,7 @@ function drawFielders(team){
 // ───────────────────────────────────────────────────────────────────────────
 const ZONE = { x: 190, y: 160, w: 22, h: 28 };                 // right over the plate
 function layoutZone(){                                          // sits over the plate, chest high, the way the target's batter stands
-  ZONE.w = 44 * TU; ZONE.h = 58 * TU; ZONE.x = tx(392) - ZONE.w / 2; ZONE.y = ty(350);
+  ZONE.w = 44 * TU; ZONE.h = 64 * TU; ZONE.x = tx(392) - ZONE.w / 2; ZONE.y = ty(318);
 }
 const PITCHES = { FB:{ n:'Fastball', mph:[90,102], br:[0,0],     col:'#ff6b5a' },
                   CV:{ n:'Curve',    mph:[74,84],  br:[0,22],    col:'#5ad2ff' },
@@ -1010,6 +1010,7 @@ const PITCHES = { FB:{ n:'Fastball', mph:[90,102], br:[0,0],     col:'#ff6b5a' }
                   CH:{ n:'Change',   mph:[78,86],  br:[4,10],    col:'#8ef08a' } };
 
 addEventListener('resize', fit); fit();
+addEventListener('keydown', e => { if (e.key === 'd' || e.key === 'D') CFG.DEBUG = !CFG.DEBUG; });
 let M = null;                                      // the match in progress
 
 function startGame(oppIdx, home, opts = {}){
@@ -1090,48 +1091,122 @@ const SET_TIME = 1400, WINDUP_TIME = 900;        // the pitcher sets, then winds
 const CATCH_TIME = 320;                          // the ball carrying on into the mitt
 const RESULT_HOLD = 1100;                        // how long a call stays up before the next pitch
 
-// ── the ball in play, in feet ──────────────────────────────────────────────
-// d = out from home plate, lat = to the right, h = height. One shared set of
-// units for the ball, the fielders and the wall.
-let BALL = null;
+// ── tuning knobs: everything the ball, the fielders and the runners use lives here ──────────────
+const CFG = {
+  // time
+  TIME_SCALE: 1.0,              // speeds up / slows down EVERYTHING once the ball is hit (ball, fielders, runners)
+  PITCH_TIME_SCALE: 0.5,        // only the pitch on its way to the plate; 0.5 = half real speed
+  // units (feet and seconds; a ball in play is d = out from the plate, lat = to the right, h = height)
+  PIXELS_PER_FOOT: 4.95,        // the aerial view's scale (bases 90 ft apart, mound 60.5 ft, fences 330 down the lines / 400 to centre)
+  MPH_TO_FPS: 1.467, GRAVITY: 32.2, MOUND_FT: 60.5, BASE_FT: 90,
+  // the ball
+  DRAG_K: 0.0022,               // a = -k |v| v   (with the lift below: 105 mph at 28 deg goes ~395 ft and hangs ~5.2 s; 95 mph ~350 ft)
+  LIFT_K: 0.0012,               // backspin lift, a = L |v|^2 perpendicular to the path; it is what makes a fly ball hang
+  RESTITUTION: 0.4, BOUNCE_LOSS: 0.22, ROLL_VZ: 3.5, ROLL_DECEL: 9,   // bounce height kept, speed lost per bounce, then roll friction (ft/s^2)
+  CONTACT_H: 3, FENCE_H: 9, WALL_BOUNCE: 0.35,
+  GROUND_MAX_LA: 10, LINE_MAX_LA: 25, POP_MIN_LA: 50,
+  // ratings (all 60-120)
+  CQ_MIN: 0.5, CQ_MAX: 1.0,     // exit velo = power * contact quality
+  FB_BASE: 70, FB_SLOPE: 0.58,  // fastball mph = 70 + (rating - 60) * 0.58
+  OFFSPEED_SLOW: { CV: 15, SL: 11, CH: 13 },
+  SPRINT_BASE: 22, SPRINT_SLOPE: 0.15,   // top speed ft/s = 22 + (rating - 60) * 0.15
+  ARM_BASE: 60, ARM_SLOPE: 0.5, // throw mph = 60 + (rating - 60) * 0.5
+  // fielders and runners
+  REACT_SLOW: 0.4, REACT_FAST: 0.2,      // reaction delay, worst to best fielding
+  FIELDER_ACCEL_T: 1.0,         // seconds to reach top speed
+  RUNNER_ACCEL_T: 1.4, RUN_START_DELAY: 0.3,   // home to first: ~3.9 s elite, ~4.4 s average, ~5 s slow
+  CATCH_RADIUS: 3, CATCH_H: 8,   // a fielder catches a ball within 3 ft of him and under 8 ft high
+  ROUTE_EFF: 0.8,               // a fielder never runs the perfect straight line: 0.8 means 25% more ground than the crow flies
+  BACK_PENALTY: 0.4,            // extra seconds to read and turn on a ball hit over his head
+  DIVE_REACH: 11,               // ...and a ball rolling along the ground can be stopped with a dive this far away
+  TRANSFER_GROUND: 0.65, TRANSFER_AIR: 0.40,   // glove to release
+  THROW_EFFICIENCY: 0.93,       // average speed of a throw vs its release speed (drag)
+  EXTRA_BASE_MARGIN: 0.30,      // a runner only takes the extra base if he beats the throw by this much
+  DEBUG: /[?&]debug/.test(location.search),
+};
+const sprintFps = r => CFG.SPRINT_BASE + (r - 60) * CFG.SPRINT_SLOPE;
+const fastballMph = r => CFG.FB_BASE + (r - 60) * CFG.FB_SLOPE;
+const throwFps = r => (CFG.ARM_BASE + (r - 60) * CFG.ARM_SLOPE) * CFG.MPH_TO_FPS * CFG.THROW_EFFICIENCY;
+const BASE_PTS = [[0, 0], [63.64, 63.64], [127.28, 0], [63.64, -63.64], [0, 0]];     // [depth, lat] of home, 1B, 2B, 3B
+// how far along the base path (feet) a runner is, for a runner starting from rest tau seconds ago
+const runDist = (rate, tau) => { const a = CFG.RUNNER_ACCEL_T, v = sprintFps(rate); return tau <= 0 ? 0 : tau < a ? .5 * v / a * tau * tau : .5 * v * a + v * (tau - a); };
+const runTime = (rate, S) => { const a = CFG.RUNNER_ACCEL_T, v = sprintFps(rate); return CFG.RUN_START_DELAY + (S <= .5 * v * a ? Math.sqrt(2 * S * a / v) : a + (S - .5 * v * a) / v); };
+function basePathPos(S){                                           // S feet along home -> 1B -> 2B -> 3B -> home
+  S = clamp(S, 0, 360); const k = Math.min(3, Math.floor(S / 90)), f = (S - k * 90) / 90;
+  return { d: lerp(BASE_PTS[k][0], BASE_PTS[k + 1][0], f), lat: lerp(BASE_PTS[k][1], BASE_PTS[k + 1][1], f) };
+}
 
+// ── the ball in play, in feet ──────────────────────────────────────────────
+let BALL = null;
+// fly a ball through the air with gravity and drag, bounce it, roll it, and watch the fence
+function simFlight(x, y, z, vx, vy, vz, wall){
+  const dt = 1 / 240, k = CFG.DRAG_K, L = vz > 0 ? CFG.LIFT_K : 0, path = [];
+  let t = 0, T = null, carry = 0, hr = false, rolling = false, wallT = null, n = 0;
+  while (t < 14){
+    if (n++ % 2 === 0) path.push([x, y, z]);                       // 120 samples a second
+    if (!rolling){
+      const sp = Math.hypot(vx, vy, vz);
+      const vh = Math.hypot(vx, vy) || 1e-6, lf = L * sp;          // lift acts along (-vz * heading, vh) / |v|
+      vx += (-k * sp * vx - lf * vz * vx / vh) * dt; vy += (-k * sp * vy - lf * vz * vy / vh) * dt;
+      vz += (-CFG.GRAVITY - k * sp * vz + lf * vh) * dt;
+    } else {
+      const sp = Math.hypot(vx, vy); if (sp < 1.5) break;
+      const dec = Math.min(sp, CFG.ROLL_DECEL * dt); vx -= vx / sp * dec; vy -= vy / sp * dec;
+    }
+    x += vx * dt; y += vy * dt; z += vz * dt; t += dt;
+    if (z <= 0 && !rolling){
+      z = 0;
+      if (T === null){ T = t; carry = Math.hypot(x, y); }
+      if (hr) break;
+      if (vz < 0){ vz = -vz * CFG.RESTITUTION; vx *= 1 - CFG.BOUNCE_LOSS; vy *= 1 - CFG.BOUNCE_LOSS; if (vz < CFG.ROLL_VZ){ vz = 0; rolling = true; } }
+    }
+    if (wall && !hr){
+      const r = Math.hypot(x, y), ang = Math.atan2(x, y) * 180 / Math.PI;
+      if (Math.abs(ang) <= 45 && r >= wallDist(ang)){
+        if (z > CFG.FENCE_H) hr = true;
+        else {                                                     // it hits the wall and comes back
+          const ux = x / r, uy = y / r, vr = vx * ux + vy * uy;
+          if (vr > 0){ vx -= (1 + CFG.WALL_BOUNCE) * vr * ux; vy -= (1 + CFG.WALL_BOUNCE) * vr * uy; }
+          const w = wallDist(ang); x = ux * w; y = uy * w; if (wallT === null) wallT = t;
+        }
+      }
+    }
+  }
+  if (T === null){ T = t; carry = Math.hypot(x, y); }
+  return { path, T, carry, hr, wallT };
+}
 function launchBall(ev, la, sa, qual){
-  const fps = ev * 1.467;
-  // hang time from the launch angle, and the carry the old tuned formula gives
-  const T = clamp(2 * fps * Math.sin(Math.abs(la) * Math.PI / 180) / 32.17, .34, 6.2);
-  const carry = ev * ev / 24 * clamp(Math.cos((la - 28) * Math.PI / 110), .35, 1) * lerp(.9, 1.12, qual);
+  const rad = Math.PI / 180, v = ev * CFG.MPH_TO_FPS, c = Math.cos(la * rad), foul = Math.abs(sa) > 45;
+  const sim = simFlight(0, 0, CFG.CONTACT_H, v * c * Math.sin(sa * rad), v * c * Math.cos(sa * rad), v * Math.sin(la * rad), !foul);
   BALL = {
-    t:0, T, carry, la, sa, ev, qual,
-    d:0, lat:0, h:3,
-    grounder: la < 8, roll:0, bounces:0,
-    landed:false, caught:false, done:false,
-    foul: Math.abs(sa) > 45,
+    t:0, T:sim.T, carry:sim.carry, la, sa, ev, qual, hr:sim.hr, path:sim.path,
+    d:0, lat:0, h:CFG.CONTACT_H, grounder: la < CFG.GROUND_MAX_LA, landed:false, caught:false, done:false,
+    foul, judged:false, play:null, tJudge:Math.min(sim.T, 3), tEnd:Math.min(sim.T, 3) + .8, tf:null, thr:null,
   };
   return BALL;
 }
-// move the ball on by dt milliseconds
+// where the ball is at time t: on its flight, in a fielder's hands, or on a throw
+function ballPos(B, t){
+  if (B.tf !== null && t >= B.tf){
+    if (B.thr && t >= B.thr.t0){
+      const u = clamp((t - B.thr.t0) / (B.thr.t1 - B.thr.t0), 0, 1);
+      return { d: lerp(B.thr.from[0], B.thr.to[0], u), lat: lerp(B.thr.from[1], B.thr.to[1], u), h: 4 + 5 * Math.sin(Math.PI * u) * Math.min(1, B.thr.len / 120) };
+    }
+    return { d: B.pf[0], lat: B.pf[1], h: 3.5 };
+  }
+  const i = t * 120, k = Math.min(B.path.length - 1, Math.floor(i)), a = B.path[k], b = B.path[Math.min(B.path.length - 1, k + 1)], f = i - k;
+  const u = k >= B.path.length - 1 ? 0 : f;
+  return { d: lerp(a[1], b[1], u), lat: lerp(a[0], b[0], u), h: lerp(a[2], b[2], u) };
+}
+// move the ball on by dt milliseconds (the caller applies TIME_SCALE)
 function stepBall(dt){
   const B = BALL; if (!B || B.done) return;
   B.t += dt / 1000;
-  const r = B.sa * Math.PI / 180;
-  if (B.grounder){
-    // a grounder skips and slows: most of the run happens in the first second
-    const k = 1 - Math.exp(-B.t * 1.6);
-    const run = B.carry * k;
-    B.d = run * Math.cos(r); B.lat = run * Math.sin(r);
-    // small hops that die away
-    const hop = Math.max(0, Math.sin(B.t * 7) * 2.2 * Math.exp(-B.t * 1.4));
-    B.h = hop;
-    if (B.t > 2.6) B.landed = true;
-  } else {
-    const vv = 16.1 * B.T;                                  // so it comes back to the ground at t = T
-    B.h = Math.max(0, vv * B.t - 16.1 * B.t * B.t);
-    const fwd = B.carry * Math.min(1, B.t / B.T);
-    B.d = fwd * Math.cos(r); B.lat = fwd * Math.sin(r);
-    if (B.t >= B.T){ B.landed = true; B.h = 0; }
-  }
+  const p = ballPos(B, B.t); B.d = p.d; B.lat = p.lat; B.h = p.h;
+  if (B.t >= B.T) B.landed = true;
 }
-const ballDist = () => Math.hypot(BALL.d, BALL.lat);
+const ballDist = () => BALL.landed ? BALL.carry : Math.hypot(BALL.d, BALL.lat);
+
 
 // ── the pitch ──────────────────────────────────────────────────────────────
 function nextPitch(){
@@ -1160,8 +1235,9 @@ function throwPitch(type, ax, ay){
   P.type = type;
   P.tx = ax + (bell() - .5) * 2 * miss;
   P.ty = ay + (bell() - .5) * 2 * miss;
-  P.mph = Math.round(lerp(info.mph[0], info.mph[1], clamp((p.velocity - 60) / 60, 0, 1)) - fatigue() * 3);
-  P.dur = clamp(830 * 90 / P.mph, 640, 1250);          // 0.83 s for a 90 mph pitch (half real speed); slower pitches take longer
+  const fb = fastballMph(p.velocity);                    // the fastball from the rating; off-speed pitches are 10-15 mph slower
+  P.mph = Math.round((type === 'FB' ? fb : fb - (CFG.OFFSPEED_SLOW[type] || 12)) - fatigue() * 3);
+  P.dur = CFG.MOUND_FT / (P.mph * CFG.MPH_TO_FPS) * 1000 / CFG.PITCH_TIME_SCALE;   // 60.5 ft at its real speed, slowed by PITCH_TIME_SCALE
   P.br = [info.br[0] * lerp(.6, 1.3, (q - 60) / 60), info.br[1] * lerp(.6, 1.3, (q - 60) / 60)];
   P.quality = q;
   P.thrown = true; P.t = 0; P.state = 'flight';
@@ -1249,8 +1325,9 @@ function foulBall(dErr, edge){
   const side = dErr < 0 ? -pullSide : pullSide;                   // early = pulled foul, late = back the other way
   const sa = side * rnd(72, 47);
   launchBall(lerp(52, 86, 1 - edge), rnd(58, 14), sa, .3);
-  BALL.foul = true;
+  BALL.foul = true; BALL.tJudge = Math.min(BALL.T, 2.5); BALL.tEnd = BALL.tJudge + .6;
   P.state = 'inplay'; P.playT = 0;
+  planFielders();
 }
 
 // solid contact: this is where timing, location, the hitter and a little luck meet
@@ -1258,85 +1335,97 @@ function makeContact(qual, dErr){
   const b = M.batter;
   // early swings pull the ball, late swings go the other way
   const pull = clamp(-dErr / 140, -1, 1) * (b.bats === 'L' ? -1 : 1);
-  const sa = clamp(pull * 36 + (bell() - .5) * 24, -47, 47);
+  const sa = clamp(pull * 28 + (bell() - .5) * 70, -62, 62);        // beyond 45 degrees it is a foul
   // a pitch up in the zone gets lifted, a pitch down gets beaten into the ground
   const la = clamp(lerp(-10, 40, bell()) + qual * 9 - P.ty * 11, -22, 56);
-  const pw = clamp((b.power - 60) / 60, 0, 1);
   const roll = bell() * .55 + Math.random() * .45;
-  const ev = lerp(58, 110, clamp(qual * .55 + pw * .3 + roll * .35, 0, 1));
+  const cq = lerp(CFG.CQ_MIN, CFG.CQ_MAX, clamp(.7 + qual * .3 + (roll - .5) * .3, 0, 1));   // contact quality, 0.5 .. 1.0
+  const ev = b.power * cq;                                                               // exit velo (mph) = power rating x contact quality
   launchBall(ev, la, sa, qual);
-  if (Math.abs(sa) > 45){ BALL.foul = true; }
   P.state = 'inplay'; P.playT = 0;
   planFielders();
 }
 
 // ── the defence ────────────────────────────────────────────────────────────
-// Each fielder starts where he stands and runs for the ball. Whether he gets
-// there is what decides a catch, a hit, or an out at first.
+// Every fielder reacts, accelerates, and runs for the first point on the ball's path he can reach in time.
 let FLD = null;
+const fldDist = (acc, v, tau) => tau <= 0 ? 0 : tau < acc ? .5 * v / acc * tau * tau : .5 * v * acc + v * (tau - acc);
+const fldReach = (f, D) => (D /= CFG.ROUTE_EFF, f.react) + (D <= .5 * f.speed * CFG.FIELDER_ACCEL_T ? Math.sqrt(2 * D * CFG.FIELDER_ACCEL_T / f.speed) : CFG.FIELDER_ACCEL_T + (D - .5 * f.speed * CFG.FIELDER_ACCEL_T) / f.speed);
 function planFielders(){
-  const ft = fldTeam();
-  const land = { d: BALL.carry * Math.cos(BALL.sa * Math.PI / 180),
-                 lat: BALL.carry * Math.sin(BALL.sa * Math.PI / 180) };
+  const B = BALL, ft = fldTeam();
+  const last = B.path[B.path.length - 1], tEnd = (B.path.length - 1) / 120;
   FLD = FIELDERS.map(([d, lat, pos], i) => {
     const man = ft.lineup[i] || ft.lineup[0];
     const fld = clamp((man.fielding - 60) / 60, 0, 1);
-    const speed = lerp(17, 26, fld);                      // feet per second
-    const reach = lerp(5, 10, fld);                       // how much ground his glove covers
-    const gap = Math.hypot(land.d - d, land.lat - lat);
-    return { i, man, pos, d, lat, x:d, y:lat, speed, reach, fld,
-             need: Math.max(0, gap - reach) / speed, gap, land };
+    return { i, man, pos, d, lat, x:d, y:lat, speed: sprintFps(man.speed), react: lerp(CFG.REACT_SLOW, CFG.REACT_FAST, fld), fld,
+             armFps: throwFps(man.fielding), arm: CFG.ARM_BASE + (man.fielding - 60) * CFG.ARM_SLOPE,
+             need: 99, gap: 0, chasing: false, t0: 0, tx: d, ty: lat, ex: d, ey: lat };
   });
-  // whoever can get there soonest goes for it
-  FLD.sort((a, b2) => a.need - b2.need);
-  FLD[0].chasing = true;
-  BALL.chaser = FLD[0];
+  const land = ballPos(B, B.T); B.land = land;
+  FLD.forEach(f => { f.gap = Math.hypot(land.d - f.d, land.lat - f.lat); });
+  if (B.foul){ B.chaser = null; return; }
+  if (B.hr){ B.chaser = null; B.play = 'hr'; B.tJudge = Math.min(B.T, 3.2); B.tEnd = B.tJudge + 2.0; B.runN = 4; return; }
+  // the earliest moment each man can be within reach of the ball while it is low enough to catch
+  FLD.forEach(f => {
+    let hit = null;
+    for (let k = 0; k < B.path.length; k += 2){
+      const p = B.path[k], t = k / 120; if (p[2] > CFG.CATCH_H) continue;
+      const D = Math.hypot(p[1] - f.d, p[0] - f.lat);
+      if (fldReach(f, Math.max(0, D - (p[2] < 2.5 ? CFG.DIVE_REACH : CFG.CATCH_RADIUS))) + (p[1] > f.d + 8 ? CFG.BACK_PENALTY : 0) <= t){ hit = { t, p, D, R: p[2] < 2.5 ? CFG.DIVE_REACH : CFG.CATCH_RADIUS }; break; }
+    }
+    if (!hit){ const D = Math.hypot(last[1] - f.d, last[0] - f.lat); hit = { t: Math.max(tEnd, fldReach(f, Math.max(0, D - CFG.CATCH_RADIUS))), p: last, D, R: CFG.CATCH_RADIUS }; }
+    f.hit = hit; f.need = hit.t;
+  });
+  const c = FLD.reduce((a, f) => f.need < a.need ? f : a);
+  c.chasing = true; B.chaser = c;
+  const D = c.hit.D, run = Math.max(0, D - c.hit.R), u = D > 0 ? run / D : 0;
+  c.tx = c.d + (c.hit.p[1] - c.d) * u; c.ty = c.lat + (c.hit.p[0] - c.lat) * u;       // where he ends up: a glove's reach short of the ball
+  c.runLen = run;
+  B.tf = c.need; B.pf = [c.tx, c.ty];
+  planOutcome(B, c);
 }
+// who is where right now
 function stepFielders(dt){
   if (!FLD || !BALL) return;
-  const s = dt / 1000;
-  FLD.forEach(f => {
-    if (!f.chasing) return;
-    const tx = BALL.d, ty = BALL.lat;
-    const dx = tx - f.x, dy = ty - f.y, L = Math.hypot(dx, dy);
-    if (L > 1){ const step = Math.min(L, f.speed * s); f.x += dx / L * step; f.y += dy / L * step; }
-  });
+  const c = BALL.chaser; if (!c) return;
+  const tau = BALL.t - c.react, s = Math.min(c.runLen, fldDist(CFG.FIELDER_ACCEL_T, c.speed, tau) * CFG.ROUTE_EFF), f = c.runLen > 0 ? s / c.runLen : 1;
+  c.x = lerp(c.d, c.tx, f); c.y = lerp(c.lat, c.ty, f);
 }
-// has the play finished, and what was it?
-function judgePlay(){
-  const B = BALL, b = M.batter;
-  if (B.foul) return 'foul';
-  const need = wallDist(B.sa);
-  const chaser = B.chaser;
-  const spd = clamp((b.speed - 60) / 60, 0, 1);
-  // out of the park
-  if (!B.grounder && B.carry >= need && B.la > 14 && B.la < 46) return 'hr';
-  // in the air: can he get under it in time?
-  if (!B.grounder){
-    const caught = chaser && chaser.need <= B.T + .05 && B.la > 9;
-    if (caught){
-      B.caught = true;
-      return B.la > 26 ? 'flyout' : 'lineout';
-    }
-    // it drops. How far it got, and how far the nearest man had to go, decide the bases
-    const extra = chaser ? chaser.need - B.T : 2;
-    if (B.carry > need * .93 && extra > .9) return chance(.45 + spd * .2) ? 'triple' : 'double';
-    if (extra > .55 || B.carry > need * .80) return chance(.30 + spd * .12) ? 'double' : 'single';
-    return 'single';
+// the batter and the throw: the whole play, worked out once at contact
+function planOutcome(B, c){
+  const b = M.batter, spd = b.speed, tf = B.tf, pf = B.pf;
+  const inAir = !B.grounder && tf <= B.T + .03 && B.la >= CFG.GROUND_MAX_LA;
+  const bases = [[63.64, 63.64], [127.28, 0], [63.64, -63.64], [0, 0]];
+  const baseDist = n => Math.hypot(pf[0] - bases[n - 1][0], pf[1] - bases[n - 1][1]);
+  const throwArr = (n, tr) => tf + tr + baseDist(n) / c.armFps;
+  const throwTo = (n, tr) => { B.thr = { t0: tf + tr, t1: throwArr(n, tr), from: pf, to: bases[n - 1], len: baseDist(n) }; };
+  B.runN = 1; B.out = false;
+  if (inAir){
+    B.isCatch = true; B.play = B.la > CFG.LINE_MAX_LA ? 'flyout' : 'lineout'; B.tJudge = tf; B.tEnd = tf + 1.0; B.runN = 0; return;
   }
-  // on the ground: can an infielder cut it off and beat him to first?
-  const inf = FLD.filter(f => f.pos !== 'LF' && f.pos !== 'CF' && f.pos !== 'RF');
-  const best = inf.reduce((a, f) => f.need < a.need ? f : a, inf[0]);
-  if (chance(.022 + (110 - chaser.man.fielding) / 1100)) return 'error';
-  const through = best.need > .42 || Math.abs(B.sa) > 38;          // squeezed past him
-  if (through) return chance(.09 + spd * .1) ? 'double' : 'single';
-  // he has it: the throw to first against the runner
-  const runTime = lerp(4.55, 3.75, spd);
-  const throwTime = best.need + .78 + Math.hypot(best.x - 63, best.y - 63) / 112;
-  if (M.bases[0] && M.outs < 2 && best.need < .30 && chance(.52)) return 'dp';
-  if (throwTime < runTime - .06) return 'groundout';
-  return chance(.72) ? 'single' : 'groundout';
+  const tr = Math.hypot(pf[0], pf[1]) < 150 && !B.hr ? CFG.TRANSFER_GROUND : CFG.TRANSFER_AIR;
+  if (B.hr){ B.play = 'hr'; B.tJudge = Math.min(B.T, 3.2); B.tEnd = B.tJudge + 2.0; B.runN = 4; return; }
+  B.tJudge = tf;
+  if (Math.hypot(pf[0], pf[1]) < 150){                              // fielded in the infield: a throw to first
+    const a1 = throwArr(1, tr), t1 = runTime(spd, 90);
+    if (chance(.022 + (110 - c.man.fielding) / 1100)){ B.play = 'error'; B.tEnd = tf + 1.6; return; }
+    if (M.bases[0] && M.outs < 2){
+      const a2 = throwArr(2, tr), r1 = runTime(M.bases[0].speed, 90);
+      if (a2 < r1){ const a1b = a2 + .55 + 127.28 / (c.armFps * .9); if (a1b < t1){ B.play = 'dp'; throwTo(2, tr); B.tEnd = a1b + .6; B.runN = 1; B.out = true; return; } }
+    }
+    throwTo(1, tr);
+    if (a1 < t1){ B.play = 'groundout'; B.out = true; B.tJudge = a1; B.tEnd = a1 + .7; return; }
+    B.play = 'single'; B.tEnd = Math.max(t1, a1) + .6; return;
+  }
+  // a hit to the outfield: how many bases can he take before the throw arrives?
+  let n = 1;
+  for (const k of [2, 3]) if (runTime(spd, 90 * k) + CFG.EXTRA_BASE_MARGIN < throwArr(k, tr)) n = k; else break;
+  throwTo(n + 1, tr);
+  B.play = ['', 'single', 'double', 'triple'][n]; B.runN = n;
+  B.tEnd = Math.max(runTime(spd, 90 * n), tf) + .8;
 }
+
+const judgePlay = () => BALL && BALL.play;
 
 // ── one step of the at-bat, always SIM_DT long ─────────────────────────────
 function stepAtBat(dt){
@@ -1395,18 +1484,16 @@ function stepAtBat(dt){
   if (P.state === 'inplay'){
     P.playT += dt;
     if (swing) swing.t += dt;
-    stepBall(dt);
-    stepFielders(dt);
+    const ds = dt * CFG.TIME_SCALE;                          // TIME_SCALE speeds the whole play up or slows it down
+    stepBall(ds);
+    stepFielders(ds);
     const B = BALL;
-    if (!B.judged){
-      const settled = B.foul ? B.t > .9 : (B.landed || (B.chaser && B.chaser.need <= B.t && !B.grounder && B.la > 9));
-      if (settled){
-        B.judged = true;
-        B.play = judgePlay();
-        if (B.play === 'foul'){ say('FOUL BALL'); }
-      }
+    if (B.isCatch && B.t >= B.tf) B.caught = true;
+    if (!B.judged && B.t >= B.tJudge){
+      B.judged = true;
+      if (B.foul){ B.play = 'foul'; say('FOUL BALL'); }
     }
-    if (B.judged && P.playT > (B.play === 'hr' ? 2200 : 1500)){
+    if ((B.judged && B.t > B.tEnd) || P.playT > 20000){
       P.state = 'result'; P.hold = 0; applyCall();
     }
     return;
@@ -1693,8 +1780,27 @@ function drawBatterView(dt){
 
   // the batter waits, then swings; the catcher crouches with the umpire right in front of him
   drawBatter(M.batter, swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null, frame);   // contact lands at 46% of the swing
-  drawBehindPlate();
 
+  // the ball, with the dotted line the target draws down the middle
+  if (P && P.thrown && P.state === 'flight' && P.t < P.dur){
+    const f = P.t / P.dur, q = ballAt(f);
+    for (let k = .05; k < f - .03; k += .06){ const d = ballAt(k); R(Math.round(d.x), Math.round(d.y), 1, 1, 'rgba(255,255,255,.8)'); }
+    for (let i = 1; i <= 4; i++){                               // a short glow behind it reads as speed
+      const o = ballAt(clamp(f - i * .045, 0, 1));
+      R(o.x - o.r / 2, o.y - o.r / 2, o.r, o.r, `rgba(255,255,255,${.09 * (5 - i)})`);
+    }
+    drawBall(q.x, q.y, q.r);
+  }
+  else if (P && P.caught > 0 && P.state !== 'inplay'){            // into the catcher's mitt, with a little pop
+    const k = clamp(1 - P.caught / 260, 0, 1), end = mittPt(), from = ballAt(1);
+    const x = lerp(from.x, end.x, k), y = lerp(from.y, end.y, k);
+    drawBall(x, y, 3.4);
+    if (k > .9){ const pop = (k - .9) * 10;
+      g.strokeStyle = `rgba(255,255,255,${(1 - pop) * .7})`; g.lineWidth = 1;
+      g.beginPath(); g.arc(end.x, end.y, 3 + pop * 7, 0, 7); g.stroke(); }
+  }
+
+  drawBehindPlate();                                             // the ball is behind the catcher's head once it gets there
   // the strike zone, a faint box over the plate
   const live = P && (P.thrown || P.aim || phase === 'pitching');
   g.strokeStyle = live ? '#ffffff55' : '#ffffff26'; g.lineWidth = 1;
@@ -1709,28 +1815,26 @@ function drawBatterView(dt){
     g.stroke();
   }
 
-  // the ball, with the dotted line the target draws down the middle
-  if (P && P.thrown && P.state === 'flight' && P.t < P.dur){
-    const f = P.t / P.dur, q = ballAt(f);
-    for (let k = .05; k < f - .03; k += .06){ const d = ballAt(k); R(Math.round(d.x), Math.round(d.y), 1, 1, 'rgba(255,255,255,.8)'); }
-    for (let i = 1; i <= 4; i++){                               // a short glow behind it reads as speed
-      const o = ballAt(clamp(f - i * .045, 0, 1));
-      R(o.x - o.r / 2, o.y - o.r / 2, o.r, o.r, `rgba(255,255,255,${.09 * (5 - i)})`);
-    }
-    g.fillStyle = '#fdfdf5'; g.beginPath(); g.arc(q.x, q.y, q.r, 0, 7); g.fill();
-    if (q.r > 2) R(q.x - q.r, q.y - .5, q.r * 2, 1, '#d8342c');
-  }
-  else if (P && P.caught > 0 && P.state !== 'inplay'){            // into the catcher's mitt, with a little pop
-    const k = clamp(1 - P.caught / 260, 0, 1), end = mittPt(), from = ballAt(1);
-    const x = lerp(from.x, end.x, k), y = lerp(from.y, end.y, k);
-    g.fillStyle = '#fdfdf5'; g.beginPath(); g.arc(x, y, 3.6, 0, 7); g.fill();
-    if (k > .9){ const pop = (k - .9) * 10;
-      g.strokeStyle = `rgba(255,255,255,${(1 - pop) * .7})`; g.lineWidth = 1;
-      g.beginPath(); g.arc(end.x, end.y, 3 + pop * 7, 0, 7); g.stroke(); }
-  }
-
   drawHUD();
   if (M.msg) textb(M.msg, W / 2, 62, M.msg.includes('!') ? '#ffd23f' : '#fff', 14, 'center');
+}
+
+// a pixel-art baseball: dark rim, lit top-left, shaded bottom-right, two red seams
+function drawBall(x, y, r){
+  const cx = Math.round(x), cy = Math.round(y), Rr = Math.max(1, Math.round(r));
+  if (Rr < 2){ R(cx - 1, cy - 1, 2, 2, '#f4f1e8'); R(cx - 1, cy, 2, 1, '#2a2f45'); return; }
+  for (let dy = -Rr; dy <= Rr; dy++) for (let dx = -Rr; dx <= Rr; dx++){
+    const d = Math.hypot(dx, dy); if (d > Rr + .35) continue;
+    let c;
+    if (d > Rr - .6) c = '#262b40';                                   // rim
+    else {
+      const l = (-dx - dy) / (Rr * 1.4);
+      c = l > .35 ? '#ffffff' : l > -.1 ? '#f1eee5' : l > -.5 ? '#cbc8c3' : '#9b9ca9';
+      const sx = Math.abs(dx) - (.62 * Rr - .5 * dy * dy / Rr);       // two curved seams, red stitches
+      if (Math.abs(dy) < Rr * .8 && Math.abs(sx) < .6 && Rr >= 3) c = l > -.1 ? '#e0453a' : '#a52a2a';
+    }
+    R(cx + dx, cy + dy, 1, 1, c);
+  }
 }
 
 // the umpire leaning in behind the catcher
@@ -1948,10 +2052,14 @@ function drawAerial(B, bt){
   });
   const cq = aerPt(-3, 0); put(cq.x, cq.y, 'in_xs', false);                 // the catcher
   const pq = aerPt(60.5, 0); put(pq.x, pq.y, 'in_xs', false);               // the pitcher
-  const run = clamp((P.playT - 150) / 1500, 0, 1), rb = aerPt(63.6 * run, 63.6 * run);
-  put(rb.x, rb.y, 'run_away', false);
+  // the batter and the runners go along the base path at their own speeds
+  const batS = B.foul ? 0 : B.isCatch ? 25 : 90 * (B.runN || 1);
+  const bp = basePathPos(Math.min(batS, runDist(M.batter.speed, B.t - CFG.RUN_START_DELAY)));
+  const rb = aerPt(bp.d, bp.lat); put(rb.x, rb.y, 'run_away', false);
   M.bases.forEach((p2, i) => { if (!p2) return;
-    const q = i === 0 ? aerPt(63.6, 63.6) : i === 1 ? aerPt(127.3, 0) : aerPt(63.6, -63.6); put(q.x, q.y, 'run_away', false); });
+    const adv = B.foul || B.isCatch || B.play === 'groundout' ? 0 : (B.runN || 1);
+    const q0 = 90 * (i + 1), q = basePathPos(q0 + Math.min(adv * 90, runDist(p2.speed, B.t - CFG.RUN_START_DELAY)));
+    const qq = aerPt(q.d, q.lat); put(qq.x, qq.y, 'run_away', false); });
   // the ball: its path drawn as a white arc like the picture
   const gp = aerPt(B.d, B.lat), lift = B.h * .55;
   if (B.t < .05) aerTrail = [];
@@ -1959,7 +2067,9 @@ function drawAerial(B, bt){
   g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 1; g.beginPath();
   aerTrail.forEach((t, i) => i ? g.lineTo(t[0], t[1]) : g.moveTo(t[0], t[1])); g.stroke();
   R(gp.x - 1.5, gp.y - 1, 3, 1.5, '#00000066');
-  g.fillStyle = '#fdfdf5'; g.beginPath(); g.arc(gp.x, gp.y - lift, 2.2, 0, 7); g.fill();
+  if (CFG.DEBUG && B.land){ const lp = aerPt(B.land.d, B.land.lat); g.strokeStyle = '#ff4040'; g.lineWidth = 1; g.beginPath(); g.moveTo(lp.x - 3, lp.y - 3); g.lineTo(lp.x + 3, lp.y + 3); g.moveTo(lp.x + 3, lp.y - 3); g.lineTo(lp.x - 3, lp.y + 3); g.stroke();
+    (FLD || []).forEach(f => { const q = aerPt(f.x, f.y); tt(Math.round(Math.hypot(B.land.d - f.x, B.land.lat - f.y)) + 'ft', q.x, q.y + 7, 7, '#ffd23f', 'center'); }); }
+  drawBall(gp.x, gp.y - lift, 2.2);
   return { x: gp.x, y: gp.y, lift };
 }
 function drawPlay(){
@@ -1968,6 +2078,7 @@ function drawPlay(){
   const bt = batTeam();
   const ar = drawAerial(B, bt), gp = ar, lift = ar.lift;
   tt(`${Math.round(B.ev)} MPH   ${Math.round(ballDist())} FT`, W / 2, ty(34), 18, '#e8eef9', 'center');
+  if (CFG.DEBUG) tt(`EV ${B.ev.toFixed(1)} mph  LA ${B.la.toFixed(1)}  HANG ${B.T.toFixed(2)} s  LAND ${B.land ? Math.round(B.land.d) + ',' + Math.round(B.land.lat) : '-'}  ${B.play || ''}`, W / 2, ty(52), 11, '#ff9a8a', 'center');
   if (B.judged){
     if (B.play === 'hr'){
       textb('GONE!', W / 2, 46, '#ffd23f', 22, 'center');
@@ -2692,7 +2803,7 @@ addEventListener('keydown', e => {
 window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   buyPack, revealNext, rollCard, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
   get P(){ return P; }, get BALL(){ return BALL; }, get swing(){ return swing; }, get FLD(){ return FLD; },
-  stepAtBat, doSwing, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
+  stepAtBat, doSwing, makeContact, planFielders, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
   set swing(v){ swing = v; },
   // schedule a swing so the bat arrives at a chosen point in the pitch
   swingAt(ms){ swing = { start: ms - BAT_LAG, contactAt: ms, t:0, resolved:false, cpu:false }; },
