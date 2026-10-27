@@ -211,7 +211,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27a';
+const BUILD = '10-27b';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -688,6 +688,7 @@ const ARTNAMES = ['swing1','swing2','swing3','swing4','pitch1','pitch2','pitch3'
 const IMG = {}; let imgReady = 0;
 ARTNAMES.forEach(n => { const im = new Image(); im._n = n; im.onload = () => imgReady++; im.src = 'assets/' + n + '.png'; IMG[n] = im; });
 IMG.field = new Image(); IMG.field.onload = () => imgReady++; IMG.field.src = 'assets/fields/field_tone.png';
+IMG.aerial = new Image(); IMG.aerial.onload = () => imgReady++; IMG.aerial.src = 'assets/fields/aerial.png';
 const ready = im => im && im.complete && im.naturalWidth > 0;
 // draw a loaded sprite so its feet sit at (cx, footY) in logical units, scaled to height h
 function blitImg(im, cx, footY, h, flip){
@@ -697,11 +698,11 @@ function blitImg(im, cx, footY, h, flip){
   g.drawImage(im, Math.round(-w / 2), Math.round(footY - h), Math.round(w), Math.round(h));
   g.restore(); return true;
 }
-// ── the figures: cut from the target screenshot, drawn at the target's own sizes ──────
-const TGN = ['batter_body','bat','catcher','pitcher','corner_l','corner_r','pitch1_blue','pitch2_blue'];
-const TGM = {"batter": {"w": 40, "h": 65, "foot": 0.366, "px": 3.0, "src": [222, 246, 342, 440]}, "catcher": {"w": 41, "h": 45, "foot": 0.5, "px": 3.0, "src": [318, 358, 440, 492]}, "pitcher": {"w": 26, "h": 31, "foot": 0.385, "px": 2.0, "src": [388, 171, 440, 233]}, "corner_l": {"w": 27, "h": 32, "foot": 0.562, "px": 1.3, "src": [46, 171, 81, 213]}, "corner_r": {"w": 25, "h": 32, "foot": 0.55, "px": 1.3, "src": [704, 173, 737, 214]}, "mid_l": {"w": 23, "h": 25, "foot": 0.468, "px": 1.0, "src": [224, 157, 247, 182]}, "mid_r": {"w": 24, "h": 27, "foot": 0.521, "px": 1.0, "src": [616, 159, 640, 186]}, "far_c": {"w": 24, "h": 19, "foot": 0.5, "px": 1.0, "src": [402, 139, 426, 158]}, "far_l": {"w": 14, "h": 16, "foot": 0.393, "px": 1.0, "src": [98, 144, 112, 160]}, "far_r": {"w": 14, "h": 14, "foot": 0.554, "px": 1.0, "src": [738, 148, 752, 162]}, "mid": {"w": 17, "h": 20, "foot": 0.5, "px": 2.1}, "far": {"w": 10, "h": 12, "foot": 0.5, "px": 3.61}, "batter_body": {"w": 40, "h": 65, "foot": 0.366, "px": 3.0, "src": [222, 246, 342, 440], "pivot": [16.5, 20.5], "phi0": -124.62}, "bat": {"w": 18, "h": 23, "hx": 15.5, "hy": 20.5, "px": 3.0}, "pitch1_blue": {"w": 46, "h": 114, "foot": 0.471, "px": 0.55}, "pitch2_blue": {"w": 52, "h": 112, "foot": 0.65, "px": 0.55}};
+// ── the figures: a sprite sheet in the target's own style, sliced into frames ───────────────
+const S3N = ["bat1", "bat2", "bat3", "bat4", "pit1", "pit2", "pit3", "pit4", "catcher", "ump", "in_xs", "in_sm", "in_md", "out_xs", "out_sm", "out_md", "grab_sm", "grab_md", "run_away"];
+const TGM = {"bat1": {"w": 38, "h": 69, "foot": 0.42}, "bat2": {"w": 42, "h": 62, "foot": 0.515}, "bat3": {"w": 67, "h": 59, "foot": 0.343}, "bat4": {"w": 46, "h": 60, "foot": 0.609}, "pit1": {"w": 35, "h": 65, "foot": 0.507}, "pit2": {"w": 27, "h": 68, "foot": 0.444}, "pit3": {"w": 44, "h": 60, "foot": 0.517}, "pit4": {"w": 56, "h": 59, "foot": 0.632}, "catcher": {"w": 47, "h": 59, "foot": 0.49}, "ump": {"w": 39, "h": 68, "foot": 0.502}, "in_xs": {"w": 14, "h": 14, "foot": 0.5}, "in_sm": {"w": 24, "h": 24, "foot": 0.5}, "in_md": {"w": 40, "h": 40, "foot": 0.497}, "out_xs": {"w": 11, "h": 14, "foot": 0.5}, "out_sm": {"w": 19, "h": 24, "foot": 0.5}, "out_md": {"w": 32, "h": 40, "foot": 0.5}, "grab_sm": {"w": 28, "h": 24, "foot": 0.339}, "grab_md": {"w": 47, "h": 40, "foot": 0.455}, "run_away": {"w": 32, "h": 67, "foot": 0.5}};
 const TG = {};
-TGN.forEach(n => { const im = new Image(); im.onload = () => imgReady++; im.src = 'assets/tgt/' + n + '.png'; TG[n] = im; });
+S3N.forEach(n => { const im = new Image(); im.onload = () => imgReady++; im.src = 'assets/s3/' + n + '.png'; TG[n] = im; });
 // how tall a person is (target px) by how far down the screen his feet are -- measured off the target
 const FIG = [[150,12],[158,15],[165,17],[183,25],[212,42],[232,60],[300,98],[438,175]];
 function figH(yT){
@@ -709,75 +710,43 @@ function figH(yT){
   for (let i = 1; i < FIG.length; i++) if (yT <= FIG[i][0]) return lerp(FIG[i-1][1], FIG[i][1], (yT - FIG[i-1][0]) / (FIG[i][0] - FIG[i-1][0]));
   return FIG[FIG.length - 1][1];
 }
-// draw one cut sprite with its feet at logical (xL, yL); hT = how tall in target px (null = its own size)
-function drawTG(name, xL, yL, hT, flip){
+// draw one sprite with its feet at logical (xL, yL), hT target px tall, with a soft shadow on the ground
+function drawTG(name, xL, yL, hT, flip, noShadow){
   const im = TG[name]; if (!ready(im)) return false;
-  const m = TGM[name], h = (hT == null ? m.h * m.px : hT) * TU, w = h * im.naturalWidth / im.naturalHeight;
+  const m = TGM[name], h = hT * TU, w = h * im.naturalWidth / im.naturalHeight;
+  if (!noShadow){
+    g.fillStyle = 'rgba(28,18,8,.30)'; g.beginPath(); g.ellipse(Math.round(xL), Math.round(yL) - .3, w * .36, Math.max(.8, h * .055), 0, 0, 7); g.fill();
+  }
   g.save(); g.translate(Math.round(xL), 0); if (flip) g.scale(-1, 1);
   g.drawImage(im, Math.round(-m.foot * w), Math.round(yL - h), Math.round(w), Math.round(h));
   g.restore(); return true;
 }
-// a fielder standing on the field, sized by where he stands
-function drawFielderSprite(xL, yL, lat){ return drawTG(lat < 0 ? 'corner_l' : 'corner_r', xL, yL, figH(yL / TU), false); }
-// the pitcher: set and leg-lift from our frames (recoloured to match), release and follow-through are the target's own
+// a fielder standing on the field: infielders in the infield crouch, outfielders in theirs, picked to suit how big he is on screen
+function drawFielderSprite(xL, yL, pos, grab){
+  const hT = figH(yL / TU), out = pos === 'LF' || pos === 'CF' || pos === 'RF';
+  const lvl = hT <= 19 ? 'xs' : hT <= 32 ? 'sm' : 'md';
+  const name = grab && lvl !== 'xs' ? 'grab_' + lvl : (out ? 'out_' : 'in_') + lvl;
+  const flip = pos === '1B' || pos === '2B' || pos === 'RF';      // the right side faces the other way, so they do not look cloned
+  return drawTG(name, xL, yL, hT, flip);
+}
+// the pitcher: set, leg lift, release, follow-through, from u (0..1)
 function drawPitcherAt(xL, yL, u){
-  const name = u < .36 ? 'pitch1_blue' : u < .66 ? 'pitch2_blue' : 'pitcher';
-  return drawTG(name, xL, yL, figH(yL / TU), false);
+  const name = u < .30 ? 'pit1' : u < .60 ? 'pit2' : u < .80 ? 'pit3' : 'pit4';
+  return drawTG(name, xL, yL, figH(yL / TU) * TGM[name].h / 65, false);
 }
-// the bat at an angle, re-pixelled: drawn smooth at 4x, then each art pixel is kept or dropped, so it stays chunky
-const BATROT = {};
-function batRot(deg){
-  const key = Math.round(deg / 6) * 6; if (BATROT[key] !== undefined) return BATROT[key];
-  try {
-    const bt = TG.bat, bm = TGM.bat, S4 = 4, R = Math.ceil(Math.hypot(bt.naturalWidth, bt.naturalHeight)) + 3, N = R * 2;
-    const big = document.createElement('canvas'); big.width = big.height = N * S4;
-    const bx = big.getContext('2d'); bx.imageSmoothingEnabled = true; bx.imageSmoothingQuality = 'high';
-    bx.translate(R * S4, R * S4); bx.rotate((key - TGM.batter_body.phi0) * Math.PI / 180); bx.scale(S4, S4);
-    bx.drawImage(bt, -bm.hx, -bm.hy);
-    const d = bx.getImageData(0, 0, N * S4, N * S4).data;
-    const c = document.createElement('canvas'); c.width = c.height = N;
-    const cx = c.getContext('2d'), out = cx.createImageData(N, N);
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++){
-      let r = 0, gg = 0, b = 0, a = 0, n = 0;
-      for (let j = 0; j < S4; j++) for (let i = 0; i < S4; i++){
-        const k = ((y * S4 + j) * N * S4 + x * S4 + i) * 4, al = d[k + 3]; a += al;
-        if (al > 60){ r += d[k]; gg += d[k + 1]; b += d[k + 2]; n++; }
-      }
-      if (n && a / (S4 * S4) > 110){ const o = (y * N + x) * 4; out.data[o] = r / n; out.data[o + 1] = gg / n; out.data[o + 2] = b / n; out.data[o + 3] = 255; }
-    }
-    cx.putImageData(out, 0, 0);
-    return BATROT[key] = { c, R };
-  } catch (e) { return BATROT[key] = null; }               // (a browser that will not let us read pixels falls back to a plain rotate)
-}
-// the batter: a copy of the target's, with the bat as its own piece so it can swing
+// the batter: four frames, ready / load / contact / follow-through. The bat is part of each frame.
+const PX_BAT = 3.15;                                              // target px per art px, so he is as tall as the target's batter
 function drawBatter(p, swingT, idle){
-  const im = TG.batter_body, bt = TG.bat; if (!ready(im) || !ready(bt)) return false;
-  const m = TGM.batter_body, bm = TGM.bat, lefty = p.bats === 'L';
-  const [x0, y0, x1, y1] = m.src;
-  const sx = (x1 - x0) / m.w * TU, sy = (y1 - y0) / m.h * TU;          // logical px per sprite px
-  const w = m.w * sx, h = m.h * sy;
-  const cxT = tx((x0 + x1) / 2), cx = lefty ? W - cxT : cxT, foot = ty(y1 + 9);
-  const t = swingT == null ? -1 : clamp(swingT, 0, 1);
-  const ease = v => 1 - Math.pow(1 - v, 2);
-  let dx = 0, lean = 0;
-  if (t >= 0){ const k = t < .5 ? ease(t / .5) : 1 - .4 * ((t - .5) / .5); dx = k * 2.6 * sx; lean = k * .06; }
-  else lean = Math.sin(idle / 20) * .01;                                // he breathes
-  g.save(); g.translate(Math.round(cx), Math.round(foot)); if (lefty) g.scale(-1, 1);
-  g.translate(dx, 0); g.rotate(lean);
-  g.drawImage(im, Math.round(-w / 2), Math.round(-h), Math.round(w), Math.round(h));
-  // the bat swings about his hands: cocked back, through the zone, round the front
-  const hx = (m.pivot[0] - m.w / 2) * sx, hy = (m.pivot[1] - m.h) * sy;
-  let phi;
-  if (t < 0) phi = m.phi0 + Math.sin(idle / 11) * 2.2;
-  else if (t < .15) phi = lerp(m.phi0, m.phi0 - 12, t / .15);
-  else if (t < .5) phi = lerp(m.phi0 - 12, 14, ease((t - .15) / .35));
-  else phi = lerp(14, 92, ease((t - .5) / .5));
-  g.translate(hx, hy);
-  const rb = Math.abs(phi - m.phi0) < 3 ? null : batRot(phi);
-  if (rb) g.drawImage(rb.c, Math.round(-rb.R * sx), Math.round(-rb.R * sy), Math.round(2 * rb.R * sx), Math.round(2 * rb.R * sy));
-  else { g.rotate((phi - m.phi0) * Math.PI / 180);
-    g.drawImage(bt, Math.round(-bm.hx * sx), Math.round(-bm.hy * sy), Math.round(bt.naturalWidth * sx), Math.round(bt.naturalHeight * sy)); }
-  g.restore(); return true;
+  const k = swingT == null ? 0 : swingT < .20 ? 1 : swingT < .55 ? 2 : 3;
+  const name = 'bat' + (k + 1); if (!ready(TG[name])) return false;
+  const lefty = p.bats === 'L', cxT = tx(300), cx = lefty ? W - cxT : cxT;
+  const bob = swingT == null ? Math.sin(idle / 16) * .5 : 0;     // he rocks a little while he waits
+  return drawTG(name, cx, ty(449) + bob, TGM[name].h * PX_BAT, lefty);
+}
+// the catcher crouched behind the plate, the umpire right in front of him (his feet are off the bottom of the screen)
+function drawBehindPlate(){
+  drawTG('catcher', tx(386), ty(493), 136, false, true);
+  drawTG('ump', tx(386), ty(622), 238, false, true);
 }
 // a fielder far away in the replay: a few pixels, but still shaded
 function drawMini(x, y, lk, c1, c2, k = 1){
@@ -844,8 +813,14 @@ function feetAt(txx, tyy){
   if (rE > 127.3){ const r = 127.3 + (rE - 127.3) / .33, f = r / rE; d *= f; lat *= f; }
   return [d, lat];
 }
-const FIELDER_SPOTS = [['1B', 721, 212], ['2B', 627, 186], ['SS', 233, 184], ['3B', 66, 212], ['LF', 103, 158], ['CF', 413, 154], ['RF', 745, 163]];
-const FIELDERS = FIELDER_SPOTS.map(([pos, x, y]) => { const [d, lat] = feetAt(x, y); return [d, lat, pos]; });
+// A real defence, in feet from the plate: [depth, lateral (+ is right), position]
+//  1B   12 ft behind the bag, 13 ft inside the foul line      2B  40 ft from second toward first, 15 ft behind the baseline
+//  SS   40 ft from second toward third, 20 ft behind the line  3B  10 ft inside the foul line, 5 ft behind the bag
+//  outfield: left and right about 260 ft out, 21 degrees off centre (kept on screen); centre about 300 ft
+const FIELDERS = [
+  [84.8, 54.4, '1B'], [109.6, 38.9, '2B'], [113.1, -42.4, 'SS'], [75.7, -56.5, '3B'],
+  [245, -95, 'LF'], [300, 0, 'CF'], [245, 95, 'RF'],
+];
 
 function drawField(park, t){
   const night = park.night;
@@ -1015,9 +990,9 @@ function drawField(park, t){
 
 // the seven fielders standing out there, in perspective
 function drawFielders(team){
-  FIELDERS.forEach(([d, lat], i) => {
+  FIELDERS.forEach(([d, lat, pos], i) => {
     const p = proj(d, lat);
-    if (drawFielderSprite(p.x, p.y, lat)) return;
+    if (drawFielderSprite(p.x, p.y, pos)) return;
     drawMini(p.x, p.y, (team.lineup[i] || team.lineup[0]).look, team.c1, team.c2, p.s * 2.4);
   });
 }
@@ -1109,7 +1084,7 @@ function spread(p){
    the point of contact — it is never teleported anywhere.
    ═══════════════════════════════════════════════════════════════════════════ */
 const SIM_HZ = 120, SIM_DT = 1000 / SIM_HZ;      // the simulation always steps at this rate
-const BAT_LAG = 115;                             // ms from the swing input to the bat reaching the plate
+const BAT_LAG = 170;                             // ms from the start of the swing to the bat meeting the ball: the ball is about 11 ft out when he goes (half-speed pitch)
 const SWING_ANIM = 260;                          // how long the swing animation runs
 const SET_TIME = 1400, WINDUP_TIME = 900;        // the pitcher sets, then winds up
 const CATCH_TIME = 320;                          // the ball carrying on into the mitt
@@ -1186,7 +1161,7 @@ function throwPitch(type, ax, ay){
   P.tx = ax + (bell() - .5) * 2 * miss;
   P.ty = ay + (bell() - .5) * 2 * miss;
   P.mph = Math.round(lerp(info.mph[0], info.mph[1], clamp((p.velocity - 60) / 60, 0, 1)) - fatigue() * 3);
-  P.dur = lerp(1260, 820, clamp((P.mph - 72) / 32, 0, 1));
+  P.dur = clamp(830 * 90 / P.mph, 640, 1250);          // 0.83 s for a 90 mph pitch (half real speed); slower pitches take longer
   P.br = [info.br[0] * lerp(.6, 1.3, (q - 60) / 60), info.br[1] * lerp(.6, 1.3, (q - 60) / 60)];
   P.quality = q;
   P.thrown = true; P.t = 0; P.state = 'flight';
@@ -1386,7 +1361,7 @@ function stepAtBat(dt){
   if (P.state === 'flight'){
     P.t += dt;
     if (swing){
-      swing.t += dt;
+      swing.t = P.t - swing.start;                              // starts counting from the moment HIS swing starts
       // the bat arrives: this is where contact is decided
       if (!swing.resolved && P.t >= swing.contactAt){ swing.resolved = true; resolveSwing(); }
     }
@@ -1717,8 +1692,8 @@ function drawBatterView(dt){
   drawPitcherAt(M0.x, M0.y, u);
 
   // the batter waits, then swings; the catcher crouches with the umpire right in front of him
-  drawBatter(M.batter, swing ? clamp(swing.t / 220, 0, 1) : null, frame);
-  drawTG('catcher', tx(386), ty(492), null, false);
+  drawBatter(M.batter, swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null, frame);   // contact lands at 46% of the swing
+  drawBehindPlate();
 
   // the strike zone, a faint box over the plate
   const live = P && (P.thrown || P.aim || phase === 'pitching');
@@ -1829,18 +1804,27 @@ function drawCardFor(x, y, p, team, w, h){
 const UI_FONT = '"Bahnschrift","DIN Condensed","Arial Narrow","Roboto Condensed",Impact,system-ui,sans-serif';
 function tt(str, x, y, sizeT, col, align, maxT){                // text, sized in target px; maxT squeezes it to fit
   g.font = 'bold ' + (sizeT * TU).toFixed(1) + 'px ' + UI_FONT;
-  g.textAlign = align || 'left'; g.textBaseline = 'middle'; g.fillStyle = col;
+  g.textAlign = align || 'left'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(2,8,20,.75)';                              // every letter gets the same dark drop shadow
+  if (maxT) g.fillText(str, x + .5, y + .95, maxT * TU); else g.fillText(str, x + .5, y + .95);
+  g.fillStyle = col;
   if (maxT) g.fillText(str, x, y, maxT * TU); else g.fillText(str, x, y);
 }
 function rrect(x, y, w, h, r){
   g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
   g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
 }
-function hudPanel(x, y, w, h, tint){                             // dark navy panel with a blue rim and a faint sheen
-  rrect(x, y, w, h, 3); g.fillStyle = '#050c18'; g.fill();
-  rrect(x + .7, y + .7, w - 1.4, h - 1.4, 2.6); g.fillStyle = tint || '#0e1d3a'; g.fill();
-  g.strokeStyle = '#2d5392'; g.lineWidth = .9; g.stroke();
-  g.fillStyle = 'rgba(255,255,255,.10)'; g.fillRect(x + 3, y + 1.6, w - 6, .8);
+function hudPanel(x, y, w, h, tint){
+  const base = tint || '#0e1d3a';
+  rrect(x, y, w, h, 3); g.fillStyle = '#030811'; g.fill();
+  rrect(x + .7, y + .7, w - 1.4, h - 1.4, 2.6);
+  const gr = g.createLinearGradient(0, y, 0, y + h);
+  gr.addColorStop(0, mix(base, '#ffffff', .13)); gr.addColorStop(.45, base); gr.addColorStop(1, mix(base, '#000000', .38));
+  g.fillStyle = gr; g.fill();
+  g.strokeStyle = '#2f5698'; g.lineWidth = .9; g.stroke();
+  g.fillStyle = 'rgba(255,255,255,.16)'; g.fillRect(x + 3, y + 1.6, w - 6, .8);               // sheen along the top
+  g.fillStyle = 'rgba(0,0,0,.38)'; g.fillRect(x + 2.5, y + h - 2.5, w - 5, .9);               // shadow along the bottom
+  g.fillStyle = 'rgba(130,175,255,.12)'; g.fillRect(x + 1.7, y + 3, .8, h - 6);                // rim light on the left
 }
 const ORD = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th','st','nd','rd'][n % 10 < 4 ? n % 10 : 0]);
 const PITCH_LABEL = { FB:'4-SEAM FASTBALL', CV:'CURVEBALL', SL:'SLIDER', CH:'CHANGE-UP' };
@@ -1859,9 +1843,12 @@ function drawHUD(){
   g.fillStyle = '#04101f';
   g.fillRect(UL(141), Y0 + 1, .9, Ht - 2); g.fillRect(X0 + 1, ty(66), Wd - 2, .9); g.fillRect(X0 + 1, ty(37), 126 * TU, .9);
   [[a, M.score.away, 10, 36], [h, M.score.home, 39, 65]].forEach(([t, sc, y0, y1]) => {
-    g.fillStyle = mix(t.c1, '#5a76b8', .38); g.fillRect(UL(18), ty(y0), 60 * TU, (y1 - y0) * TU);
+    const chip = mix(t.c1, '#5a76b8', .38), cg = g.createLinearGradient(0, ty(y0), 0, ty(y1));
+    cg.addColorStop(0, mix(chip, '#ffffff', .24)); cg.addColorStop(.5, chip); cg.addColorStop(1, mix(chip, '#000000', .34));
+    g.fillStyle = cg; g.fillRect(UL(18), ty(y0), 60 * TU, (y1 - y0) * TU);
     g.fillStyle = t.c2; g.fillRect(UL(18), ty(y0), 3 * TU, (y1 - y0) * TU);
-    g.fillStyle = 'rgba(255,255,255,.16)'; g.fillRect(UL(18), ty(y0), 60 * TU, .8);
+    g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(UL(18), ty(y0), 60 * TU, .8);
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(UL(18), ty(y1) - .9, 60 * TU, .9);
     tt(t.ab, UL(48), ty((y0 + y1) / 2) + .4, 27, '#ffffff', 'center');
     tt(String(sc), UL(119), ty((y0 + y1) / 2) + .4, 31, '#ffffff', 'center');
   });
@@ -1912,12 +1899,13 @@ function drawSwingBtn(){
 let aim = { x:0, y:0 }, pitchSel = 'FB';
 function drawPitchUI(){
   const p = curPitcher(), keys = Object.keys(p.pitches);
-  const x = UR(643), w = 100 * TU;
+  const x = UR(655), w = 88 * TU;                               // the same column the SWING button lives in
   keys.forEach((k, i) => {
     const y = ty(246 + i * 56), h = 50 * TU, on = pitchSel === k;
-    hudPanel(x, y, w, h, on ? mix(PITCHES[k].col, '#0b1426', .50) : '#0e1d3a');
-    tt(PITCHES[k].n.toUpperCase(), x + 7 * TU, y + 16 * TU, 15, on ? '#ffffff' : '#b7c4de');
-    tt(String(p.pitches[k]), x + w - 8 * TU, y + 36 * TU, 19, on ? '#ffffff' : colOf(p.pitches[k]), 'right');
+    hudPanel(x, y, w, h, on ? '#1b3e78' : '#0e1d3a');           // every button identical; only the picked one is lit
+    if (on){ rrect(x + .7, y + .7, w - 1.4, h - 1.4, 2.6); g.strokeStyle = '#d6e6ff'; g.lineWidth = 1.3; g.stroke(); }
+    tt(PITCHES[k].n.toUpperCase(), x + 8 * TU, y + 16 * TU, 15, '#ffffff', 'left', 72);
+    tt(String(p.pitches[k]), x + w - 8 * TU, y + 36 * TU, 19, '#ffffff', 'right');
     btns.push({ x, y, w, h, fn: () => pitchSel = k });
   });
   // the circle showing where it might actually go
@@ -1934,40 +1922,51 @@ function drawPitchUI(){
 // or the ball clearing the wall. No separate top-down screen.
 // ── a ball in play, drawn straight from the simulation ────────────────────
 // Everything here reads BALL and FLD; nothing is decided in this function.
+// The ball-in-play view: straight down on the whole park, every player the same small size.
+const AER = { w:1312, h:1199, plate:[655,1050], k:4.95 };
+const AER_Y = [[0,0],[63.6,305],[127.3,514],[300,885]];           // feet out from the plate -> picture pixels up
+function aerPt(depth, lat){
+  let py = 0;
+  for (let i = 1; i < AER_Y.length; i++) if (depth <= AER_Y[i][0] || i === AER_Y.length - 1){
+    const a = AER_Y[i-1], b = AER_Y[i]; py = lerp(a[1], b[1], (depth - a[0]) / (b[0] - a[0])); break; }
+  const sc = 240 / AER.h, x0 = W / 2 - AER.w * sc / 2;
+  return { x: x0 + (AER.plate[0] + lat * AER.k) * sc, y: (AER.plate[1] - py) * sc };
+}
+let aerTrail = [];
+function drawAerial(B, bt){
+  const sc = 240 / AER.h, x0 = W / 2 - AER.w * sc / 2, im = IMG.aerial;
+  g.fillStyle = '#10243a'; g.fillRect(0, 0, W, 240);
+  if (ready(im)){
+    g.drawImage(im, Math.round(x0), 0, Math.round(AER.w * sc), 240);
+  }
+  const ph = 9.5;                                       // one size for everybody
+  const put = (x, y, name, flip) => drawTG(name, x, y + ph * .5, ph / TU, flip, false);
+  (FLD || []).forEach(f => {
+    const q = aerPt(f.x, f.y);
+    put(q.x, q.y, 'in_xs', false);
+    if (f.chasing && !B.caught && B.h > 1){ R(q.x - 3, q.y - ph * .6 - 3, 6, 1, '#ffd23f'); R(q.x - 1, q.y - ph * .6 - 2, 2, 2, '#ffd23f'); }
+  });
+  const cq = aerPt(-3, 0); put(cq.x, cq.y, 'in_xs', false);                 // the catcher
+  const pq = aerPt(60.5, 0); put(pq.x, pq.y, 'in_xs', false);               // the pitcher
+  const run = clamp((P.playT - 150) / 1500, 0, 1), rb = aerPt(63.6 * run, 63.6 * run);
+  put(rb.x, rb.y, 'run_away', false);
+  M.bases.forEach((p2, i) => { if (!p2) return;
+    const q = i === 0 ? aerPt(63.6, 63.6) : i === 1 ? aerPt(127.3, 0) : aerPt(63.6, -63.6); put(q.x, q.y, 'run_away', false); });
+  // the ball: its path drawn as a white arc like the picture
+  const gp = aerPt(B.d, B.lat), lift = B.h * .55;
+  if (B.t < .05) aerTrail = [];
+  aerTrail.push([gp.x, gp.y - lift]); if (aerTrail.length > 400) aerTrail.shift();
+  g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 1; g.beginPath();
+  aerTrail.forEach((t, i) => i ? g.lineTo(t[0], t[1]) : g.moveTo(t[0], t[1])); g.stroke();
+  R(gp.x - 1.5, gp.y - 1, 3, 1.5, '#00000066');
+  g.fillStyle = '#fdfdf5'; g.beginPath(); g.arc(gp.x, gp.y - lift, 2.2, 0, 7); g.fill();
+  return { x: gp.x, y: gp.y, lift };
+}
 function drawPlay(){
   const B = BALL;
   if (!B){ drawBatterView(16); return; }
-  const park = M.park; park.excite = M.exc;
-  drawFieldHD(park, frame);
-  const ft = fldTeam(), bt = batTeam();
-
-  // the defence where the simulation has them
-  (FLD || []).forEach(f => {
-    const q = proj(f.x, f.y);
-    if (!drawFielderSprite(q.x, q.y, f.y)) drawMini(q.x, q.y, f.man.look, ft.c1, ft.c2, q.s * 2.4);
-    if (f.chasing && !B.caught && B.h > 1){                 // a marker so you can see who is on it
-      const my = q.y - figH(q.y / TU) * TU - 4;
-      R(q.x - 3, my, 6, 1, '#ffd23f'); R(q.x - 1, my + 1, 2, 2, '#ffd23f');
-    }
-  });
-
-  // the batter running it out, and anyone already on base
-  const run = clamp((P.playT - 150) / 1500, 0, 1);
-  const rp = proj(90 * run * .8, 90 * run * .8);
-  if (!drawTG('batter_body', rp.x, rp.y, figH(rp.y / TU) * 1.08, false)) drawMini(rp.x, rp.y, M.batter.look, bt.c1, bt.c2, rp.s * 2.2);
-  M.bases.forEach((p2, i) => { if (!p2) return;
-    const base = [atAng(45, 90), atAng(0, 127), atAng(-45, 90)][i];
-    if (!drawFielderSprite(base.x, base.y, i === 2 ? -1 : 1)) drawMini(base.x, base.y - 2, p2.look, bt.c1, bt.c2, base.s * 2.2); });
-
-  // the ball, with its shadow on the ground so you can read the height
-  const gp = proj(B.d, B.lat);
-  const lift = B.h * gp.s * 2.6;
-  R(gp.x - 2, gp.y - 1, 4, 2, '#00000055');
-  const br = 1.3 + 2.4 * gp.s;
-  g.fillStyle = '#fdfdf5';
-  g.beginPath(); g.arc(gp.x, gp.y - lift, br, 0, 7); g.fill();
-  if (br > 2.4) R(gp.x - br, gp.y - lift - 1, br * 2, 1, '#d8342c');
-
+  const bt = batTeam();
+  const ar = drawAerial(B, bt), gp = ar, lift = ar.lift;
   tt(`${Math.round(B.ev)} MPH   ${Math.round(ballDist())} FT`, W / 2, ty(34), 18, '#e8eef9', 'center');
   if (B.judged){
     if (B.play === 'hr'){
@@ -2724,7 +2723,7 @@ function loop(now){
     // ── simulation on a fixed clock, so the feel never depends on framerate ──
     ACC += dt;
     let guard = 0;
-    while (ACC >= SIM_DT && guard++ < 12){ stepAtBat(SIM_DT); ACC -= SIM_DT; }
+    while (ACC >= SIM_DT && guard++ < 12){ if (!window.__freeze) stepAtBat(SIM_DT); ACC -= SIM_DT; }   // (__freeze is only for screenshots in tests)
     M.msgT += dt; if (M.msgT > 1600) M.msg = null;
 
     // ── rendering ──
