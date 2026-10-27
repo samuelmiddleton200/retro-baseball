@@ -682,34 +682,43 @@ function blit(c, x, y, k, flip){
   g.drawImage(c, Math.round(-56 * k), Math.round(-100 * k), Math.round(w), Math.round(h));
   g.restore();
 }
-// the batter: swing is null when he is just standing in
-function drawBatter(x, y, p, c1, c2, swingT, idle, num){
-  const q = swingT == null ? -1 : Math.round(clamp(swingT, 0, 1) * 16) / 16;      // 17 steps is plenty
-  const idleQ = swingT == null ? Math.round(idle / 6) % 24 : 0;
-  const key = `B${lookKey(p.look)}|${c1}${c2}|${q}|${idleQ}|${num}`;
-  const c = sprite(key, () => buildPlayer(
-    swingT == null ? batterPose(null, idleQ * 6) : batterPose(q),
-    p.look, c1, c2, { number:num, helmet:1 }));
-  blit(c, x, y, .70, p.bats === 'L');
+// ── generated art: load the ChatGPT sprites + field, used in place of the rig ──
+const ARTNAMES = ['swing1','swing2','swing3','swing4','pitch1','pitch2','pitch3','pitch4',
+  'catcher','infield','catch','run','pitcher_idle','fielder','walk'];
+const IMG = {}; let imgReady = 0;
+ARTNAMES.forEach(n => { const im = new Image(); im.onload = () => imgReady++; im.src = 'assets/' + n + '.png'; IMG[n] = im; });
+IMG.field = new Image(); IMG.field.onload = () => imgReady++; IMG.field.src = 'assets/fields/field_behind.png';
+const ready = im => im && im.complete && im.naturalWidth > 0;
+// draw a loaded sprite so its feet sit at (cx, footY) in logical units, scaled to height h
+function blitImg(im, cx, footY, h, flip){
+  if (!ready(im)) return false;
+  const w = h * im.naturalWidth / im.naturalHeight;
+  g.save(); g.translate(cx | 0, 0); if (flip) g.scale(-1, 1);
+  g.drawImage(im, Math.round(-w / 2), Math.round(footY - h), Math.round(w), Math.round(h));
+  g.restore(); return true;
 }
-// the pitcher, from the front, at half size because he is out at the mound
+// the batter: swingT null = standing in; else 0..1 drives the swing frames
+function drawBatter(x, y, p, c1, c2, swingT, idle, num){
+  const im = swingT == null ? IMG.swing1
+           : swingT < .30 ? IMG.swing2 : swingT < .52 ? IMG.swing3 : IMG.swing4;
+  if (blitImg(im, x, y, 92, p.bats === 'L')) return;
+  const c = sprite(`B${lookKey(p.look)}|${c1}${c2}`, () => buildPlayer(batterPose(swingT), p.look, c1, c2, { number:num, helmet:1 }));
+  blit(c, x, y, .70, p.bats === 'L');           // rig fallback until the image loads
+}
+// the pitcher on the mound, windup frames from u (0..1)
 function drawPitcher(x, y, p, c1, c2, u, num){
-  const q = u == null ? 0 : Math.round(clamp(u, 0, 1) * 20) / 20;
-  const key = `P${lookKey(p.look)}|${c1}${c2}|${q}`;
-  const c = sprite(key, () => buildPlayer(pitcherPose(q), p.look, c1, c2, { front:1 }));
+  const im = u == null || u < .40 ? IMG.pitch1 : u < .70 ? IMG.pitch2 : u < .85 ? IMG.pitch3 : IMG.pitch4;
+  if (blitImg(im, x, y, 50, false)) return;
+  const c = sprite(`P${lookKey(p.look)}`, () => buildPlayer(pitcherPose(u || 0), p.look, c1, c2, { front:1 }));
   blit(c, x, y, .5, false);
 }
 // the catcher, crouched with his back to us
 function drawCatcher(x, y, p, c1, c2){
-  const key = `C${lookKey(p.look)}|${c1}${c2}`;
-  const c = sprite(key, () => buildPlayer({
-      crouch:0, lean:0,
-      hip:[56,74], chest:[56,54], neck:[56,45], head:[56,32],
-      nSh:[47,50], fSh:[65,50],
-      nEl:[36,62], nHa:[28,54], fEl:[76,62], fHa:[83,60],
-      nKn:[32,82], nAn:[41,101], fKn:[80,82], fAn:[71,101],
-      gloveA:200,
-    }, p.look, c1, c2, { back:1, hardhat:1 }));
+  if (blitImg(IMG.catcher, x, y, 66, false)) return;
+  const c = sprite(`C${lookKey(p.look)}`, () => buildPlayer({ crouch:0, lean:0,
+      hip:[56,74], chest:[56,54], neck:[56,45], head:[56,32], nSh:[47,50], fSh:[65,50],
+      nEl:[36,62], nHa:[28,54], fEl:[76,62], fHa:[83,60], nKn:[32,82], nAn:[41,101], fKn:[80,82], fAn:[71,101],
+      gloveA:200 }, p.look, c1, c2, { back:1, hardhat:1 }));
   blit(c, x, y, .52, false);
 }
 // a fielder far away in the replay: a few pixels, but still shaded
@@ -920,10 +929,11 @@ function drawField(park, t){
   g.closePath(); g.fill();
 }
 
-// the seven fielders standing out there, small and in perspective
+// the seven fielders standing out there, in perspective
 function drawFielders(team){
   FIELDERS.forEach(([d, lat], i) => {
     const p = proj(d, lat);
+    if (blitImg(IMG.fielder, p.x, p.y, Math.max(16, 50 * p.s), false)) return;
     drawMini(p.x, p.y, (team.lineup[i] || team.lineup[0]).look, team.c1, team.c2, p.s * 2.4);
   });
 }
@@ -1477,8 +1487,18 @@ let frame = 0;
 // instead of the blocky ~5x upscale. Perspective matches proj() exactly, so
 // the players (drawn afterward in logical space) still line up on the field.
 function drawFieldHD(park, t){
-  const night = park.night;
   const DW = cv.width, DH = cv.height;
+  // ── the generated stadium background, drawn to cover the screen ──────────
+  if (ready(IMG.field)){
+    g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.imageSmoothingEnabled = true;
+    const iw = IMG.field.naturalWidth, ih = IMG.field.naturalHeight;
+    const s = Math.max(DW / iw, DH / ih);                      // cover
+    const w = iw * s, h = ih * s;
+    g.drawImage(IMG.field, (DW - w) / 2, DH - h, w, h);        // anchor the plate to the bottom
+    g.restore(); g.imageSmoothingEnabled = false;
+    return;
+  }
+  const night = park.night;
   const DX = lx => OX + lx * SC, DY = ly => OY + ly * SC;      // logical -> device
   const dp = (d, lat) => { const p = proj(d, lat); return [DX(p.x), DY(p.y), p.s]; };
   const dAng = (a, dist) => { const p = atAng(a, dist); return [DX(p.x), DY(p.y), p.s]; };
