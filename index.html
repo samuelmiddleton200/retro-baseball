@@ -684,9 +684,9 @@ function blit(c, x, y, k, flip){
 }
 // ── generated art: load the ChatGPT sprites + field, used in place of the rig ──
 const ARTNAMES = ['swing1','swing2','swing3','swing4','pitch1','pitch2','pitch3','pitch4',
-  'catcher','infield','catch','run','pitcher_idle','fielder','walk'];
+  'catcher','infield','catch','run','pitcher_idle','fielder','walk','umpire'];
 const IMG = {}; let imgReady = 0;
-ARTNAMES.forEach(n => { const im = new Image(); im.onload = () => imgReady++; im.src = 'assets/' + n + '.png'; IMG[n] = im; });
+ARTNAMES.forEach(n => { const im = new Image(); im._n = n; im.onload = () => imgReady++; im.src = 'assets/' + n + '.png'; IMG[n] = im; });
 IMG.field = new Image(); IMG.field.onload = () => imgReady++; IMG.field.src = 'assets/fields/field_behind.png';
 const ready = im => im && im.complete && im.naturalWidth > 0;
 // draw a loaded sprite so its feet sit at (cx, footY) in logical units, scaled to height h
@@ -697,30 +697,48 @@ function blitImg(im, cx, footY, h, flip){
   g.drawImage(im, Math.round(-w / 2), Math.round(footY - h), Math.round(w), Math.round(h));
   g.restore(); return true;
 }
-// the batter: swingT null = standing in; else 0..1 drives the swing frames
+// each sprite: [width, height, where its feet are, as a fraction of its width] -- measured when the sheet was cut
+const ANCH = {"swing1": [73, 118, 0.515], "swing2": [80, 118, 0.536], "swing3": [106, 98, 0.301], "swing4": [91, 103, 0.67], "pitch1": [46, 114, 0.471], "pitch2": [52, 112, 0.65], "pitch3": [92, 104, 0.246], "pitch4": [102, 93, 0.639], "catcher": [76, 88, 0.499], "infield": [98, 88, 0.511], "catch": [66, 119, 0.299], "run": [91, 100, 0.563], "pitcher_idle": [45, 110, 0.498], "umpire": [53, 108, 0.5], "fielder": [51, 111, 0.433], "walk": [78, 112, 0.528]};
+// draw a sprite at ONE scale k (logical px per sprite px) with its feet planted at (cx, footY)
+function blitK(im, cx, footY, k, flip){
+  if (!ready(im)) return false;
+  const a = ANCH[im._n] || [im.naturalWidth, im.naturalHeight, .5];
+  const w = im.naturalWidth * k, h = im.naturalHeight * k;
+  g.save(); g.translate(Math.round(cx), 0); if (flip) g.scale(-1, 1);
+  g.drawImage(im, Math.round(-a[2] * w), Math.round(footY - h), Math.round(w), Math.round(h));
+  g.restore(); return true;
+}
+const K_BAT = .85, K_PIT = .5, K_CATCH = .7, K_UMP = .8;
+// the batter: swingT null = standing in; else 0..1 drives the swing.
+// Every frame used here faces the plate (a right-hander faces right), so he is side-on to the pitcher.
 function drawBatter(x, y, p, c1, c2, swingT, idle, num){
-  // swing2 (turned, bat cocked up) reads closest to the reference stance; swing1 was a flat back view
-  const im = swingT == null ? IMG.swing2
-           : swingT < .22 ? IMG.swing2 : swingT < .52 ? IMG.swing3 : IMG.swing4;
-  if (blitImg(im, x, y, 92, p.bats === 'L')) return;
+  const im = swingT == null || swingT < .12 ? IMG.swing4 : swingT < .5 ? IMG.swing3 : IMG.swing4;
+  if (blitK(im, x, y, K_BAT, p.bats === 'L')) return;
   const c = sprite(`B${lookKey(p.look)}|${c1}${c2}`, () => buildPlayer(batterPose(swingT), p.look, c1, c2, { number:num, helmet:1 }));
   blit(c, x, y, .70, p.bats === 'L');           // rig fallback until the image loads
 }
 // the pitcher on the mound, windup frames from u (0..1)
 function drawPitcher(x, y, p, c1, c2, u, num){
   const im = u == null || u < .40 ? IMG.pitch1 : u < .70 ? IMG.pitch2 : u < .85 ? IMG.pitch3 : IMG.pitch4;
-  if (blitImg(im, x, y, 50, false)) return;
+  if (blitK(im, x, y, K_PIT, false)) return;
   const c = sprite(`P${lookKey(p.look)}`, () => buildPlayer(pitcherPose(u || 0), p.look, c1, c2, { front:1 }));
   blit(c, x, y, .5, false);
 }
 // the catcher, crouched with his back to us
 function drawCatcher(x, y, p, c1, c2){
-  if (blitImg(IMG.catcher, x, y, 66, false)) return;
+  if (blitK(IMG.catcher, x, y, K_CATCH, false)) return;
   const c = sprite(`C${lookKey(p.look)}`, () => buildPlayer({ crouch:0, lean:0,
       hip:[56,74], chest:[56,54], neck:[56,45], head:[56,32], nSh:[47,50], fSh:[65,50],
       nEl:[36,62], nHa:[28,54], fEl:[76,62], fHa:[83,60], nKn:[32,82], nAn:[41,101], fKn:[80,82], fAn:[71,101],
       gloveA:200 }, p.look, c1, c2, { back:1, hardhat:1 }));
   blit(c, x, y, .52, false);
+}
+// the umpire stands behind the catcher
+function drawUmpire(x, y){ return blitK(IMG.umpire, x, y, K_UMP, false); }
+// a fielder, sized by his depth so the far ones are small
+function drawFielderSprite(x, y, s, per, flip){
+  const h = 285 * s * per;                              // a 285-pixel figure at the plate, shrinking with distance
+  return blitK(IMG.fielder, x, y, h / ANCH.fielder[1], flip);
 }
 // a fielder far away in the replay: a few pixels, but still shaded
 function drawMini(x, y, lk, c1, c2, k = 1){
@@ -747,12 +765,24 @@ const CROWD = ['#c9c3b4','#b89a9a','#92a6c0','#c4b47c','#a894b8','#9ab8a2','#cfa
    Everything is placed in real feet from home plate and projected onto the
    screen, so the diamond, the mound and the wall all sit where they should.
    ─────────────────────────────────────────────────────────────────────────── */
-const HOME_Y = 198, HORIZON = 70, PC = 56, PK = 3.25;
+const HOME_Y = 198, HORIZON = 70, PC = 56, PK = 3.25;     // (the old vector field's numbers, kept for the fallback)
 const pscale = d => PC / (PC + d);
+// The stadium picture is the truth. These are its landmarks, measured on the 1672 x 941 image:
+// plate (835,795), second base 380 px up, first/third base 765 px either side.
+const FLD_IMG = { w:1672, h:941, plate:[835, 795], rise:570, pc:63.7, px:24 };
+function I2L(ix, iy){            // picture pixel -> logical game pixel, using the same 'cover' fit it is drawn with
+  const sc = Math.max(cv.width / FLD_IMG.w, cv.height / FLD_IMG.h);
+  const dx = (cv.width - FLD_IMG.w * sc) / 2 + ix * sc, dy = cv.height - FLD_IMG.h * sc + iy * sc;
+  return { x:(dx - OX) / SC, y:(dy - OY) / SC, per:sc / SC };   // per = logical px for one picture px
+}
 // d = feet out from home plate, lat = feet to the right of the middle
 function proj(d, lat){
-  const s = pscale(d);
-  return { x: W / 2 + lat * s * PK, y: HOME_Y - (HOME_Y - HORIZON) * (1 - s), s };
+  // inside the infield feet are true; the picture shortens the outfield, so squeeze the radius past 127 ft
+  const r = Math.hypot(d, lat);
+  if (r > 127.3){ const f = (127.3 + (r - 127.3) * .33) / r; d *= f; lat *= f; }
+  const s = FLD_IMG.pc / (FLD_IMG.pc + Math.max(0, d));
+  const q = I2L(FLD_IMG.plate[0] + lat * FLD_IMG.px * s, FLD_IMG.plate[1] - FLD_IMG.rise * (1 - s));
+  return { x:q.x, y:q.y, s, per:q.per };
 }
 // a point on the field given an angle off dead centre (-45 = left line, +45 = right)
 const atAng = (ang, dist) => {
@@ -761,7 +791,7 @@ const atAng = (ang, dist) => {
 };
 const FIELDERS = [                                   // where the defence stands, in feet
   [100, 52, '1B'], [128, 34, '2B'], [128, -34, 'SS'], [100, -52, '3B'],
-  [275, -150, 'LF'], [318, 4, 'CF'], [275, 150, 'RF'],
+  [207, -104, 'LF'], [262, 0, 'CF'], [207, 104, 'RF'],
 ];
 
 function drawField(park, t){
@@ -934,7 +964,7 @@ function drawField(park, t){
 function drawFielders(team){
   FIELDERS.forEach(([d, lat], i) => {
     const p = proj(d, lat);
-    if (blitImg(IMG.fielder, p.x, p.y, Math.max(16, 50 * p.s), false)) return;
+    if (drawFielderSprite(p.x, p.y, p.s, p.per, lat < -20)) return;     // left-side fielders turn toward the plate
     drawMini(p.x, p.y, (team.lineup[i] || team.lineup[0]).look, team.c1, team.c2, p.s * 2.4);
   });
 }
@@ -942,7 +972,11 @@ function drawFielders(team){
 // ───────────────────────────────────────────────────────────────────────────
 //  GAME (one nine-inning game)
 // ───────────────────────────────────────────────────────────────────────────
-const ZONE = { x: 190, y: 160, w: 40, h: 34 };                 // right over the plate (x set in fit())
+const ZONE = { x: 190, y: 160, w: 40, h: 34 };                 // right over the plate
+function layoutZone(){                                          // re-centre it on the plate every frame
+  const p = proj(0, 0);
+  ZONE.w = 40; ZONE.h = 34; ZONE.x = p.x - ZONE.w / 2; ZONE.y = p.y - 60;
+}
 const PITCHES = { FB:{ n:'Fastball', mph:[90,102], br:[0,0],     col:'#ff6b5a' },
                   CV:{ n:'Curve',    mph:[74,84],  br:[0,22],    col:'#5ad2ff' },
                   SL:{ n:'Slider',   mph:[82,90],  br:[-20,8],   col:'#c48bff' },
@@ -1116,7 +1150,7 @@ function ballAt(f){
   const tx = ZONE.x + ZONE.w / 2 + P.tx * ZONE.w / 2, ty = ZONE.y + ZONE.h / 2 + P.ty * ZONE.h / 2;
   return { x: lerp(rel.x, tx + P.br[0] * e, e), y: lerp(rel.y, ty + P.br[1] * e, e), r: lerp(1, 5, e) };
 }
-function releasePt(){ const m = proj(60.5, 0); return { x: m.x + 5, y: m.y - 22 }; }
+function releasePt(){ const m = proj(60.5, 0); return { x: m.x + 4, y: m.y - 40 }; }
 const mittPt = () => ({ x: ZONE.x + ZONE.w / 2 - 12, y: ZONE.y + ZONE.h + 14 });
 const inZone = () => Math.abs(P.tx) <= 1 && Math.abs(P.ty) <= 1;
 
@@ -1618,6 +1652,7 @@ function drawFieldHD(park, t){
 
 function drawBatterView(dt){
   const park = M.park; park.excite = M.exc;
+  layoutZone();
   drawFieldHD(park, frame);
   const ft = fldTeam(), bt = batTeam();
   drawFielders(ft);
@@ -1630,14 +1665,14 @@ function drawBatterView(dt){
   drawPitcher(M0.x, M0.y + 3, pit, ft.c1, ft.c2, u, .62);
 
   // ── the umpire, then the catcher crouched under the plate ───────────────
-  const HP = proj(0, 0);
-  drawUmp(HP.x - 2, H + 20, ft);
-  drawCatcher(HP.x - 8, H + 4, M.catcher || ft.lineup[0], ft.c1, ft.c2);
+  const HP = proj(0, 0), ip = HP.per;                         // ip = logical px per picture px
+  drawUmpire(HP.x, HP.y + 172 * ip);
+  drawCatcher(HP.x, HP.y + 130 * ip, M.catcher || ft.lineup[0], ft.c1, ft.c2);   // centred right behind the plate
 
-  // ── the batter in the box ───────────────────────────────────────────────
+  // ── the batter in his box, facing the plate ─────────────────────────────
   const b = M.batter, side = b.bats === 'L' ? 1 : -1;
-  const bx = HP.x + side * 62;                               // inside the box, clear of the catcher and the zone
-  drawBatter(bx, HOME_Y + 20, b, bt.c1, bt.c2, swing ? clamp(swing.t / 220, 0, 1) : null, frame, b.num);
+  const bx = HP.x + side * 150 * ip;                         // the middle of the batter's box in the picture
+  drawBatter(bx, HP.y + 45 * ip, b, bt.c1, bt.c2, swing ? clamp(swing.t / 220, 0, 1) : null, frame, b.num);
 
   // ── the strike zone, floating over the plate ────────────────────────────
   const live = P && (P.thrown || P.aim || phase === 'pitching');
@@ -1822,10 +1857,11 @@ function drawPitchUI(){
   });
   textb('tap the zone to throw', W / 2, H - 12, '#9aa6bd', 7, 'center');
   // the circle showing where it might actually go
-  const s = spread(p) * (1 + clamp((Math.abs(aim.x) + Math.abs(aim.y)) / 2, 0, 1.4) * 1.1);
+  const miss = (spread(p) / 26) * (1 + clamp((Math.abs(aim.x) + Math.abs(aim.y)) / 2, 0, 1.4) * 1.1);   // zone units
+  const rad = miss * ZONE.w / 2;                                  // the real size of where the pitch can land
   const cx = ZONE.x + ZONE.w / 2 + aim.x * ZONE.w / 2, cy = ZONE.y + ZONE.h / 2 + aim.y * ZONE.h / 2;
-  g.strokeStyle = s > 26 ? '#ff6b5a99' : s > 15 ? '#ffd23f99' : '#54d67a99'; g.lineWidth = 1;
-  g.beginPath(); g.arc(cx, cy, s, 0, 7); g.stroke();
+  g.strokeStyle = miss > 1 ? '#ff6b5acc' : miss > .6 ? '#ffd23fcc' : '#54d67acc'; g.lineWidth = 1.5;
+  g.beginPath(); g.arc(cx, cy, rad, 0, 7); g.stroke();
   R(cx - 1, cy - 1, 2, 2, '#fff');
 }
 
@@ -1844,19 +1880,20 @@ function drawPlay(){
   // the defence where the simulation has them
   (FLD || []).forEach(f => {
     const q = proj(f.x, f.y);
-    drawMini(q.x, q.y, f.man.look, ft.c1, ft.c2, q.s * 2.4);
+    if (!drawFielderSprite(q.x, q.y, q.s, q.per, f.y < -20)) drawMini(q.x, q.y, f.man.look, ft.c1, ft.c2, q.s * 2.4);
     if (f.chasing && !B.caught && B.h > 1){                 // a marker so you can see who is on it
-      R(q.x - 3, q.y - 26, 6, 1, '#ffd23f'); R(q.x - 1, q.y - 25, 2, 2, '#ffd23f');
+      const my = q.y - 285 * q.s * q.per - 4;
+      R(q.x - 3, my, 6, 1, '#ffd23f'); R(q.x - 1, my + 1, 2, 2, '#ffd23f');
     }
   });
 
   // the batter running it out, and anyone already on base
   const run = clamp((P.playT - 150) / 1500, 0, 1);
   const rp = proj(90 * run * .8, 90 * run * .8);
-  drawMini(rp.x, rp.y, M.batter.look, bt.c1, bt.c2, rp.s * 2.2);
+  if (!blitK(IMG.run, rp.x, rp.y, 285 * rp.s * rp.per / ANCH.run[1], false)) drawMini(rp.x, rp.y, M.batter.look, bt.c1, bt.c2, rp.s * 2.2);
   M.bases.forEach((p2, i) => { if (!p2) return;
     const base = [atAng(45, 90), atAng(0, 127), atAng(-45, 90)][i];
-    drawMini(base.x, base.y - 2, p2.look, bt.c1, bt.c2, base.s * 2.2); });
+    if (!drawFielderSprite(base.x, base.y, base.s, base.per, false)) drawMini(base.x, base.y - 2, p2.look, bt.c1, bt.c2, base.s * 2.2); });
 
   // the ball, with its shadow on the ground so you can read the height
   const gp = proj(B.d, B.lat);
