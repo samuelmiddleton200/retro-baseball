@@ -77,7 +77,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27t';
+const BUILD = '10-27u';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -723,7 +723,7 @@ function drawTG(name, xL, yL, hT, flip, noShadow){
   g.restore(); return true;
 }
 // a fielder standing on the field: infielders in the infield crouch, outfielders in theirs, picked to suit how big he is on screen
-function drawFielderSprite(xL, yL, pos, grab){
+function drawFielderSpriteOld(xL, yL, pos, grab){
   const hT = figH(yL / TU), out = pos === 'LF' || pos === 'CF' || pos === 'RF';
   const lvl = hT <= 19 ? 'xs' : hT <= 32 ? 'sm' : 'md';
   const name = grab && lvl !== 'xs' ? 'grab_' + lvl : (out ? 'out_' : 'in_') + lvl;
@@ -731,13 +731,13 @@ function drawFielderSprite(xL, yL, pos, grab){
   return drawTG(name, xL, yL, hT, flip);
 }
 // the pitcher: set, leg lift, release, follow-through, from u (0..1)
-function drawPitcherAt(xL, yL, u){
+function drawPitcherAtOld(xL, yL, u){
   const name = u < .30 ? 'pit1' : u < .60 ? 'pit2' : u < .80 ? 'pit3' : 'pit4';
   return drawTG(name, xL, yL, figH(yL / TU) * TGM[name].h / 65, false);
 }
 // the batter: four frames, ready / load / contact / follow-through. The bat is part of each frame.
 const PX_BAT = 2.75;                                              // target px per art px, so he is as tall as the target's batter
-function drawBatter(p, swingT, idle){
+function drawBatterOld(p, swingT, idle){
   const k = swingT == null ? 0 : swingT < .20 ? 1 : swingT < .55 ? 2 : 3;
   const name = 'bat' + (k + 1); if (!ready(TG[name])) return false;
   const lefty = p.bats === 'L', cxT = tx(252), cx = lefty ? W - cxT : cxT;
@@ -745,7 +745,7 @@ function drawBatter(p, swingT, idle){
   return drawTG(name, cx, ty(449) + bob, TGM[name].h * PX_BAT, lefty);
 }
 // the catcher crouched behind the plate, the umpire right in front of him (his feet are off the bottom of the screen)
-function drawBehindPlate(){
+function drawBehindPlateOld(){
   drawTG('catcher', tx(386), ty(493), 136, false, true);
   drawTG('ump', tx(386), ty(622), 238, false, true);
 }
@@ -990,7 +990,13 @@ function drawField(park, t){
 }
 
 // the seven fielders standing out there, in perspective
+// where the target picture stands each fielder, in its own pixels (x, feet y, height)
+const PLATE_SPOT = { '1B':[724, 212, 41], '2B':[630, 186, 30], 'SS':[235, 186, 30], '3B':[65, 212, 41], 'LF':[112, 187, 28], 'CF':[413, 156, 17], 'RF':[494, 181, 27] };
 function drawFielders(team){
+  if (plateOK()){
+    FIELDERS.forEach(([d, lat, pos], i) => { const q = PLATE_SPOT[pos]; drawFielderSprite(tx(q[0]), ty(q[1]), pos, false, q[2]); });
+    return;
+  }
   FIELDERS.forEach(([d, lat, pos], i) => {
     const p = proj(d, lat);
     if (drawFielderSprite(p.x, p.y, pos)) return;
@@ -1938,11 +1944,69 @@ function gxPlayHud(B){
   drawHUD();
 }
 
+
+// ── people stamped onto the painted field: each one is a 3D player baked into a small canvas at the picture's own pixel size ──
+const PIXK = .5;                                                   // bake pixels per target pixel (so one art pixel = 2 target pixels)
+const PLATE = new Image(); PLATE.onload = () => imgReady++; PLATE.src = 'assets/fields/plate_raw.png';
+const plateOK = () => ready(PLATE) && !window.__noPlate && window.GL3D && GL3D.bakeInit && GL3D.bakeInit();
+// the painted field: the target's own pixels, with the sides of a wide phone filled by mirroring its edges
+function drawPlateBG(){
+  const s = TU, x0 = W / 2 - 387 * s, pw = 760 * s;
+  g.imageSmoothingEnabled = false;
+  g.fillStyle = '#2e5b2e'; g.fillRect(0, 0, W, H);
+  if (x0 > 0){                                                      // mirrored, slightly darker edges on each side
+    const need = x0 + 1, sw = Math.min(380, need / s);
+    g.save(); g.translate(x0, 0); g.scale(-1, 1); g.drawImage(PLATE, 0, 0, sw, 492, 0, 0, sw * s, H); g.restore();
+    g.save(); g.translate(x0 + pw, 0); g.drawImage(PLATE, 760 - sw, 0, sw, 492, 0, 0, sw * s, H); g.restore();
+  }
+  g.drawImage(PLATE, x0, 0, pw, H);
+}
+// stamp a baked player: feet at (xL, yL), the figure about hT target pixels tall
+function bakeStamp(kind, key, o, pose, yaw, xL, yL, hT, flip, refFt){
+  const px = Math.max(10, Math.round(hT * PIXK * 11 / (refFt || 5.9)));
+  const c = GL3D.bake(key + '|' + px, o, pose, yaw, px);
+  if (!c) return false;
+  const k = TU / PIXK, w = c.width * k, h = c.height * k, feetFromBottom = c._e.base * c._ppf * k;
+  g.save(); g.translate(Math.round(xL), Math.round(yL + feetFromBottom - h)); if (flip){ g.translate(w / 2, 0); g.scale(-1, 1); g.translate(-w / 2, 0); }
+  g.translate(-w / 2, 0);
+  g.imageSmoothingEnabled = false; g.drawImage(c, 0, 0, w, h); g.restore();
+  g.fillStyle = 'rgba(20,14,6,.28)'; g.beginPath(); g.ellipse(Math.round(xL), Math.round(yL) - .2, Math.max(2, hT * TU * .16), Math.max(.8, hT * TU * .035), 0, 0, 7); g.fill();
+  return true;
+}
+const phaseStep = (t, n) => Math.floor((t * 1.6) % 1 * n);
+function drawFielderSprite(xL, yL, pos, grab, hOver){
+  if (!plateOK()) return drawFielderSpriteOld(xL, yL, pos, grab);
+  const ft = fldTeam(), i = Math.max(0, FIELDERS.findIndex(f => f[2] === pos)), man = ft.lineup[i] || ft.lineup[0], hT = hOver || figH(yL / TU);
+  const st = phaseStep(frame / 60 + i * .37, 6), o = gxPerson('f' + i, 'field', man, ft, 0, 0, 0, null, { glove:1 });
+  return bakeStamp('f', 'F' + i + lookKey(man.look) + ft.c1 + '|' + st, o, GL3D.poseReady(st / 6 * 4), 0, xL, yL, hT, pos === '1B' || pos === '2B' || pos === 'RF', 4.55);
+}
+function drawPitcherAt(xL, yL, u){
+  if (!plateOK()) return drawPitcherAtOld(xL, yL, u);
+  const ft = fldTeam(), p = curPitcher(), step = Math.round(clamp(u, 0, 1) * 16), o = gxPerson('pit', 'pitch', p, ft, 0, 0, 0, null, { glove:1 });
+  return bakeStamp('p', 'P' + lookKey(p.look) + ft.c1 + '|' + step, o, GL3D.posePitcher(step / 16), -.25, xL, yL, figH(yL / TU), false, 5.5);
+}
+function drawBatter(p, swingT, idle){
+  if (!plateOK()) return drawBatterOld(p, swingT, idle);
+  const bt = batTeam(), lefty = p.bats === 'L', cxT = tx(300), cx = lefty ? W - cxT : cxT;
+  const st = swingT == null ? 'w' + phaseStep(idle / 60, 8) : Math.round(clamp(swingT, 0, 1) * 24);
+  const o = gxPerson('bat', 'bat', p, bt, 0, 0, 0, null, {});
+  const pose = swingT == null ? GL3D.poseBatter(null, phaseStep(idle / 60, 8) / 8 * 3) : GL3D.poseBatter(Math.round(clamp(swingT, 0, 1) * 24) / 24, 0);
+  return bakeStamp('b', 'B' + lookKey(p.look) + bt.c1 + '|' + st, o, pose, .5, cx, ty(449), 175, lefty);
+}
+function drawBehindPlate(){
+  if (!plateOK()) return drawBehindPlateOld();
+  const ft = fldTeam(), cm = ft.lineup[7] || ft.lineup[0];
+  const oc = gxPerson('cat', 'catch', cm, ft, 0, 0, 0, null, { glove:1, cap2:'#2f56c4', helm:'#2547a8' });
+  bakeStamp('c', 'C' + lookKey(cm.look), oc, GL3D.poseCatcher(0, 2.4, 0), Math.PI, tx(386), ty(516), 195, false);
+  const ou = gxPerson('ump', 'ump', { look:{ skin:'#c88e5e', hair:'#1d1510' } }, { c1:'#16191f', c2:'#16191f', ab:'U' }, 0, 0, 0, null, { pants:'#3a3f4c' });
+  bakeStamp('u', 'U', ou, GL3D.poseUmp(0), Math.PI, tx(386), ty(632), 265, false);
+}
+
 function drawBatterView(dt){
-  if (gxOK()){ try { return gxBat(dt); } catch (e){ GX.on = false; console.error(e); } }
+  if (!plateOK() && gxOK()){ try { return gxBat(dt); } catch (e){ GX.on = false; console.error(e); } }
   const park = M.park; park.excite = M.exc;
   layoutZone();
-  drawFieldHD(park, frame);
+  if (plateOK()) drawPlateBG(); else drawFieldHD(park, frame);
   const ft = fldTeam();
   drawFielders(ft);
 
