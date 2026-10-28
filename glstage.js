@@ -24,11 +24,11 @@ function lightsInit(){
   shadowMesh.rotation.x = -Math.PI / 2; GL.scene.add(shadowMesh);
   for (let i = 0; i < 14; i++){ const m = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 5), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true })); m.visible = false; GL.scene.add(m); dots.push(m); }
   // the strike zone: an outline over the plate
-  const pts = [[-.708, 1.5], [.708, 1.5], [.708, 3.5], [-.708, 3.5]].map(p => new THREE.Vector3(p[0], p[1], -.7));
+  const pts = [[-.95, 1.35], [.95, 1.35], [.95, 3.75], [-.95, 3.75]].map(p => new THREE.Vector3(p[0], p[1], -.7));
   const zg = new THREE.Group(); zg.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .55 })));
   const gl = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(-.236, 1.5, -.7), new THREE.Vector3(-.236, 3.5, -.7), new THREE.Vector3(.236, 1.5, -.7), new THREE.Vector3(.236, 3.5, -.7),
-    new THREE.Vector3(-.708, 2.17, -.7), new THREE.Vector3(.708, 2.17, -.7), new THREE.Vector3(-.708, 2.83, -.7), new THREE.Vector3(.708, 2.83, -.7)]),
+    new THREE.Vector3(-.317, 1.35, -.7), new THREE.Vector3(-.317, 3.75, -.7), new THREE.Vector3(.317, 1.35, -.7), new THREE.Vector3(.317, 3.75, -.7),
+    new THREE.Vector3(-.95, 2.15, -.7), new THREE.Vector3(.95, 2.15, -.7), new THREE.Vector3(-.95, 2.95, -.7), new THREE.Vector3(.95, 2.95, -.7)]),
     new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .22 }));
   zg.add(gl); zoneBox = zg; GL.scene.add(zg);
   const tp = []; for (let i = 0; i < 300; i++) tp.push(new THREE.Vector3());

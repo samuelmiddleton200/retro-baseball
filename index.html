@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27m';
+const BUILD = '10-27n';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1785,7 +1785,7 @@ function gxPerson(key, kind, man, team, x, z, yaw, pose, o = {}){
 function gxZone(){
   if (!gxOK()) return false;
   gxSize(); GL3D.setView('bat'); GL3D.placeCamera(); GL3D.cam.updateMatrixWorld(true);
-  const a = GL3D.toScreen(-.708, 3.5, -.7, W, H), b = GL3D.toScreen(.708, 1.5, -.7, W, H);
+  const a = GL3D.toScreen(-.95, 3.75, -.7, W, H), b = GL3D.toScreen(.95, 1.35, -.7, W, H);
   ZONE.x = a.x; ZONE.y = a.y; ZONE.w = b.x - a.x; ZONE.h = b.y - a.y; return true;
 }
 function gxBase(){                                              // everything that is the same in both views
@@ -1795,10 +1795,10 @@ function gxBase(){                                              // everything th
 // the pitch ball's path from the hand to the plate, in feet
 function gxPitchBall(f){
   const e = f * f, rel = [-.55, 6.0, -56.5];
-  const cx = P.tx * .708, cy = 2.5 - P.ty * 1.0, bx = P.br[0] / 15, by = -P.br[1] / 15;
+  const cx = P.tx * .95, cy = 2.55 - P.ty * 1.2, bx = P.br[0] / 15, by = -P.br[1] / 15;
   return [lerp(rel[0], cx + bx * e, e), lerp(rel[1], cy + by * e, e), lerp(rel[2], -.7, f)];
 }
-const BAT_YAW = 64 * Math.PI / 180;                  // he is turned partly toward us, like the target, not square to the plate
+const BAT_YAW = 78 * Math.PI / 180;                  // he is turned partly toward us, like the target, not square to the plate
 // the target draws the far players bigger than true size so they can be read: stretch by distance
 const gxFar = d => 1 + .55 * clamp(d / 300, 0, 1);
 function gxBat(dt){
@@ -1814,7 +1814,7 @@ function gxBat(dt){
   // the batter
   const sw = swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null;
   let bp = GL3D.poseBatter(sw, t); if (lefty) bp = GL3D.mirrorPose(bp);
-  S.people.push(gxPerson('bat', 'bat', b, bt, lefty ? 3.3 : -3.3, -.7, lefty ? -BAT_YAW : BAT_YAW, bp));
+  S.people.push(gxPerson('bat', 'bat', b, bt, lefty ? 3.0 : -3.0, -.7, lefty ? -BAT_YAW : BAT_YAW, bp));
   // the catcher sets his glove where the pitch is going; the umpire stands behind him
   const gx = P && P.thrown ? clamp(-P.tx * .5, -1.2, 1.2) : 0, gy = P && P.thrown ? clamp(2.5 - P.ty, 1.3, 3.8) : 2.4;
   const cm = ft.lineup[7] || ft.lineup[0];
@@ -1887,7 +1887,7 @@ function gxPlay(B){
     };
     run('runB', b, 0, 90 * (B.runN || 1));
     M.bases.forEach((p2, i) => { if (!p2) return; const adv = B.isCatch || B.play === 'groundout' ? 0 : (B.runN || 1); run('run' + i, p2, 90 * (i + 1), 90 * (i + 1) + adv * 90); });
-  } else S.people.push(gxPerson('runB', 'bat', b, bt, b.bats === 'L' ? 3.3 : -3.3, -.7, b.bats === 'L' ? -BAT_YAW : BAT_YAW, GL3D.poseBatter(1, t)));
+  } else S.people.push(gxPerson('runB', 'bat', b, bt, b.bats === 'L' ? 3.0 : -3.0, -.7, b.bats === 'L' ? -BAT_YAW : BAT_YAW, GL3D.poseBatter(1, t)));
   // the ball and its white path
   S.ball = { x:B.lat, y:B.h + .4, z:-B.d, r:1.9 };
   if (B.t < .05) GX.trail = [];

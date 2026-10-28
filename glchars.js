@@ -90,7 +90,7 @@ GL.makePlayer = function(o){
     P.head.add(part(.28 * hs, .07 * hs, .18 * hs, trim, 0, .74 * hs, .34 * hs, false));               // the logo
     P.head.add(part(.6 * hs, .07 * hs, .46 * hs, cap, 0, .56 * hs, .42 * hs, false));                  // the brim
   }
-  P.head.add(blob(.66 * hs, .3 * hs, .3 * hs, o.hair || '#2a1c14', 0, .42 * hs, -.26 * hs, false));
+  P.head.add(blob(.72 * hs, .5 * hs, .42 * hs, o.hair || '#2a1c14', 0, .4 * hs, -.2 * hs, false));
   // arms
   const arm = (side) => {                                                       // side: +1 is the player's left
     const sh = piv(P.spine, side * .96, 1.22, 0), el = piv(sh, 0, -BODY.upper, 0), wr = piv(el, 0, -BODY.fore, 0);
@@ -110,9 +110,16 @@ GL.makePlayer = function(o){
   };
   P.LL = leg(1); P.RL = leg(-1);
   if (o.kind === 'bat'){
+    // a real bat: a thin handle that flares into a barrel (max 2.5 in across, about 34 in long), with a knob
     P.bat = new THREE.Group();
-    P.bat.add(part(.34, 1.8, .34, '#d7a15a', 0, 2.25, 0)); P.bat.add(part(.17, 1.7, .17, '#d7a15a', 0, .85, 0)); P.bat.add(part(.34, .3, .34, '#d7a15a', 0, -.1, 0, false));
-    P.bat.add(part(.23, .5, .23, '#2b2b33', 0, .38, 0, false)); P.bat.add(part(.43, .14, .43, '#9a6a34', 0, 2.95, 0, false));
+    const wood = '#dcab6c', tape = '#2b2b33';
+    const seg = (r0, r1, y0, y1, col, outline) => { const g = new THREE.CylinderGeometry(r1, r0, y1 - y0, 8); const m = new THREE.Mesh(g, lamF(col)); m.position.y = (y0 + y1) / 2; if (outline){ const o = new THREE.Mesh(g, OUT); o.scale.set(1.35, 1.01, 1.35); m.add(o); } P.bat.add(m); };
+    seg(.095, .095, -.12, 0, wood, true);                 // the knob
+    seg(.055, .055, 0, 1.15, tape, true);                 // the taped handle
+    seg(.055, .125, 1.15, 2.2, wood, true);               // it flares out
+    seg(.125, .125, 2.2, 3.6, wood, true);                // the barrel
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(.125, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), lamF(wood)); cap.position.y = 3.6; P.bat.add(cap);
+    seg(.13, .13, 3.0, 3.1, '#a8743a', false);            // a mark on the barrel
     P.body.add(P.bat);
   }
   if (o.glove){ P.glove = part(.8, .8, .62, '#8a5a2c', 0, -.36, .14); P.L.wr.add(P.glove); }
