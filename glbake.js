@@ -44,4 +44,18 @@ GL.bake = function(cacheKey, o, pose, yaw, px, ext){
   if (cacheKey){ B.cache.set(cacheKey, out); if (B.cache.size > 600) B.cache.delete(B.cache.keys().next().value); }
   return out;
 };
+// live: render now and hand back the shared canvas (valid until the next call), for people who change pose every frame
+GL.bakeLive = function(o, pose, yaw, px, ext){
+  if (!GL.bakeInit()) return null;
+  const e = Object.assign({ w: 9, h: 11, base: .6 }, ext || {}), ppf = px / e.h, W = Math.max(8, Math.round(e.w * ppf)), H = Math.max(8, Math.round(px));
+  const s = sigOf(o); let P = B.pool[s];
+  if (!P){ P = B.pool[s] = GL.makePlayer(o); B.scene.add(P.root); }
+  for (const k in B.pool) B.pool[k].root.visible = (k === s);
+  GL.applyPose(P, pose); GL.place(P, 0, 0, yaw, 1); P.shadow.visible = false;
+  B.r.setSize(W, H, false);
+  B.cam.left = -e.w / 2; B.cam.right = e.w / 2; B.cam.top = e.h - e.base; B.cam.bottom = -e.base; B.cam.updateProjectionMatrix();
+  const tilt = 28 * Math.PI / 180, dist = 60; B.cam.position.set(0, dist * Math.sin(tilt), dist * Math.cos(tilt)); B.cam.lookAt(0, 0, 0);
+  B.r.render(B.scene, B.cam);
+  return { c: B.canvas, w: W, h: H, ppf, base: e.base };
+};
 })();

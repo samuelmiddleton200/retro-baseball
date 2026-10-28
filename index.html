@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-28c';
+const BUILD = '10-28d';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1940,20 +1940,17 @@ function gxPlay(B){
 // the target's sprites in the park: they bob, lean into a run and face the way they go
 function gxSprites(list, B){
   const rows = list.map(p => ({ p, q: GL3D.toScreen(p.x, 0, p.z, W, H) })).sort((a, b) => a.q.y - b.q.y);
-  const runner = k => k.indexOf('run') === 0;
+  GX.sp = GX.sp || {};
   rows.forEach(({ p, q }) => {
-    const prev = GX.sp && GX.sp[p.key], mv = prev ? Math.hypot(p.x - prev[0], p.z - prev[1]) : 0, dx = prev ? p.x - prev[0] : 0;
-    (GX.sp = GX.sp || {})[p.key] = [p.x, p.z, dx !== 0 ? dx : (prev ? prev[2] : 0)];
-    GX.sp[p.key][2] = dx !== 0 && Math.abs(dx) > .01 ? dx : (prev ? prev[2] : 1);
-    const run = mv > .05, t = frame / 60, ph = t * (run ? 11 : 2.2) + p.x * .7;
-    const name = p.kind === 'pitch' ? 'pitcher' : p.kind === 'catch' || p.kind === 'ump' ? 'far_c' : runner(p.key) ? 'corner_r' : 'corner_l';
-    const im = TS[name]; if (!ready(im)) return;
-    const hh = p.kind === 'ump' ? 11 : 17, k = hh / im.height, w = im.width * k;
-    const bob = run ? Math.abs(Math.sin(ph)) * 2.2 : Math.sin(ph) * .5, lean = run ? .22 : 0, face = GX.sp[p.key][2] < 0 ? -1 : 1;
-    g.fillStyle = 'rgba(20,14,6,.32)'; g.beginPath(); g.ellipse(q.x, q.y, w * .42, 1.4, 0, 0, 7); g.fill();
-    g.save(); g.imageSmoothingEnabled = false; g.translate(q.x, q.y - bob); g.rotate(lean * face); g.scale(face, 1);
-    if (runner(p.key)) g.filter = 'grayscale(.85) brightness(1.45)';
-    g.drawImage(im, -w / 2, -hh, w, hh); g.restore();
+    const prev = GX.sp[p.key]; GX.sp[p.key] = [p.x, p.z];
+    const isRun = p.kind === 'run', ft = fldTeam();
+    const o = isRun ? { kind:'field', skin:p.skin, hair:p.hair, cap:'#161d36', cap2:'#e8eef8', shirt:'#c9ccd6', sleeve:'#161d36', pants:'#c4c8d2', ab:'' }
+                    : { kind:p.kind === 'pitch' ? 'pitch' : p.kind, skin:p.skin, hair:p.hair, cap:'#2748b8', cap2:'#e8eef8', shirt:'#2f58d0', sleeve:'#f2f4f8', pants:'#f2f4f8', ab:'', glove:1, helm:p.helm };
+    const px = p.kind === 'ump' ? 26 : 38, r = GL3D.bakeLive(Object.assign({}, p, o), p.pose, p.yaw, px, { w: 8, h: 7.6, base: .4 });
+    if (!r) return;
+    const hh = r.h * (17 / 34) , ww = r.w * (17 / 34), feet = r.base * r.ppf * (17 / 34);
+    g.fillStyle = 'rgba(20,14,6,.32)'; g.beginPath(); g.ellipse(q.x, q.y, ww * .3, 1.3, 0, 0, 7); g.fill();
+    g.imageSmoothingEnabled = false; g.drawImage(r.c, 0, 0, r.w, r.h, q.x - ww / 2, q.y - hh + feet, ww, hh);
   });
 }
 function gxPlayHud(B){
