@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-28b';
+const BUILD = '10-28c';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1932,8 +1932,29 @@ function gxPlay(B){
   if (B.t < .05) GX.trail = [];
   GX.trail.push([B.lat, B.h * 1.0 + .4, -B.d]); if (GX.trail.length > 290) GX.trail.shift();
   S.trail = GX.trail.slice(); S.trailMode = 'line';
+  const crowd = S.people; S.people = [];                           // the people are the target's own sprites, drawn over the 3D park below
   GL3D.frame(S);
   g.imageSmoothingEnabled = false; g.drawImage(GX.c, 0, 0, GX.c.width, GX.c.height, 0, 0, W, H);
+  gxSprites(crowd, B);
+}
+// the target's sprites in the park: they bob, lean into a run and face the way they go
+function gxSprites(list, B){
+  const rows = list.map(p => ({ p, q: GL3D.toScreen(p.x, 0, p.z, W, H) })).sort((a, b) => a.q.y - b.q.y);
+  const runner = k => k.indexOf('run') === 0;
+  rows.forEach(({ p, q }) => {
+    const prev = GX.sp && GX.sp[p.key], mv = prev ? Math.hypot(p.x - prev[0], p.z - prev[1]) : 0, dx = prev ? p.x - prev[0] : 0;
+    (GX.sp = GX.sp || {})[p.key] = [p.x, p.z, dx !== 0 ? dx : (prev ? prev[2] : 0)];
+    GX.sp[p.key][2] = dx !== 0 && Math.abs(dx) > .01 ? dx : (prev ? prev[2] : 1);
+    const run = mv > .05, t = frame / 60, ph = t * (run ? 11 : 2.2) + p.x * .7;
+    const name = p.kind === 'pitch' ? 'pitcher' : p.kind === 'catch' || p.kind === 'ump' ? 'far_c' : runner(p.key) ? 'corner_r' : 'corner_l';
+    const im = TS[name]; if (!ready(im)) return;
+    const hh = p.kind === 'ump' ? 11 : 17, k = hh / im.height, w = im.width * k;
+    const bob = run ? Math.abs(Math.sin(ph)) * 2.2 : Math.sin(ph) * .5, lean = run ? .22 : 0, face = GX.sp[p.key][2] < 0 ? -1 : 1;
+    g.fillStyle = 'rgba(20,14,6,.32)'; g.beginPath(); g.ellipse(q.x, q.y, w * .42, 1.4, 0, 0, 7); g.fill();
+    g.save(); g.imageSmoothingEnabled = false; g.translate(q.x, q.y - bob); g.rotate(lean * face); g.scale(face, 1);
+    if (runner(p.key)) g.filter = 'grayscale(.85) brightness(1.45)';
+    g.drawImage(im, -w / 2, -hh, w, hh); g.restore();
+  });
 }
 function gxPlayHud(B){
   tt(`${Math.round(B.ev)} MPH   ${Math.round(ballDist())} FT`, W / 2, ty(34), 18, '#e8eef9', 'center');
