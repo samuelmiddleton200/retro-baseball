@@ -47,10 +47,15 @@ GL.makePlayer = function(o){
   const to = new THREE.Mesh(tg, OUT); to.scale.set(1.09, 1.1, 1.1); torso.add(to); P.spine.add(torso);
   P.spine.add(part(1.36, .2, .86, '#26262e', 0, .08, 0));                          // belt
   P.spine.add(part(.5, .12, .2, '#f4f1e8', 0, 1.46, .4, false));                  // collar / placket
-  if (o.kind === 'catch') P.spine.add(part(1.56, 1.15, .7, o.cap2 || '#2c4a8a', 0, .8, .16));   // chest protector
+  if (o.kind === 'catch'){
+    P.spine.add(part(1.7, 1.2, .78, o.cap2 || '#2c4a8a', 0, .8, .16));                       // chest protector
+    [-1, 1].forEach(sx => P.spine.add(part(.62, .5, .74, o.cap2 || '#2c4a8a', sx * 1.0, 1.28, .05)));   // shoulder pads
+    P.spine.add(part(.16, 1.0, .1, '#e8edf8', -.42, .8, -.26, false)); P.spine.add(part(.16, 1.0, .1, '#e8edf8', .42, .8, -.26, false));   // straps
+  }
+  if (o.kind === 'ump') [-1, 1].forEach(sx => P.spine.add(part(.6, .42, .72, '#20242e', sx * .98, 1.28, .05)));
   P.neck = piv(P.spine, 0, 1.4, 0);
   P.head = piv(P.neck, 0, .06, 0);
-  const hs = HEADK;
+  const hs = (o.kind === 'catch' || o.kind === 'ump') ? 1.55 : HEADK;
   P.head.add(part(.62 * hs, .6 * hs, .6 * hs, skin, 0, .3 * hs, 0));
   // face: big eyes with a highlight, a brow, a nose and a mouth
   const eyeM = lam('#12101a'), shine = new THREE.MeshBasicMaterial({ color: 0xffffff }), brow = lam(o.hair || '#2a1c14');
@@ -64,10 +69,8 @@ GL.makePlayer = function(o){
   if (o.kind === 'catch' || o.kind === 'ump'){
     P.head.add(part(.68 * hs, .66 * hs, .1, '#1b1f2a', 0, .3 * hs, .34 * hs, false));                 // the mask
     const hc = o.kind === 'catch' ? (o.helm || '#2547a8') : '#16191f';
-    P.head.add(part(.7 * hs, .36 * hs, .68 * hs, hc, 0, .68 * hs, 0));                                  // the dome
-    P.head.add(part(.72 * hs, .62 * hs, .16 * hs, hc, 0, .3 * hs, -.34 * hs));                         // covers the back of the head
-    P.head.add(part(.14 * hs, .56 * hs, .5 * hs, hc, .36 * hs, .34 * hs, 0, false)); P.head.add(part(.14 * hs, .56 * hs, .5 * hs, hc, -.36 * hs, .34 * hs, 0, false));
-    P.head.add(part(.5 * hs, .05 * hs, .3 * hs, '#e8edf8', 0, .8 * hs, .12 * hs, false));               // shine
+    P.head.add(part(.78 * hs, .7 * hs, .78 * hs, hc, 0, .36 * hs, -.03 * hs));                          // one round helmet over the whole head
+    P.head.add(part(.5 * hs, .06 * hs, .4 * hs, '#e8edf8', 0, .74 * hs, -.03 * hs, false));               // a shine on top
   } else if (o.kind === 'bat' || o.kind === 'run'){
     const hc2 = o.cap || '#15204a'; const hel = part(.7 * hs, .4 * hs, .68 * hs, hc2, 0, .66 * hs, 0); P.head.add(hel);
     P.head.add(part(.32 * hs, .06 * hs, .3 * hs, '#6f8ed6', -.08 * hs, .84 * hs, .06 * hs, false));  // a bright strip along the top

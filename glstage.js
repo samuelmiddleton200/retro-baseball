@@ -5,7 +5,7 @@
 'use strict';
 const GL = window.GL3D, D2R = Math.PI / 180, lerp = (a, b, t) => a + (b - a) * t, clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const ents = {};                                 // every person on the field, by key
-let seen = new Set(), lightsOn = false, ballMesh = null, shadowMesh = null, dots = [], zoneBox = null, trailLine = null, poolBall = null;
+let trailPts = null, seen = new Set(), lightsOn = false, ballMesh = null, shadowMesh = null, dots = [], zoneBox = null, trailLine = null, poolBall = null;
 
 function lightsInit(){
   if (lightsOn) return; lightsOn = true;
@@ -33,6 +33,7 @@ function lightsInit(){
   zg.add(gl); zoneBox = zg; GL.scene.add(zg);
   const tp = []; for (let i = 0; i < 300; i++) tp.push(new THREE.Vector3());
   trailLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(tp), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .9 })); trailLine.frustumCulled = false; GL.scene.add(trailLine);
+  trailPts = new THREE.Points(trailLine.geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 3, sizeAttenuation: false })); trailPts.frustumCulled = false; GL.scene.add(trailPts);
 }
 
 function sig(o){ return [o.kind, o.skin, o.hair, o.cap, o.cap2, o.pants, o.shirt, o.sleeve, o.helm, o.glove ? 1 : 0].join('|'); }
@@ -76,10 +77,10 @@ GL.frame = function(S){
   const dm = S.trailMode === 'dots';
   dots.forEach((m, i) => { const t = S.trail && dm ? S.trail[i] : null; if (!t){ m.visible = false; return; } m.visible = true; m.position.set(t[0], t[1], t[2]); const r = S.dotR || .07; m.scale.set(r, r, r); m.material.opacity = .85 * (1 - i / 16); });
   if (S.trail && S.trailMode === 'line' && S.trail.length > 1){
-    trailLine.visible = true; const a = trailLine.geometry.attributes.position, n = Math.min(300, S.trail.length);
+    trailLine.visible = true; trailPts.visible = true; const a = trailLine.geometry.attributes.position, n = Math.min(300, S.trail.length);
     for (let i = 0; i < 300; i++){ const t = S.trail[Math.min(i, n - 1)]; a.setXYZ(i, t[0], t[1], t[2]); }
     a.needsUpdate = true;
-  } else trailLine.visible = false;
+  } else { trailLine.visible = false; trailPts.visible = false; }
   zoneBox.visible = !!S.zone;
   GL.render();
 };

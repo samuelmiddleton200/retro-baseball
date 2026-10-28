@@ -76,11 +76,11 @@ GL.poseBatter = function(swingT, t){
 // ── the catcher and the umpire ─────────────────────────────────────────────────────────────────────
 GL.poseCatcher = function(gx, gy, t){        // gx, gy: where the glove is set (feet, in the catcher's own frame)
   const b = Math.sin(t * 2) * .03;
-  return mk({ hips:[0, 1.25 + b, -.8], lean:26, LF:[1.05, 0, .65], RF:[-1.05, 0, .65], Lk:[.7, 0, 1], Rk:[-.7, 0, 1], headPitch:-10,
+  return mk({ hips:[0, 1.75 + b, -.8], lean:24, LF:[1.05, 0, .65], RF:[-1.05, 0, .65], Lk:[.7, 0, 1], Rk:[-.7, 0, 1], headPitch:-10,
     L:[gx, gy, 1.9], R:[-.5, 1.6, .3], Lh:[.4, 0, 0], Rh:[-.4, 0, 0] });
 };
 GL.poseUmp = function(t){
-  return mk({ hips:[0, 2.05, -.1], lean:30, LF:[.9, 0, .45], RF:[-.9, 0, .4], headPitch:-14,
+  return mk({ hips:[0, 2.3, -.1], lean:22, LF:[.9, 0, .45], RF:[-.9, 0, .4], headPitch:-14,
     L:[.65, 2.3, .6], R:[-.65, 2.3, .6], Lh:[.5, 0, 0], Rh:[-.5, 0, 0] });
 };
 })();

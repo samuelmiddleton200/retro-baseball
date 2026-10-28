@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27h';
+const BUILD = '10-27i';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1817,7 +1817,7 @@ function gxBat(dt){
   const gx = P && P.thrown ? clamp(-P.tx * .5, -1.2, 1.2) : 0, gy = P && P.thrown ? clamp(2.5 - P.ty, 1.3, 3.8) : 2.4;
   const cm = ft.lineup[7] || ft.lineup[0];
   S.people.push(gxPerson('cat', 'catch', cm, ft, 0, 3.4, Math.PI, GL3D.poseCatcher(gx, gy, t), { glove:1, cap2:'#2f56c4', helm:'#2547a8' }));
-  S.people.push(gxPerson('ump', 'ump', { look:{ skin:'#c88e5e', hair:'#1d1510' } }, { c1:'#16191f', c2:'#16191f' }, .2, 12.6, Math.PI, GL3D.poseUmp(t), { pants:'#3a3f4c' }));
+  S.people.push(gxPerson('ump', 'ump', { look:{ skin:'#c88e5e', hair:'#1d1510' } }, { c1:'#16191f', c2:'#16191f' }, .2, 8.8, Math.PI, GL3D.poseUmp(t), { pants:'#3a3f4c' }));
   FIELDERS.forEach(([d, lat, pos], i) => S.people.push(gxPerson('f' + i, 'field', ft.lineup[i] || ft.lineup[0], ft, lat, -d, 0, GL3D.poseReady(t + i * .7), { glove:1 })));
   // the ball
   if (P && P.thrown && P.state === 'flight' && P.t < P.dur){
@@ -1850,7 +1850,7 @@ function gxMover(key, x, z){
 }
 function gxPlay(B){
   const S = gxBase(), ft = fldTeam(), bt = batTeam(), pit = curPitcher();
-  S.view = 'air'; S.scale = 3.2; S.zone = false; gxSize();
+  S.view = 'air'; S.scale = 2.4; S.zone = false; gxSize();
   const t = S.time, b = M.batter, bx = B.lat, bz = -B.d;
   // those who are not in on the play stand and watch the ball
   const face = (x, z) => Math.atan2(bx - x, bz - z);
