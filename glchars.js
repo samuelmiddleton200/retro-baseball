@@ -56,6 +56,40 @@ function backTexture(col, trim, num){
   g.fillStyle = '#f4f1e8'; g.font = 'bold 15px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(num || 7), 16, 15);
   const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; return t;
 }
+// the face: eyes with whites, irises and a highlight, brows, a shaded nose, a mouth, cheek blush and a jaw shadow, drawn pixel by pixel
+const faceCache = {};
+function faceTexture(skin, hair, mood){
+  const key = skin + hair + (mood || ''); if (faceCache[key]) return faceCache[key];
+  const c = document.createElement('canvas'); c.width = 24; c.height = 24; const g = c.getContext('2d');
+  const sk = new THREE.Color(skin), sh = '#' + sk.clone().multiplyScalar(.74).getHexString(), lt = '#' + sk.clone().lerp(new THREE.Color(1, 1, 1), .22).getHexString(), bl = '#' + sk.clone().lerp(new THREE.Color('#e0605a'), .28).getHexString();
+  const px = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
+  px(0, 15, 24, 9, sh); px(1, 14, 22, 1, sh);                                  // the jaw falls into shadow
+  px(3, 8, 3, 3, bl); px(18, 8, 3, 3, bl);                                       // cheeks
+  px(9, 4, 6, 2, lt);                                                              // light on the brow ridge
+  // eyes: white, iris, pupil, highlight, lid line
+  [[5, 8], [15, 8]].forEach(([x, y]) => { px(x, y, 4, 4, '#f4f1ea'); px(x + 1, y, 3, 4, '#3a2a1c'); px(x + 2, y + 1, 1, 3, '#0c0a10'); px(x + 1, y, 1, 1, '#ffffff'); px(x, y - 1, 4, 1, sh); });
+  px(4, 5, 5, 1, hair); px(15, 5, 5, 1, hair); px(5, 4, 3, 1, hair); px(16, 4, 3, 1, hair);   // brows
+  px(11, 9, 2, 5, sh); px(10, 14, 4, 1, sh); px(12, 9, 1, 3, lt);                  // the nose
+  px(8, 17, 8, 1, '#7a3a2e'); px(9, 18, 6, 1, '#a0584a'); px(8, 16, 1, 1, sh); px(15, 16, 1, 1, sh);   // the mouth
+  const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; faceCache[key] = t; return t;
+}
+function frontTexture(col, trim, ab){
+  const c = document.createElement('canvas'); c.width = 32; c.height = 32; const g = c.getContext('2d');
+  g.fillStyle = col; g.fillRect(0, 0, 32, 32);
+  g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(0, 0, 32, 5); g.fillStyle = 'rgba(0,0,0,.2)'; g.fillRect(0, 25, 32, 7);
+  g.fillStyle = trim; g.fillRect(14, 0, 4, 32); g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(14, 0, 1, 32);   // the placket
+  g.fillStyle = '#f4f1e8'; for (let y = 6; y < 28; y += 6){ g.fillRect(15, y, 2, 2); }                      // buttons
+  g.fillStyle = '#f4f1e8'; g.font = 'bold 8px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText((ab || '').slice(0, 3), 8, 12); g.fillRect(2, 18, 12, 1);                                       // team letters on the chest
+  g.fillStyle = trim; g.fillRect(0, 0, 32, 2);
+  const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; return t;
+}
+function logoTexture(col, trim, letter){
+  const c = document.createElement('canvas'); c.width = 16; c.height = 16; const g = c.getContext('2d');
+  g.clearRect(0, 0, 16, 16); g.fillStyle = trim; g.beginPath(); g.arc(8, 8, 7, 0, 7); g.fill();
+  g.fillStyle = '#f6f3ea'; g.font = 'bold 11px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(letter || 'N', 8, 9);
+  const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; return t;
+}
 const HEADK = 2.0;                                 // chibi: the head is big
 GL.makePlayer = function(o){
   // o: { skin, hair, cap (jersey/cap colour), cap2 (trim), pants, kind: 'field'|'bat'|'catch'|'ump'|'pitch'|'run', number }
@@ -67,8 +101,8 @@ GL.makePlayer = function(o){
   P.hips.add(part(1.3, .5, .85, pants));
   P.spine = piv(P.hips, 0, .22, 0);
   // torso: jersey with a numbered back
-  const dark = lam(jersey), back = new THREE.MeshLambertMaterial({ map: backTexture(jersey, trim, o.number) });
-  const tg = new THREE.BoxGeometry(1.5, 1.3, .92), torso = new THREE.Mesh(tg, [dark, dark, dark, dark, dark, back]); torso.position.set(0, .78, 0);
+  const dark = lam(jersey), back = new THREE.MeshLambertMaterial({ map: backTexture(jersey, trim, o.number) }), front = new THREE.MeshLambertMaterial({ map: frontTexture(jersey, trim, o.ab) });
+  const tg = new THREE.BoxGeometry(1.5, 1.3, .92), torso = new THREE.Mesh(tg, [dark, dark, dark, dark, o.kind === 'catch' ? dark : front, back]); torso.position.set(0, .78, 0);
   const to = new THREE.Mesh(tg, OUT); to.scale.set(1.09, 1.1, 1.1); torso.add(to); P.spine.add(torso);
   P.spine.add(part(1.36, .2, .86, '#26262e', 0, .08, 0));                          // belt
   P.spine.add(part(.5, .12, .2, '#f4f1e8', 0, 1.46, .4, false));                  // collar / placket
@@ -83,14 +117,8 @@ GL.makePlayer = function(o){
   const hs = (o.kind === 'catch' || o.kind === 'ump') ? 1.55 : HEADK;
   P.head.add(blob(.7 * hs, .68 * hs, .66 * hs, skin, 0, .32 * hs, 0));
   // face: big eyes with a highlight, a brow, a nose and a mouth
-  const eyeM = lam('#12101a'), shine = new THREE.MeshBasicMaterial({ color: 0xffffff }), brow = lam(o.hair || '#2a1c14');
-  [-1, 1].forEach(sx => {
-    const e = new THREE.Mesh(new THREE.BoxGeometry(.15 * hs * .8, .17 * hs * .8, .04), eyeM); e.position.set(sx * .16 * hs, .33 * hs, .3 * hs + .02); P.head.add(e);
-    const w = new THREE.Mesh(new THREE.BoxGeometry(.05, .05, .02), shine); w.position.set(sx * .16 * hs + .03, .37 * hs, .3 * hs + .05); P.head.add(w);
-    const br = new THREE.Mesh(new THREE.BoxGeometry(.2 * hs * .8, .04, .03), brow); br.position.set(sx * .16 * hs, .44 * hs, .3 * hs + .02); P.head.add(br);
-  });
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(.07 * hs, .1 * hs, .06), lam(new THREE.Color(skin).multiplyScalar(.82).getStyle())); nose.position.set(0, .25 * hs, .3 * hs + .03); P.head.add(nose);
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(.16 * hs, .035 * hs, .03), lam('#7a3a2e')); mouth.position.set(0, .13 * hs, .3 * hs + .02); P.head.add(mouth);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(.62 * hs, .62 * hs), new THREE.MeshLambertMaterial({ map: faceTexture(skin, o.hair || '#2a1c14'), transparent: true }));
+  face.position.set(0, .31 * hs, .33 * hs + .015); P.head.add(face);
   if (o.kind === 'catch' || o.kind === 'ump'){
     P.head.add(part(.68 * hs, .66 * hs, .1, '#1b1f2a', 0, .3 * hs, .34 * hs, false));                 // the mask
     const hc = o.kind === 'catch' ? (o.helm || '#2547a8') : '#16191f';
@@ -103,7 +131,7 @@ GL.makePlayer = function(o){
     P.head.add(part(.6 * hs, .06 * hs, .26 * hs, hc2, 0, .56 * hs, .42 * hs, false));            // short brim
   } else {
     P.head.add(blob(.76 * hs, .6 * hs, .74 * hs, cap, 0, .5 * hs, -.01 * hs, true, true));                  // the cap
-    P.head.add(part(.28 * hs, .07 * hs, .18 * hs, trim, 0, .74 * hs, .34 * hs, false));               // the logo
+    { const lg = new THREE.Mesh(new THREE.PlaneGeometry(.26 * hs, .26 * hs), new THREE.MeshLambertMaterial({ map: logoTexture(cap, trim, (o.ab || 'N')[0]), transparent: true })); lg.position.set(0, .7 * hs, .39 * hs); lg.rotation.x = -.18; P.head.add(lg); }   // the cap logo
     P.head.add(part(.6 * hs, .07 * hs, .46 * hs, cap, 0, .56 * hs, .42 * hs, false));                  // the brim
   }
   P.head.add(blob(.72 * hs, .5 * hs, .42 * hs, o.hair || '#2a1c14', 0, .4 * hs, -.2 * hs, false));
@@ -119,9 +147,11 @@ GL.makePlayer = function(o){
   const leg = (side) => {
     const hp = piv(P.hips, side * .42, -.2, 0), kn = piv(hp, 0, -BODY.thigh, 0), an = piv(kn, 0, -BODY.shin, 0);
     hp.add(part(.66, BODY.thigh + .08, .66, pants, 0, -BODY.thigh / 2, 0));
+    hp.add(part(.07, BODY.thigh + .02, .5, trim, side * .34, -BODY.thigh / 2, 0, false));                  // the stripe down the pants
     kn.add(part(.56, BODY.shin + .06, .58, pants, 0, -BODY.shin / 2, 0));
     kn.add(part(.6, .55, .62, o.sock || pants, 0, -BODY.shin + .5, 0, false));
-    an.add(part(.6, .24, 1.15, '#17151d', 0, -.04, .32)); an.add(part(.62, .1, 1.18, '#f1efe8', 0, -.2, .32, false));   // a black shoe on a white sole
+    kn.add(part(.62, .1, .64, trim, 0, -BODY.shin + .72, 0, false)); kn.add(part(.62, .1, .64, '#f1efe8', 0, -BODY.shin + .58, 0, false));   // stirrup bands
+    an.add(part(.6, .24, 1.15, '#17151d', 0, -.04, .32)); an.add(part(.2, .05, .5, '#f1efe8', 0, .09, .5, false)); an.add(part(.04, .16, .5, '#f1efe8', side * .3, -.02, .32, false));   // laces and a side flash an.add(part(.62, .1, 1.18, '#f1efe8', 0, -.2, .32, false));   // a black shoe on a white sole
     return { hp, kn, an, side };
   };
   P.LL = leg(1); P.RL = leg(-1);

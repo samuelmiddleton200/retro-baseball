@@ -36,7 +36,7 @@ function lightsInit(){
   trailPts = new THREE.Points(trailLine.geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 3, sizeAttenuation: false })); trailPts.frustumCulled = false; GL.scene.add(trailPts);
 }
 
-function sig(o){ return [o.kind, o.skin, o.hair, o.cap, o.cap2, o.pants, o.shirt, o.sleeve, o.helm, o.glove ? 1 : 0].join('|'); }
+function sig(o){ return [o.kind, o.skin, o.hair, o.cap, o.cap2, o.pants, o.shirt, o.sleeve, o.helm, o.ab, o.glove ? 1 : 0].join('|'); }
 // find or build the person called `key`; rebuilt if his look changes
 function ent(key, o){
   let e = ents[key]; const s = sig(o);

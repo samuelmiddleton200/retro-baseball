@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27q';
+const BUILD = '10-27r';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1786,7 +1786,7 @@ const gxLook = m => ({ skin: (m.look && m.look.skin) || '#d9a577', hair: (m.look
 function gxPerson(key, kind, man, team, x, z, yaw, pose, o = {}){
   const L = gxLook(man);
   const away = team === M.away, shirt = away ? '#cfd3dc' : team.c1;      // road grey, or the home team's own colour
-  return Object.assign({ key, kind, skin:L.skin, hair:L.hair, cap:team.c1, cap2:team.c2, shirt, sleeve:team.c1, pants:away ? '#c4c8d2' : '#eceef3', x, z, y:0, yaw, pose }, o);
+  return Object.assign({ key, kind, skin:L.skin, hair:L.hair, ab:team.ab, cap:team.c1, cap2:team.c2, shirt, sleeve:team.c1, pants:away ? '#c4c8d2' : '#eceef3', x, z, y:0, yaw, pose }, o);
 }
 // where on the screen the strike zone is, so the aim circle and the timing ring sit on it
 function gxZone(){
