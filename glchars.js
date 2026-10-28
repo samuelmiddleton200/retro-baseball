@@ -138,20 +138,20 @@ GL.makePlayer = function(o){
   // arms
   const arm = (side) => {                                                       // side: +1 is the player's left
     const sh = piv(P.spine, side * .96, 1.22, 0), el = piv(sh, 0, -BODY.upper, 0), wr = piv(el, 0, -BODY.fore, 0);
-    sh.add(part(.5, BODY.upper + .1, .5, o.sleeve || jersey, 0, -BODY.upper / 2, 0));
-    el.add(part(.42, BODY.fore + .06, .42, o.kind === 'bat' || o.kind === 'run' ? (o.sleeve || '#15204a') : skin, 0, -BODY.fore / 2, 0));
-    const hand = blob(.46, .46, .46, o.kind === 'bat' || o.kind === 'run' ? '#f6f4ee' : skin, 0, -.16, 0); wr.add(hand);
+    sh.add(blob(.62, BODY.upper + .34, .62, o.sleeve || jersey, 0, -BODY.upper / 2 + .02, 0));
+    el.add(blob(.5, BODY.fore + .3, .5, o.kind === 'bat' || o.kind === 'run' ? (o.sleeve || '#15204a') : skin, 0, -BODY.fore / 2 + .02, 0));
+    const hand = blob(.6, .56, .6, o.kind === 'bat' || o.kind === 'run' ? '#f6f4ee' : skin, 0, -.16, 0); wr.add(hand);
     return { sh, el, wr, side, hand };
   };
   P.L = arm(1); P.R = arm(-1);
   const leg = (side) => {
     const hp = piv(P.hips, side * .42, -.2, 0), kn = piv(hp, 0, -BODY.thigh, 0), an = piv(kn, 0, -BODY.shin, 0);
-    hp.add(part(.66, BODY.thigh + .08, .66, pants, 0, -BODY.thigh / 2, 0));
+    hp.add(blob(.8, BODY.thigh + .42, .78, pants, 0, -BODY.thigh / 2 + .05, 0));
     hp.add(part(.07, BODY.thigh + .02, .5, trim, side * .34, -BODY.thigh / 2, 0, false));                  // the stripe down the pants
-    kn.add(part(.56, BODY.shin + .06, .58, pants, 0, -BODY.shin / 2, 0));
+    kn.add(blob(.68, BODY.shin + .34, .7, pants, 0, -BODY.shin / 2, 0));
     kn.add(part(.6, .55, .62, o.sock || pants, 0, -BODY.shin + .5, 0, false));
     kn.add(part(.62, .1, .64, trim, 0, -BODY.shin + .72, 0, false)); kn.add(part(.62, .1, .64, '#f1efe8', 0, -BODY.shin + .58, 0, false));   // stirrup bands
-    an.add(part(.6, .24, 1.15, '#17151d', 0, -.04, .32)); an.add(part(.2, .05, .5, '#f1efe8', 0, .09, .5, false)); an.add(part(.04, .16, .5, '#f1efe8', side * .3, -.02, .32, false));   // laces and a side flash an.add(part(.62, .1, 1.18, '#f1efe8', 0, -.2, .32, false));   // a black shoe on a white sole
+    an.add(blob(.74, .42, 1.3, '#17151d', 0, -.04, .34)); an.add(part(.2, .05, .5, '#f1efe8', 0, .09, .5, false)); an.add(part(.04, .16, .5, '#f1efe8', side * .3, -.02, .32, false));   // laces and a side flash an.add(part(.62, .1, 1.18, '#f1efe8', 0, -.2, .32, false));   // a black shoe on a white sole
     return { hp, kn, an, side };
   };
   P.LL = leg(1); P.RL = leg(-1);
