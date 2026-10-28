@@ -58,11 +58,11 @@ GL.posePitcher = function(u){
 };
 
 // ── the batter, in his own frame (facing the plate; pitcher is on his left, +X) ─────────────────────
-const BAT_IDLE = [-.55, 1, -.55], BAT_LOAD = [-.95, .75, -.2], BAT_HIT = [.15, .08, 1], BAT_FOLLOW = [.8, .85, -.25];
+const BAT_IDLE = [-.8, 1, -.3], BAT_LOAD = [-.95, .75, -.2], BAT_HIT = [.15, .08, 1], BAT_FOLLOW = [.8, .85, -.25];
 GL.poseBatter = function(swingT, t){
   const b = Math.sin(t * 2.4) * .05, w = Math.sin(t * 3.1) * .12;
   const idle = mk({ hips:[0, 2.28 + b, 0], lean:18, twist:-8, LF:[1.45, 0, .15], RF:[-1.45, 0, -.1], Lk:[.6, 0, 1], Rk:[-.6, 0, 1], headYaw:-30, headPitch:6,
-    L:[-.45, 4.1 + b, .32], R:[-.85, 4.3 + b, -.05], Lh:[.4, 0, 0], Rh:[-.6, 0, 0], bat:[BAT_IDLE[0] + w, BAT_IDLE[1], BAT_IDLE[2]] });
+    L:[-.2, 3.7 + b, .5], R:[-.62, 3.9 + b, .3], Lh:[.4, 0, 0], Rh:[-.6, 0, 0], bat:[BAT_IDLE[0] + w, BAT_IDLE[1], BAT_IDLE[2]] });
   if (swingT == null) return idle;
   const load = mk({ hips:[-.15, 2.55, 0], lean:8, twist:-18, LF:[1.35, .25, .05], RF:[-1.3, 0, 0], headYaw:20,
     L:[-.7, 4.55, .12], R:[-1.0, 4.72, 0], Rh:[-.6, 0, -.3], bat:BAT_LOAD });

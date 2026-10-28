@@ -63,7 +63,7 @@ GL.frame = function(S){
   S.people.forEach(p => {
     const e = ent(p.key, p);
     GL.applyPose(e.P, p.pose);
-    GL.place(e.P, p.x, p.z, p.yaw, S.scale || 1);
+    GL.place(e.P, p.x, p.z, p.yaw, (S.scale || 1) * (p.scale || 1));
     e.P.root.position.y = p.y || 0;
     e.P.shadow.visible = true;
   });

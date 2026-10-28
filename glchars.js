@@ -22,6 +22,15 @@ function part(w, h, d, color, ox = 0, oy = 0, oz = 0, outline = true){
   if (outline){ const o = new THREE.Mesh(g, OUT); o.scale.set(1 + .09 / w * 2, 1 + .09 / h * 2, 1 + .09 / d * 2); m.add(o); }
   return m;
 }
+// a rounded part: a low-poly ellipsoid (or just its top half, for a dome), flat-shaded so it still reads as pixels
+const flatCache = {};
+const lamF = c => flatCache[c] || (flatCache[c] = new THREE.MeshLambertMaterial({ color: c, flatShading: true }));
+function blob(w, h, d, color, ox = 0, oy = 0, oz = 0, outline = true, dome = false){
+  const g = dome ? new THREE.SphereGeometry(.5, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2) : new THREE.SphereGeometry(.5, 12, 8);
+  const m = new THREE.Mesh(g, lamF(color)); m.scale.set(w, h, d); m.position.set(ox, oy, oz);
+  if (outline){ const o = new THREE.Mesh(g, OUT); o.scale.set(1 + .1 / w * 2, 1 + .1 / h * 2, 1 + .1 / d * 2); m.add(o); }
+  return m;
+}
 const piv = (parent, x = 0, y = 0, z = 0) => { const o = new THREE.Object3D(); o.position.set(x, y, z); parent.add(o); return o; };
 
 // a canvas used as the back of a jersey: team colour, a trim stripe, and the player's number
@@ -37,7 +46,7 @@ GL.makePlayer = function(o){
   const skin = o.skin || '#d9a577', jersey = o.shirt || o.cap || '#2c4a8a', trim = o.cap2 || '#d94a3c', pants = o.pants || '#dfe2ea', cap = o.cap || '#2c4a8a';
   const P = { o, root: new THREE.Group() };
   const root = P.root;
-  P.body = new THREE.Group(); root.add(P.body); P.body.scale.set(.76, .76, .76);
+  P.body = new THREE.Group(); root.add(P.body); P.body.scale.set(.86, .86, .86);
   P.hips = piv(P.body, 0, 3, 0);
   P.hips.add(part(1.3, .5, .85, pants));
   P.spine = piv(P.hips, 0, .22, 0);
@@ -56,7 +65,7 @@ GL.makePlayer = function(o){
   P.neck = piv(P.spine, 0, 1.4, 0);
   P.head = piv(P.neck, 0, .06, 0);
   const hs = (o.kind === 'catch' || o.kind === 'ump') ? 1.55 : HEADK;
-  P.head.add(part(.62 * hs, .6 * hs, .6 * hs, skin, 0, .3 * hs, 0));
+  P.head.add(blob(.7 * hs, .68 * hs, .66 * hs, skin, 0, .32 * hs, 0));
   // face: big eyes with a highlight, a brow, a nose and a mouth
   const eyeM = lam('#12101a'), shine = new THREE.MeshBasicMaterial({ color: 0xffffff }), brow = lam(o.hair || '#2a1c14');
   [-1, 1].forEach(sx => {
@@ -69,25 +78,25 @@ GL.makePlayer = function(o){
   if (o.kind === 'catch' || o.kind === 'ump'){
     P.head.add(part(.68 * hs, .66 * hs, .1, '#1b1f2a', 0, .3 * hs, .34 * hs, false));                 // the mask
     const hc = o.kind === 'catch' ? (o.helm || '#2547a8') : '#16191f';
-    P.head.add(part(.78 * hs, .7 * hs, .78 * hs, hc, 0, .36 * hs, -.03 * hs));                          // one round helmet over the whole head
+    P.head.add(blob(.84 * hs, .8 * hs, .82 * hs, hc, 0, .38 * hs, -.03 * hs));                          // one round helmet over the whole head
     P.head.add(part(.5 * hs, .06 * hs, .4 * hs, '#e8edf8', 0, .74 * hs, -.03 * hs, false));               // a shine on top
   } else if (o.kind === 'bat' || o.kind === 'run'){
-    const hc2 = o.cap || '#15204a'; const hel = part(.7 * hs, .4 * hs, .68 * hs, hc2, 0, .66 * hs, 0); P.head.add(hel);
-    P.head.add(part(.32 * hs, .06 * hs, .3 * hs, '#6f8ed6', -.08 * hs, .84 * hs, .06 * hs, false));  // a bright strip along the top
+    const hc2 = o.cap || '#15204a'; const hel = blob(.8 * hs, .62 * hs, .76 * hs, hc2, 0, .5 * hs, -.01 * hs, true, true); P.head.add(hel);
+    P.head.add(blob(.34 * hs, .12 * hs, .3 * hs, '#7f9ee4', -.1 * hs, .78 * hs, .08 * hs, false));  // a bright gloss on the dome
     P.head.add(part(.16 * hs, .42 * hs, .46 * hs, hc2, .36 * hs, .38 * hs, .02, false));         // ear flap
     P.head.add(part(.6 * hs, .06 * hs, .26 * hs, hc2, 0, .56 * hs, .42 * hs, false));            // short brim
   } else {
-    P.head.add(part(.68 * hs, .32 * hs, .66 * hs, cap, 0, .66 * hs, 0));                              // the cap
+    P.head.add(blob(.76 * hs, .6 * hs, .74 * hs, cap, 0, .5 * hs, -.01 * hs, true, true));                  // the cap
     P.head.add(part(.28 * hs, .07 * hs, .18 * hs, trim, 0, .74 * hs, .34 * hs, false));               // the logo
     P.head.add(part(.6 * hs, .07 * hs, .46 * hs, cap, 0, .56 * hs, .42 * hs, false));                  // the brim
   }
-  P.head.add(part(.64 * hs, .2 * hs, .12 * hs, o.hair || '#2a1c14', 0, .5 * hs, -.32 * hs, false));
+  P.head.add(blob(.66 * hs, .3 * hs, .3 * hs, o.hair || '#2a1c14', 0, .42 * hs, -.26 * hs, false));
   // arms
   const arm = (side) => {                                                       // side: +1 is the player's left
     const sh = piv(P.spine, side * .96, 1.22, 0), el = piv(sh, 0, -BODY.upper, 0), wr = piv(el, 0, -BODY.fore, 0);
     sh.add(part(.5, BODY.upper + .1, .5, o.sleeve || jersey, 0, -BODY.upper / 2, 0));
     el.add(part(.42, BODY.fore + .06, .42, o.kind === 'bat' || o.kind === 'run' ? (o.sleeve || '#15204a') : skin, 0, -BODY.fore / 2, 0));
-    const hand = part(.4, .4, .4, o.kind === 'bat' || o.kind === 'run' ? '#f1efe8' : skin, 0, -.16, 0); wr.add(hand);
+    const hand = blob(.46, .46, .46, o.kind === 'bat' || o.kind === 'run' ? '#f6f4ee' : skin, 0, -.16, 0); wr.add(hand);
     return { sh, el, wr, side, hand };
   };
   P.L = arm(1); P.R = arm(-1);
@@ -95,14 +104,14 @@ GL.makePlayer = function(o){
     const hp = piv(P.hips, side * .42, -.2, 0), kn = piv(hp, 0, -BODY.thigh, 0), an = piv(kn, 0, -BODY.shin, 0);
     hp.add(part(.66, BODY.thigh + .08, .66, pants, 0, -BODY.thigh / 2, 0));
     kn.add(part(.56, BODY.shin + .06, .58, pants, 0, -BODY.shin / 2, 0));
-    kn.add(part(.6, .55, .62, o.sock || trim, 0, -BODY.shin + .5, 0, false));
-    an.add(part(.6, .3, 1.15, '#17151d', 0, -.12, .32));
+    kn.add(part(.6, .55, .62, o.sock || pants, 0, -BODY.shin + .5, 0, false));
+    an.add(part(.6, .24, 1.15, '#17151d', 0, -.04, .32)); an.add(part(.62, .1, 1.18, '#f1efe8', 0, -.2, .32, false));   // a black shoe on a white sole
     return { hp, kn, an, side };
   };
   P.LL = leg(1); P.RL = leg(-1);
   if (o.kind === 'bat'){
     P.bat = new THREE.Group();
-    P.bat.add(part(.42, 1.8, .42, '#d7a15a', 0, 2.25, 0)); P.bat.add(part(.2, 1.7, .2, '#d7a15a', 0, .85, 0)); P.bat.add(part(.34, .3, .34, '#d7a15a', 0, -.1, 0, false));
+    P.bat.add(part(.34, 1.8, .34, '#d7a15a', 0, 2.25, 0)); P.bat.add(part(.17, 1.7, .17, '#d7a15a', 0, .85, 0)); P.bat.add(part(.34, .3, .34, '#d7a15a', 0, -.1, 0, false));
     P.bat.add(part(.23, .5, .23, '#2b2b33', 0, .38, 0, false)); P.bat.add(part(.43, .14, .43, '#9a6a34', 0, 2.95, 0, false));
     P.body.add(P.bat);
   }

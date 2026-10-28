@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27j';
+const BUILD = '10-27k';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1799,6 +1799,8 @@ function gxPitchBall(f){
   return [lerp(rel[0], cx + bx * e, e), lerp(rel[1], cy + by * e, e), lerp(rel[2], -.7, f)];
 }
 const BAT_YAW = 64 * Math.PI / 180;                  // he is turned partly toward us, like the target, not square to the plate
+// the target draws the far players bigger than true size so they can be read: stretch by distance
+const gxFar = d => 1 + .55 * clamp(d / 300, 0, 1);
 function gxBat(dt){
   gxZone();
   const S = gxBase(), ft = fldTeam(), bt = batTeam(), pit = curPitcher(), b = M.batter, lefty = b.bats === 'L';
@@ -1808,7 +1810,7 @@ function gxBat(dt){
   let u = 0;
   if (P && P.thrown) u = clamp(.70 + (P.t / P.dur) * .44, 0, 1);
   else if (P) u = clamp((P.windup || 0) * .70, 0, .70);
-  S.people.push(gxPerson('pit', 'pitch', pit, ft, 0, -60.5, 0, GL3D.posePitcher(u), { y:.9, glove:1 }));
+  S.people.push(gxPerson('pit', 'pitch', pit, ft, 0, -60.5, 0, GL3D.posePitcher(u), { y:.9, glove:1, scale:gxFar(60.5) }));
   // the batter
   const sw = swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null;
   let bp = GL3D.poseBatter(sw, t); if (lefty) bp = GL3D.mirrorPose(bp);
@@ -1818,13 +1820,13 @@ function gxBat(dt){
   const cm = ft.lineup[7] || ft.lineup[0];
   S.people.push(gxPerson('cat', 'catch', cm, ft, 0, 3.4, Math.PI, GL3D.poseCatcher(gx, gy, t), { glove:1, cap2:'#2f56c4', helm:'#2547a8' }));
   S.people.push(gxPerson('ump', 'ump', { look:{ skin:'#c88e5e', hair:'#1d1510' } }, { c1:'#16191f', c2:'#16191f' }, .2, 8.8, Math.PI, GL3D.poseUmp(t), { pants:'#3a3f4c' }));
-  FIELDERS.forEach(([d, lat, pos], i) => S.people.push(gxPerson('f' + i, 'field', ft.lineup[i] || ft.lineup[0], ft, lat, -d, 0, GL3D.poseReady(t + i * .7), { glove:1 })));
+  FIELDERS.forEach(([d, lat, pos], i) => S.people.push(gxPerson('f' + i, 'field', ft.lineup[i] || ft.lineup[0], ft, lat, -d, 0, GL3D.poseReady(t + i * .7), { glove:1, scale:gxFar(d) })));
   // the ball
   if (P && P.thrown && P.state === 'flight' && P.t < P.dur){
     const f = clamp(P.t / P.dur, 0, 1), p = gxPitchBall(f);
-    S.ball = { x:p[0], y:p[1], z:p[2], r: lerp(.17, .34, f) }; S.shadow = false;
+    S.ball = { x:p[0], y:p[1], z:p[2], r: lerp(.3, .5, f) }; S.shadow = false;
     S.trail = []; for (let i = 1; i <= 16; i++){ const q = gxPitchBall(Math.max(0, f - i * .028)); S.trail.push(q); }
-    S.trailMode = 'dots'; S.dotR = .06 + f * .05;
+    S.trailMode = 'dots'; S.dotR = .12 + f * .06;
   } else if (P && P.caught > 0 && P.state !== 'inplay'){
     const k = clamp(1 - P.caught / 260, 0, 1), end = [gx * -1, gy, 3.0], from = gxPitchBall(1);
     S.ball = { x:lerp(from[0], end[0], 1 - k), y:lerp(from[1], end[1], 1 - k), z:lerp(from[2], end[2], 1 - k), r:.3 }; S.shadow = false;
