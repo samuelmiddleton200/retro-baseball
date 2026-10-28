@@ -257,12 +257,25 @@ GL.init = function(canvas){
   GL.scene = new THREE.Scene(); GL.scene.background = hex('#8cc4ee');
   GL.cam = new THREE.PerspectiveCamera(40, 16 / 9, .5, 3000);
   GL.world = new THREE.Group(); GL.scene.add(GL.world);                            // players, ball
+  // the pixel-art pass: the scene is drawn small, then re-coloured with a limited palette and a fine dither
+  GL.rt = new THREE.WebGLRenderTarget(4, 4, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+  GL.postMat = new THREE.ShaderMaterial({
+    uniforms: { t: { value: GL.rt.texture }, res: { value: new THREE.Vector2(4, 4) }, levels: { value: 16 }, dith: { value: .45 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
+    fragmentShader: `uniform sampler2D t; uniform vec2 res; uniform float levels; uniform float dith; varying vec2 vUv;
+      float bayer(vec2 p){ vec2 q = mod(floor(p), 4.); float a = mod(q.x, 2.) + mod(q.y, 2.) * 2.; return (a * 4. + floor(q.x / 2.) * 2. + floor(q.y / 2.)) / 16.; }
+      void main(){ vec3 c = texture2D(t, vUv).rgb; float b = bayer(vUv * res) - .5;
+        c = clamp(c + b * dith / levels, 0., 1.); c = floor(c * levels + .5) / levels;
+        gl_FragColor = vec4(c, 1.); }`,
+    depthTest: false, depthWrite: false });
+  GL.postScene = new THREE.Scene(); GL.postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  GL.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), GL.postMat));
   GL.ready = true;
 };
 GL.setPark = function(park, teamCols){ buildPark(park, teamCols || ['#2c4a8a', '#c0392b']); GL.park = park; };
 GL.resize = function(w, h){
   const rows = GL.rows, cols = Math.round(rows * w / h);
-  GL.renderer.setSize(cols, rows, false);
+  GL.renderer.setSize(cols, rows, false); GL.rt.setSize(cols, rows); GL.postMat.uniforms.res.value.set(cols, rows);
   GL.canvas.style.width = w + 'px'; GL.canvas.style.height = h + 'px'; GL.canvas.style.imageRendering = 'pixelated';
   GL.cam.aspect = cols / rows; GL.cam.updateProjectionMatrix();
 };
@@ -276,5 +289,10 @@ GL.placeCamera = function(){
   else { c.fov = 60; c.up.set(0, 1, 0); c.position.set(0, 100, 50); c.lookAt(0, 0, -112); }          // the press box: 100 ft up, 50 ft behind the plate
   c.updateProjectionMatrix();
 };
-GL.render = function(){ GL.placeCamera(); GL.renderer.render(GL.scene, GL.cam); };
+GL.render = function(){
+  GL.placeCamera();
+  if (GL.post === false){ GL.renderer.render(GL.scene, GL.cam); return; }
+  GL.renderer.setRenderTarget(GL.rt); GL.renderer.render(GL.scene, GL.cam);
+  GL.renderer.setRenderTarget(null); GL.renderer.render(GL.postScene, GL.postCam);
+};
 })();
