@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27y';
+const BUILD = '10-27z';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1260,7 +1260,7 @@ function ballAt(f){
   const e = f * f;
   const rel = releasePt();
   const tx = ZONE.x + ZONE.w / 2 + P.tx * ZONE.w / 2, ty = ZONE.y + ZONE.h / 2 + P.ty * ZONE.h / 2;
-  return { x: lerp(rel.x, tx + P.br[0] * e, e), y: lerp(rel.y, ty + P.br[1] * e, e), r: lerp(.9, 3.6, e) };
+  return { x: lerp(rel.x, tx + P.br[0] * e, e), y: lerp(rel.y, ty + P.br[1] * e, e), r: lerp(1.6, 4.6, e) };
 }
 function releasePt(){ const m = proj(60.5, 0); return { x: m.x + 7 * TU, y: m.y - 62 * TU }; }
 const mittPt = () => ({ x: ZONE.x + ZONE.w / 2, y: ZONE.y + ZONE.h * .85 });
@@ -2040,7 +2040,7 @@ function drawBatterView(dt){
   // the ball, with the dotted line the target draws down the middle
   if (P && P.thrown && P.state === 'flight' && P.t < P.dur){
     const f = P.t / P.dur, q = ballAt(f);
-    for (let k = .05; k < f - .03; k += .06){ const d = ballAt(k); R(Math.round(d.x), Math.round(d.y), 1, 1, 'rgba(255,255,255,.8)'); }
+    for (let k = .04; k < f - .03; k += .07){ const d = ballAt(k), z = 1 + k * 1.6; R(Math.round(d.x - z / 2), Math.round(d.y - z / 2), Math.round(z), Math.round(z), 'rgba(255,255,255,.92)'); }
     for (let i = 1; i <= 4; i++){                               // a short glow behind it reads as speed
       const o = ballAt(clamp(f - i * .045, 0, 1));
       R(o.x - o.r / 2, o.y - o.r / 2, o.r, o.r, `rgba(255,255,255,${.09 * (5 - i)})`);
