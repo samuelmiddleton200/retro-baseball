@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-28g';
+const BUILD = '10-28h';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1859,7 +1859,7 @@ function gxBat(dt){
     }
   }
   drawHUD();
-  if (M.msg) textb(M.msg, W / 2, 62, M.msg.includes('!') ? '#ffd23f' : '#fff', 14, 'center');
+  if (M.msg) tt(M.msg, W / 2, ty(150), 34, M.msg.includes('!') ? '#ffd23f' : '#ffffff', 'center');
 }
 // one person moving across the park: his own stride phase, facing the way he is going
 function gxMover(key, x, z){
@@ -1957,8 +1957,8 @@ function gxPlayHud(B){
   tt(`${Math.round(B.ev)} MPH   ${Math.round(ballDist())} FT`, W / 2, ty(150), 20, '#ffffff', 'center');
   if (CFG.DEBUG) tt(`EV ${B.ev.toFixed(1)} mph  LA ${B.la.toFixed(1)}  HANG ${B.T.toFixed(2)} s  ${B.play || ''}`, W / 2, ty(52), 11, '#ff9a8a', 'center');
   if (B.judged){
-    if (B.play === 'hr') textb('GONE!', W / 2, 46, '#ffd23f', 22, 'center');
-    else if (M.msg) textb(M.msg, W / 2, 46, '#ffd23f', 17, 'center');
+    if (B.play === 'hr') tt('GONE!', W / 2, ty(150), 48, '#ffd23f', 'center');
+    else if (M.msg) tt(M.msg, W / 2, ty(150), 34, '#ffd23f', 'center');
   }
   drawHUD();
 }
@@ -2131,7 +2131,7 @@ function drawBatterView(dt){
   }
 
   drawHUD();
-  if (M.msg) textb(M.msg, W / 2, 62, M.msg.includes('!') ? '#ffd23f' : '#fff', 14, 'center');
+  if (M.msg) tt(M.msg, W / 2, ty(150), 34, M.msg.includes('!') ? '#ffd23f' : '#ffffff', 'center');
 }
 
 // a pixel-art baseball: dark rim, lit top-left, shaded bottom-right, two red seams
@@ -2431,10 +2431,10 @@ function drawPlay(){
   if (CFG.DEBUG) tt(`EV ${B.ev.toFixed(1)} mph  LA ${B.la.toFixed(1)}  HANG ${B.T.toFixed(2)} s  LAND ${B.land ? Math.round(B.land.d) + ',' + Math.round(B.land.lat) : '-'}  ${B.play || ''}`, W / 2, ty(52), 11, '#ff9a8a', 'center');
   if (B.judged){
     if (B.play === 'hr'){
-      textb('GONE!', W / 2, 46, '#ffd23f', 22, 'center');
+      tt('GONE!', W / 2, ty(150), 48, '#ffd23f', 'center');
       for (let i = 0; i < 8; i++){ const a2 = i * .8 + P.playT / 90;
         R(gp.x + Math.cos(a2) * (14 + i * 3), gp.y - lift + Math.sin(a2) * (10 + i * 2), 2, 2, i % 2 ? '#ffd23f' : '#fff'); }
-    } else if (M.msg) textb(M.msg, W / 2, 46, '#ffd23f', 17, 'center');
+    } else if (M.msg) tt(M.msg, W / 2, ty(150), 34, '#ffd23f', 'center');
   }
   drawHUD();
 }
