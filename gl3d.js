@@ -37,7 +37,7 @@ function paintGround(park, reg){
   const P = (lat, d) => [(lat - reg.x0) * S, (reg.d0 + reg.dw - d) * S];
   const poly = (pts, fill) => { g.beginPath(); pts.forEach((p, i) => { const q = P(p[0], p[1]); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); g.fillStyle = fill; g.fill(); };
   const circ = (lat, d, r, fill) => { const q = P(lat, d); g.beginPath(); g.arc(q[0], q[1], r * S, 0, TAU); g.fillStyle = fill; g.fill(); };
-  const GRASS_A = '#4c7c37', GRASS_B = '#447032', GRASS_C = '#528240', DIRT = '#b17846', DIRT2 = '#a66b3d', TRACK = '#a9743f', CHALK = '#f1ede2';
+  const GRASS_A = '#4c7c37', GRASS_B = '#3f6c2e', GRASS_C = '#578944', DIRT = '#b17846', DIRT2 = '#a66b3d', TRACK = '#a9743f', CHALK = '#f1ede2';
   // base grass, with wide mowing stripes running out from home
   g.fillStyle = GRASS_A; g.fillRect(0, 0, reg.w, reg.h);
   for (let i = -24; i < 24; i++){
