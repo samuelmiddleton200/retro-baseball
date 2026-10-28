@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-28i';
+const BUILD = '10-28j';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2316,7 +2316,7 @@ function drawScoreboard(between){
 function drawPitchInfo(){
   // ── the pitch info, bottom-left, once he lets go (or while you choose) ──
   let l1 = null, l2 = '';
-  if (PLATE_ON && !(P && P.thrown) && phase !== 'pitching') { l1 = PITCH_LABEL[pitchSel] || '4-SEAM FASTBALL'; l2 = '--- MPH'; }
+  if (PLATE_ON && !(P && P.thrown) && phase !== 'pitching') { l1 = PITCH_LABEL[pitchSel] || '4-SEAM FASTBALL'; l2 = 'READY'; }
   if (P && P.thrown){ l1 = PITCH_LABEL[P.type] || P.type; l2 = P.mph + ' MPH'; }
   else if (phase === 'pitching'){ l1 = PITCH_LABEL[pitchSel] || ''; l2 = 'TAP THE ZONE'; }
   if (l1 && PLATE_ON && ready(PILL)){
