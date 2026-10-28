@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-28f';
+const BUILD = '10-28g';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1954,7 +1954,7 @@ function gxSprites(list, B){
   });
 }
 function gxPlayHud(B){
-  tt(`${Math.round(B.ev)} MPH   ${Math.round(ballDist())} FT`, W / 2, ty(34), 18, '#e8eef9', 'center');
+  tt(`${Math.round(B.ev)} MPH   ${Math.round(ballDist())} FT`, W / 2, ty(150), 20, '#ffffff', 'center');
   if (CFG.DEBUG) tt(`EV ${B.ev.toFixed(1)} mph  LA ${B.la.toFixed(1)}  HANG ${B.T.toFixed(2)} s  ${B.play || ''}`, W / 2, ty(52), 11, '#ff9a8a', 'center');
   if (B.judged){
     if (B.play === 'hr') textb('GONE!', W / 2, 46, '#ffd23f', 22, 'center');
@@ -2045,6 +2045,7 @@ function drawTargetBatter(swingT, lefty){
   const fx = tx(m.x + m.foot * B.width * m.k), fy = ty(m.y + B.height * m.k);        // his feet
   g.save(); g.imageSmoothingEnabled = false;
   if (lefty){ g.translate(tx(387) * 2, 0); g.scale(-1, 1); }
+  g.fillStyle = 'rgba(20,14,6,.28)'; g.beginPath(); g.ellipse(fx, fy, 22 * TU, 4 * TU, 0, 0, 7); g.fill();
   g.translate(fx, fy); g.rotate(lean * Math.PI / 180); g.translate(-fx, -fy);
   const bx = tx(m.x), by = ty(m.y);
   g.drawImage(B, bx, by, B.width * k, B.height * k);
@@ -2053,7 +2054,6 @@ function drawTargetBatter(swingT, lefty){
   { const L = 1.45; g.translate(mb.hx * mb.k * TU, mb.hy * mb.k * TU); g.scale(L, 1); g.translate(-mb.hx * mb.k * TU, -mb.hy * mb.k * TU); }   // the bat is drawn longer than its cut-out so it reaches the zone
   g.drawImage(BT, 0, 0, BT.width * mb.k * TU, BT.height * mb.k * TU);
   g.restore();
-  g.fillStyle = 'rgba(20,14,6,.28)'; g.beginPath(); g.ellipse(fx, fy, 22 * TU, 4 * TU, 0, 0, 7); g.fill();
   return true;
 }
 function drawTargetPitcher(u){
@@ -2316,6 +2316,7 @@ function drawScoreboard(between){
 function drawPitchInfo(){
   // ── the pitch info, bottom-left, once he lets go (or while you choose) ──
   let l1 = null, l2 = '';
+  if (PLATE_ON && !(P && P.thrown) && phase !== 'pitching') { l1 = PITCH_LABEL[pitchSel] || '4-SEAM FASTBALL'; l2 = '--- MPH'; }
   if (P && P.thrown){ l1 = PITCH_LABEL[P.type] || P.type; l2 = P.mph + ' MPH'; }
   else if (phase === 'pitching'){ l1 = PITCH_LABEL[pitchSel] || ''; l2 = 'TAP THE ZONE'; }
   if (l1 && PLATE_ON && ready(PILL)){
@@ -2426,7 +2427,7 @@ function drawPlay(){
   if (gxOK()){ try { gxPlay(B); gxPlayHud(B); return; } catch (e){ GX.on = false; console.error(e); } }
   const bt = batTeam();
   const ar = drawAerial(B, bt), gp = ar, lift = ar.lift;
-  tt(`${Math.round(B.ev)} MPH   ${Math.round(ballDist())} FT`, W / 2, ty(34), 18, '#e8eef9', 'center');
+  tt(`${Math.round(B.ev)} MPH   ${Math.round(ballDist())} FT`, W / 2, ty(150), 20, '#ffffff', 'center');
   if (CFG.DEBUG) tt(`EV ${B.ev.toFixed(1)} mph  LA ${B.la.toFixed(1)}  HANG ${B.T.toFixed(2)} s  LAND ${B.land ? Math.round(B.land.d) + ',' + Math.round(B.land.lat) : '-'}  ${B.play || ''}`, W / 2, ty(52), 11, '#ff9a8a', 'center');
   if (B.judged){
     if (B.play === 'hr'){
