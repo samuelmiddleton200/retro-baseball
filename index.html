@@ -100,7 +100,7 @@ let SC = 1, OX = 0, OY = 0;                   // scale and letterbox offset, for
 function fit(){
   const w = innerWidth, h = innerHeight, dpr = Math.min(3, devicePixelRatio || 1);
   cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
-  W = clamp(Math.round(H * (cv.width / cv.height)), 300, 640);   // no black bars on any phone
+  W = clamp(Math.round(H * (cv.width / cv.height)), 300, 371);   // the picture is 760x492, so it is shown whole with side bars on wider phones
   SC = cv.height / H;
   OX = (cv.width - W * SC) / 2; OY = 0;
   ZONE.x = W / 2 - ZONE.w / 2;
@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27w';
+const BUILD = '10-27x';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1957,12 +1957,11 @@ function drawPlateBG(){
   const s = TU, x0 = W / 2 - 380 * s, pw = 760 * s;
   g.imageSmoothingEnabled = false;
   g.fillStyle = '#2e5b2e'; g.fillRect(0, 0, W, H);
-  if (x0 > 0){                                                      // mirrored, slightly darker edges on each side
-    const need = x0 + 1, sw = Math.min(380, need / s);
-    g.save(); g.translate(x0, 0); g.scale(-1, 1); g.drawImage(IDLE, 0, 0, sw, 492, 0, 0, sw * s, H); g.restore();
-    g.save(); g.translate(x0 + pw, 0); g.drawImage(IDLE, 760 - sw, 0, sw, 492, 0, 0, sw * s, H); g.restore();
+  if (x0 > 0){                                                      // wide phones: the picture's outer edge is stretched out, never repeated
+    g.drawImage(PLATE, 0, 0, 5, 492, 0, 0, x0 + 1, H);
+    g.drawImage(PLATE, 755, 0, 5, 492, x0 + pw - 1, 0, W - x0 - pw + 1, H);
   }
-  g.drawImage(IDLE, x0, 0, pw, H);
+  g.drawImage(IDLE, 2, 0, 756, 492, x0 + 2 * s, 0, 756 * s, H);
 }
 // paint the clean field back over one character's box so he can be redrawn moving
 function patchBox(k){
@@ -2299,11 +2298,11 @@ function drawPitchUI(){
   const p = curPitcher(), keys = Object.keys(p.pitches);
   const x = UR(655), w = 88 * TU;                               // the same column the SWING button lives in
   keys.forEach((k, i) => {
-    const y = ty(246 + i * 56), h = 50 * TU, on = pitchSel === k;
+    const y = ty(232 + i * 40), h = 36 * TU, on = pitchSel === k;
     hudPanel(x, y, w, h, on ? '#1b3e78' : '#0e1d3a');           // every button identical; only the picked one is lit
     if (on){ rrect(x + .7, y + .7, w - 1.4, h - 1.4, 2.6); g.strokeStyle = '#d6e6ff'; g.lineWidth = 1.3; g.stroke(); }
-    tt(PITCHES[k].n.toUpperCase(), x + 8 * TU, y + 16 * TU, 15, '#ffffff', 'left', 72);
-    tt(String(p.pitches[k]), x + w - 8 * TU, y + 36 * TU, 19, '#ffffff', 'right');
+    tt(PITCHES[k].n.toUpperCase(), x + 8 * TU, y + 12 * TU, 15, '#ffffff', 'left', 72);
+    tt(String(p.pitches[k]), x + w - 8 * TU, y + 27 * TU, 19, '#ffffff', 'right');
     btns.push({ x, y, w, h, fn: () => pitchSel = k });
   });
   // the circle showing where it might actually go
