@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-28d';
+const BUILD = '10-28e';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2030,7 +2030,7 @@ function drawBehindPlate(){
 
 // ── the target's own characters, animated: the sprites cut from the picture are moved, leaned and swung, not redrawn ──
 const TS = {}; ['batter_body', 'bat', 'pitcher', 'corner_l', 'corner_r', 'mid_l', 'mid_r', 'far_c'].forEach(n => { const im = new Image(); im.onload = () => imgReady++; im.src = 'assets/tgt/' + n + '.png'; TS[n] = im; });
-const TSM = { batter_body:{ x:222, y:246, k:3, px:16.5, py:20.5, foot:.366 }, bat:{ k:3, hx:15.5, hy:20.5 }, pitcher:{ x:388, y:171, k:2, foot:.385, w:26, h:31 } };
+const TSM = { batter_body:{ x:222, y:246, k:3, px:22.5, py:26, foot:.366 }, bat:{ k:3, hx:15.5, hy:20.5 }, pitcher:{ x:388, y:171, k:2, foot:.385, w:26, h:31 } };
 const easeIO = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 const sgm = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
 // the swing: swingT 0..1 -> how far the bat has turned (deg, clockwise on screen) and how the body leans
