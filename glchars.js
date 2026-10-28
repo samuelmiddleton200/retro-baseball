@@ -11,8 +11,24 @@ const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 
 const BODY = { thigh:1.5, shin:1.5, upper:1.02, fore:0.98, torso:1.62, hipW:.36, shW:.82 };
 
+// every colour gets a small hand-shaded texture: light from the top, a dark underside, a lit left edge, a few seams and speckle,
+// so a flat patch of one colour becomes a surface with several tones (this is where the extra pixel detail comes from)
+const shadeTexCache = {};
+function shadeTex(color){
+  if (shadeTexCache[color]) return shadeTexCache[color];
+  const c = document.createElement('canvas'); c.width = 16; c.height = 32; const g = c.getContext('2d');
+  const base = new THREE.Color(color), WH = new THREE.Color(1, 1, 1), L = (k) => '#' + (k <= 1 ? base.clone().multiplyScalar(k) : base.clone().lerp(WH, (k - 1) * .9)).getHexString();
+  const bands = [1.22, 1.14, 1.06, 1.0, 1.0, .96, .92, .88, .84, .8, .76, .72];
+  for (let y = 0; y < 32; y++){ g.fillStyle = L(bands[Math.min(bands.length - 1, Math.floor(y / 32 * bands.length))]); g.fillRect(0, y, 16, 1); }
+  g.fillStyle = L(1.3); g.fillRect(0, 0, 1, 32); g.fillRect(1, 0, 1, 14);                  // a lit left edge
+  g.fillStyle = L(.6); g.fillRect(15, 0, 1, 32); g.fillRect(14, 10, 1, 22);                // a dark right edge
+  g.fillStyle = L(.68); g.fillRect(0, 31, 16, 1); g.fillRect(0, 27, 16, 1);                // a shadowed underside
+  let sd = 3; const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 26; i++){ g.fillStyle = L(rnd() < .5 ? 1.1 : .88); g.fillRect((rnd() * 16) | 0, (rnd() * 30) | 0, 1, 1); }   // fabric speckle
+  const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; shadeTexCache[color] = t; return t;
+}
 const matCache = {};
-const lam = c => matCache[c] || (matCache[c] = new THREE.MeshLambertMaterial({ color: c }));
+const lam = c => matCache[c] || (matCache[c] = new THREE.MeshLambertMaterial({ color: 0xffffff, map: shadeTex(c) }));
 const OUT = new THREE.MeshBasicMaterial({ color: 0x0b0d16, side: THREE.BackSide });
 
 // a box limb part, with a dark inflated copy behind it for the pixel-art outline
@@ -24,7 +40,7 @@ function part(w, h, d, color, ox = 0, oy = 0, oz = 0, outline = true){
 }
 // a rounded part: a low-poly ellipsoid (or just its top half, for a dome), flat-shaded so it still reads as pixels
 const flatCache = {};
-const lamF = c => flatCache[c] || (flatCache[c] = new THREE.MeshLambertMaterial({ color: c, flatShading: true }));
+const lamF = c => flatCache[c] || (flatCache[c] = new THREE.MeshLambertMaterial({ color: 0xffffff, map: shadeTex(c), flatShading: true }));
 function blob(w, h, d, color, ox = 0, oy = 0, oz = 0, outline = true, dome = false){
   const g = dome ? new THREE.SphereGeometry(.5, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2) : new THREE.SphereGeometry(.5, 12, 8);
   const m = new THREE.Mesh(g, lamF(color)); m.scale.set(w, h, d); m.position.set(ox, oy, oz);
@@ -178,7 +194,7 @@ GL.applyPose = function(P, pose){
   const p = Object.assign({}, BASEPOSE, pose);
   P.pose = p;
   P.hips.position.set(p.hips[0], p.hips[1], p.hips[2]);
-  P.spine.rotation.set(-p.lean * D2R, p.twist * D2R, p.side * D2R);
+  P.spine.rotation.set(p.lean * D2R, p.twist * D2R, p.side * D2R);   // positive lean tips the chest toward the way he faces
   P.head.rotation.set(-p.headPitch * D2R, (p.headYaw - p.twist) * D2R, 0);
   P.root.updateMatrixWorld(true);
   const W = v => P.body.localToWorld(V3(v[0], v[1], v[2]));

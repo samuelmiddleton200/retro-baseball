@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27p';
+const BUILD = '10-27q';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1365,7 +1365,6 @@ function planFielders(){
   });
   const land = ballPos(B, B.T); B.land = land;
   FLD.forEach(f => { f.gap = Math.hypot(land.d - f.d, land.lat - f.lat); });
-  if (B.foul){ B.chaser = null; return; }
   if (B.hr){ B.chaser = null; B.play = 'hr'; B.tJudge = Math.min(B.T, 3.2); B.tEnd = B.tJudge + 2.0; B.runN = 4; return; }
   // the earliest moment each man can be within reach of the ball while it is low enough to catch
   FLD.forEach(f => {
@@ -1402,6 +1401,12 @@ function planOutcome(B, c){
   const throwArr = (n, tr) => tf + tr + baseDist(n) / c.armFps;
   const throwTo = (n, tr) => { B.thr = { t0: tf + tr, t1: throwArr(n, tr), from: pf, to: bases[n - 1], len: baseDist(n) }; };
   B.runN = 1; B.out = false;
+  if (B.foul){                                                      // fielders chase foul balls too: caught in the air and in the park, it is an out
+    const ang = Math.atan2(B.land.lat, B.land.d) * 180 / Math.PI, inPark = window.GL3D ? Math.hypot(B.land.d, B.land.lat) < GL3D.fenceR(M.park, ang) - 2 : true;
+    if (inAir && inPark && B.land.d > -8){ B.foul = false; B.isCatch = true; B.play = 'flyout'; B.tJudge = tf; B.tEnd = tf + 1.0; B.runN = 0; }
+    else { B.play = 'foul'; B.tJudge = Math.min(B.T, 2.5); B.tEnd = B.tJudge + .6; }
+    return;
+  }
   if (inAir){
     B.isCatch = true; B.play = B.la > CFG.LINE_MAX_LA ? 'flyout' : 'lineout'; B.tJudge = tf; B.tEnd = tf + 1.0; B.runN = 0; return;
   }
@@ -1775,7 +1780,7 @@ function gxOK(){
   catch (e){ GX.on = false; }
   return GX.on;
 }
-function gxSize(){ const rows = clamp(Math.round(cv.height / 4), 170, 300); if (GX.w !== W || GX.rows !== rows){ GL3D.rows = rows; GL3D.resize(W, H); GX.w = W; GX.rows = rows; } }
+function gxSize(){ const rows = clamp(Math.round(cv.height / 2.3), 300, 540); /* about 4x the pixels the first 3D version used */ if (GX.w !== W || GX.rows !== rows){ GL3D.rows = rows; GL3D.resize(W, H); GX.w = W; GX.rows = rows; } }
 
 const gxLook = m => ({ skin: (m.look && m.look.skin) || '#d9a577', hair: (m.look && m.look.hair) || '#2a1c14' });
 function gxPerson(key, kind, man, team, x, z, yaw, pose, o = {}){
@@ -1860,10 +1865,32 @@ function gxPlay(B){
   const face = (x, z) => Math.atan2(bx - x, bz - z);
   S.people.push(gxPerson('pit', 'pitch', pit, ft, 0, -60.5, face(0, -60.5), GL3D.poseReady(t), { y:.9, glove:1 }));
   S.people.push(gxPerson('cat', 'catch', ft.lineup[7] || ft.lineup[0], ft, 0, 3.4, Math.PI, GL3D.poseCatcher(0, 2.4, t), { glove:1, cap2:ft.c1 }));
+  // who covers the bag the throw is going to: the infielder who is closest to it (not the one with the ball)
+  const covers = {};
+  if (B.thr && !B.foul && !B.hr){
+    const BAGS = [[63.64, 63.64], [127.28, 0], [63.64, -63.64], [0, 0]];
+    const tgt = B.thr.to, bi = BAGS.findIndex(q => Math.abs(q[0] - tgt[0]) < 1 && Math.abs(q[1] - tgt[1]) < 1);
+    if (bi >= 0 && bi < 3){
+      let best = null;
+      (FLD || []).forEach(f => { if (f.chasing || !['1B', '2B', 'SS', '3B'].includes(f.pos)) return;
+        const bag = BAGS[bi], d = Math.hypot(f.x - bag[0], f.y - bag[1]); if (!best || d < best.d) best = { f, d }; });
+      if (best){ const bag = BAGS[bi], off = bi === 0 ? [-1.2, 1.5] : bi === 1 ? [0, -1.2] : [1.2, 1.5];
+        covers[best.f.i] = { d: bag[0] + (bi === 1 ? -1.4 : -1.2), x: bag[1] + off[0], dist: best.d }; }
+    }
+  }
   (FLD || []).forEach(f => {
     const X = f.y, Z = -f.x, key = 'f' + f.i;
     let pose, yaw = face(X, Z);
-    if (f.chasing && !B.foul && !B.hr){
+    const cover = covers[f.i];
+    if (cover){                                                       // running to a bag to take the throw, then standing on it with the glove up
+      const u = clamp(fldDist(CFG.FIELDER_ACCEL_T, f.speed, B.t - f.react - .15) * CFG.ROUTE_EFF / Math.max(1, cover.dist), 0, 1);
+      const px = lerp(f.lat, cover.x, u), pz = lerp(-f.x, -cover.d, u);
+      const mv = gxMover(key, px, pz);
+      const tx = B.pf ? B.pf[1] : 0, tz = B.pf ? -B.pf[0] : -60, ry = mv.moved > .02 ? mv.yaw : Math.atan2(tx - px, tz - pz);
+      S.people.push(gxPerson(key, 'field', f.man, ft, px, pz, u < 1 ? ry : Math.atan2(tx - px, tz - pz), u < 1 ? GL3D.poseRun(mv.ph, f.speed) : GL3D.poseCatch(.55), { glove:1 }));
+      return;
+    }
+    if (f.chasing && !B.hr){
       const mv = gxMover(key, X, Z);
       const fielded = B.tf !== null && B.t >= B.tf;
       if (!fielded){
@@ -1872,7 +1899,7 @@ function gxPlay(B){
         pose = B.grounder && dist < 11 ? GL3D.poseGrab(1 - dist / 11) : near ? GL3D.poseCatch(1 - dist / 14) : GL3D.poseRun(mv.ph, f.speed);
       } else {
         const u = clamp((B.t - B.tf) / ((B.thr ? B.thr.t1 : B.tf + 1) - B.tf + .01) * .8, 0, 1);
-        pose = B.isCatch ? GL3D.poseCatch(1) : GL3D.poseThrow(u);
+        pose = B.isCatch ? GL3D.poseCatch(1) : B.foul ? GL3D.poseReady(t) : GL3D.poseThrow(u);
         if (B.thr){ const th = B.thr.to; yaw = Math.atan2(th[1] - X, -th[0] - Z); }
       }
     } else pose = GL3D.poseReady(t + f.i * .7);

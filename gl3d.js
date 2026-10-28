@@ -17,13 +17,28 @@ const GL = { ready:false, rows:270, view:'bat', park:null };
 window.GL3D = GL;
 
 // ── the fence line: its distance from home for every angle around the park ─────────────────────
+// the wall all the way round: the outfield fence, then a wall that runs back along each foul line about 25 ft outside it
+// (the foul ground real parks have: 10 to 30 ft wide), then across behind the plate about 62 ft back
+const FOUL_W = 25, BACK_D = 62;
+const wallPoly = (park) => {
+  const side = (P, sx) => { const x0 = Math.SQRT1_2 * P, d0 = Math.SQRT1_2 * P, x1 = x0 + sx * FOUL_W * Math.SQRT1_2, d1 = d0 - FOUL_W * Math.SQRT1_2;
+    const s = d1 - 52, x2 = x1 - sx * s;                              // run back toward the plate, parallel to the line
+    return [[x0, d0], [x1, d1], [x2, 52], [sx * 40, -BACK_D]]; };
+  const R = side(park.rf, 1), L = side(park.lf, -1);
+  return R.concat([[0, -BACK_D]], L.slice().reverse());              // right side from the pole, behind the plate, up the left side
+};
 function fenceR(park, deg){
   const a = Math.abs(deg);
   const wd = d => d < 0 ? lerp(park.lf, park.cf, (clamp(d, -45, 0) + 45) / 45) : lerp(park.cf, park.rf, clamp(d, 0, 45) / 45);
   if (a <= 45) return wd(deg);
-  const pole = deg < 0 ? park.lf : park.rf;
-  if (a <= 90) return lerp(pole, 215, (a - 45) / 45);              // the foul-ground wall bends in toward the stands
-  return lerp(215, 70, clamp((a - 90) / 50, 0, 1));
+  const t = deg * D2R, ux = Math.sin(t), ud = Math.cos(t), pts = wallPoly(park);
+  for (let i = 0; i < pts.length - 1; i++){                           // where the ray from the plate meets the wall
+    const [x0, d0] = pts[i], [x1, d1] = pts[i + 1], ex = x1 - x0, ed = d1 - d0, den = ux * ed - ud * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const r = (x0 * ed - d0 * ex) / den, u = (x0 * ud - d0 * ux) / den;
+    if (r > 0 && u >= 0 && u <= 1) return r;
+  }
+  return 70;
 }
 GL.fenceR = fenceR;
 const toX = (d, lat) => lat, toZ = (d, lat) => -d;
@@ -35,8 +50,9 @@ function paintGround(park, reg){
   const c = document.createElement('canvas'); c.width = reg.w; c.height = reg.h; const g = c.getContext('2d');
   const S = reg.w / reg.xw;
   const P = (lat, d) => [(lat - reg.x0) * S, (reg.d0 + reg.dw - d) * S];
-  const poly = (pts, fill) => { g.beginPath(); pts.forEach((p, i) => { const q = P(p[0], p[1]); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); g.fillStyle = fill; g.fill(); };
-  const circ = (lat, d, r, fill) => { const q = P(lat, d); g.beginPath(); g.arc(q[0], q[1], r * S, 0, TAU); g.fillStyle = fill; g.fill(); };
+  const SOFT = reg.near ? 2.2 : 3.2;
+  const poly = (pts, fill) => { g.save(); g.shadowColor = fill; g.shadowBlur = SOFT; g.beginPath(); pts.forEach((p, i) => { const q = P(p[0], p[1]); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); g.fillStyle = fill; g.fill(); g.restore(); };
+  const circ = (lat, d, r, fill) => { const q = P(lat, d); g.save(); g.shadowColor = fill; g.shadowBlur = SOFT * 1.4; g.beginPath(); g.arc(q[0], q[1], r * S, 0, TAU); g.fillStyle = fill; g.fill(); g.restore(); };
   const GRASS_A = '#4c7c37', GRASS_B = '#3f6c2e', GRASS_C = '#578944', DIRT = '#b17846', DIRT2 = '#a66b3d', TRACK = '#a9743f', CHALK = '#f1ede2';
   // base grass, with wide mowing stripes running out from home
   g.fillStyle = GRASS_A; g.fillRect(0, 0, reg.w, reg.h);
@@ -53,8 +69,8 @@ function paintGround(park, reg){
     g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.lineTo(...c2); g.lineTo(...d2); g.closePath(); g.fillStyle = GRASS_C; g.fill(); }
   g.restore();
   // warning track and the dirt apron under the wall, all the way round
-  const ring = []; for (let a = -150; a <= 150; a += 2){ const r = fenceR(park, a), t = a * D2R; ring.push([Math.sin(t) * r, Math.cos(t) * r]); }
-  const inner = []; for (let a = 150; a >= -150; a -= 2){ const r = fenceR(park, a) - 4, t = a * D2R; inner.push([Math.sin(t) * r, Math.cos(t) * r]); }
+  const ring = []; for (let a = -178; a <= 178; a += 2){ const r = fenceR(park, a), t = a * D2R; ring.push([Math.sin(t) * r, Math.cos(t) * r]); }
+  const inner = []; for (let a = 178; a >= -178; a -= 2){ const r = fenceR(park, a) - 4, t = a * D2R; inner.push([Math.sin(t) * r, Math.cos(t) * r]); }
   poly(ring.concat(inner), TRACK);
   // the infield dirt: a circle round the mound, a circle round the plate, and the base paths
   circ(0, 60.5, 95, DIRT);
@@ -161,7 +177,7 @@ function buildPark(park, teamCols){
 
   // the fence and the seating bowl, as strips swept around the angle
   const crowd = crowdTexture(teamCols[0], teamCols[1]);
-  const STEP = 3, A0 = -150, A1 = 150, n = (A1 - A0) / STEP;
+  const STEP = 2, A0 = -178, A1 = 178, n = (A1 - A0) / STEP;
   const wallH = 8.5;
   // each strip is a ribbon around the park; u runs along the fence in feet so textures keep their size
   const strip = (profile, mat, uFeet, vFeet) => {                // profile: [[dr, y], ...] from the fence outward
@@ -234,7 +250,9 @@ function buildPark(park, teamCols){
     const p = new THREE.Mesh(new THREE.BoxGeometry(1.1, 52, 1.1), new THREE.MeshBasicMaterial({ color: 0xf2c230 })); p.position.set(Math.sin(t) * r, 26, -Math.cos(t) * r); G.add(p); });
   // bases, plate, rubber, mound
   const white = new THREE.MeshBasicMaterial({ color: 0xf6f3ea });
-  const base = (x, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(1.5, .35, 1.5), white); b.position.set(x, .18, z); b.rotation.y = Math.PI / 4; G.add(b); };
+  const sideM = new THREE.MeshBasicMaterial({ color: 0xb9b5aa }), sideD = new THREE.MeshBasicMaterial({ color: 0x8f8c84 });
+  const base = (x, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(1.5, .42, 1.5), [sideM, sideD, white, sideD, sideM, sideD]); b.position.set(x, .21, z); b.rotation.y = Math.PI / 4; G.add(b);
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 2.3), new THREE.MeshBasicMaterial({ color: 0x3a2410, transparent: true, opacity: .28, depthWrite: false })); sh.rotation.x = -Math.PI / 2; sh.rotation.z = Math.PI / 4; sh.position.set(x + .35, .04, z + .35); G.add(sh); };
   base(63.64, -63.64); base(0, -127.28); base(-63.64, -63.64);
   const plate = new THREE.Shape(); plate.moveTo(-.708, 0); plate.lineTo(.708, 0); plate.lineTo(.708, 0.708); plate.lineTo(0, 1.417); plate.lineTo(-.708, .708); plate.closePath();
   const pm = new THREE.Mesh(new THREE.ExtrudeGeometry(plate, { depth: .12, bevelEnabled: false }), white);
@@ -261,7 +279,7 @@ GL.init = function(canvas){
   GL.rt = new THREE.WebGLRenderTarget(4, 4, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
   try { GL.rt.depthTexture = new THREE.DepthTexture(4, 4); GL.rt.depthTexture.type = THREE.UnsignedIntType; } catch (e) {}              // a 24-bit depth buffer, so the ground never flickers
   GL.postMat = new THREE.ShaderMaterial({
-    uniforms: { t: { value: GL.rt.texture }, res: { value: new THREE.Vector2(4, 4) }, levels: { value: 16 }, dith: { value: .45 } },
+    uniforms: { t: { value: GL.rt.texture }, res: { value: new THREE.Vector2(4, 4) }, levels: { value: 24 }, dith: { value: .4 } },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
     fragmentShader: `uniform sampler2D t; uniform vec2 res; uniform float levels; uniform float dith; varying vec2 vUv;
       float bayer(vec2 p){ vec2 q = floor(p); float x1 = mod(q.x, 2.), y1 = mod(q.y, 2.), x2 = mod(floor(q.x / 2.), 2.), y2 = mod(floor(q.y / 2.), 2.);
