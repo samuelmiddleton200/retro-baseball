@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27n';
+const BUILD = '10-27o';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2095,14 +2095,14 @@ function drawHUD(){
   const a = M.away, h = M.home;
   // ── the scoreboard, top-left: two team rows, the count, the bases and the outs ──
   const X0 = UL(15), Y0 = ty(5), Wd = 198 * TU, Ht = 90 * TU;
-  hudPanel(X0, Y0, Wd, Ht);
-  g.fillStyle = '#04101f';
-  g.fillRect(UL(141), Y0 + 1, .9, Ht - 2); g.fillRect(X0 + 1, ty(66), Wd - 2, .9); g.fillRect(X0 + 1, ty(37), 126 * TU, .9);
+  hudPanel(X0, Y0, Wd, Ht, '#00153c');
+  g.fillStyle = '#334d75';                                                        // the target's lighter blue dividers
+  g.fillRect(UL(141), Y0 + 1, 1.1, Ht - 2); g.fillRect(X0 + 1, ty(66), Wd - 2, 1.1); g.fillRect(UL(111), ty(66), 1.1, Ht - 2 - 61 * TU);
   [[a, M.score.away, 10, 36], [h, M.score.home, 39, 65]].forEach(([t, sc, y0, y1]) => {
-    const chip = mix(t.c1, '#5a76b8', .38), cg = g.createLinearGradient(0, ty(y0), 0, ty(y1));
-    cg.addColorStop(0, mix(chip, '#ffffff', .24)); cg.addColorStop(.5, chip); cg.addColorStop(1, mix(chip, '#000000', .34));
+    const lum = (c => { const n = parseInt(c.slice(1), 16); return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000; })(t.c1);
+    const chip = lum > 120 ? mix(t.c1, '#0a1a4a', .72) : lum < 70 ? mix(t.c1, t === a ? '#1f4aa8' : '#a3203f', .62) : t.c1, cg = g.createLinearGradient(0, ty(y0), 0, ty(y1));        // the team's own colour, as in the target
+    cg.addColorStop(0, mix(chip, '#ffffff', .12)); cg.addColorStop(.5, chip); cg.addColorStop(1, mix(chip, '#000000', .2));
     g.fillStyle = cg; g.fillRect(UL(18), ty(y0), 60 * TU, (y1 - y0) * TU);
-    g.fillStyle = t.c2; g.fillRect(UL(18), ty(y0), 3 * TU, (y1 - y0) * TU);
     g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(UL(18), ty(y0), 60 * TU, .8);
     g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(UL(18), ty(y1) - .9, 60 * TU, .9);
     tt(t.ab, UL(48), ty((y0 + y1) / 2) + .4, 27, '#ffffff', 'center');
@@ -2112,12 +2112,12 @@ function drawHUD(){
   tt(ORD(M.inning), UL(61), ty(80), 23, '#ffffff', 'center');
   tt(`${M.balls}-${M.strikes}`, UL(117), ty(80), 24, '#ffffff', 'center');
   // the bases: a diamond, yellow when somebody is on
-  const dcx = UL(177), dcy = ty(40), br = 10.5 * TU;
-  [[1, 0, -15], [0, 20, 0], [2, -20, 0]].forEach(([i, ox, oy]) => {
+  const dcx = UL(177), dcy = ty(40), br = 12 * TU;
+  [[1, 0, -17], [0, 24, 2], [2, -24, 2]].forEach(([i, ox, oy]) => {
     const cx = dcx + ox * TU, cy = dcy + oy * TU;
     g.beginPath(); g.moveTo(cx, cy - br); g.lineTo(cx + br, cy); g.lineTo(cx, cy + br); g.lineTo(cx - br, cy); g.closePath();
     g.fillStyle = M.bases[i] ? '#f6c842' : 'rgba(255,255,255,.04)'; g.fill();
-    g.strokeStyle = M.bases[i] ? '#ffe9a0' : '#c9d3e6'; g.lineWidth = .9; g.stroke();
+    g.strokeStyle = M.bases[i] ? '#ffe9a0' : '#7f93b8'; g.lineWidth = 1.2; g.stroke();
   });
   g.fillStyle = '#e8eef9'; g.beginPath(); g.arc(dcx, dcy + 18 * TU, 2.4 * TU, 0, 7); g.fill();
   tt(`${M.outs} OUT${M.outs === 1 ? '' : 'S'}`, UL(177), ty(80), 19, '#ffffff', 'center');
