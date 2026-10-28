@@ -211,7 +211,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27d';
+const BUILD = '10-27e';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -721,32 +721,70 @@ function drawTG(name, xL, yL, hT, flip, noShadow){
   g.drawImage(im, Math.round(-m.foot * w), Math.round(yL - h), Math.round(w), Math.round(h));
   g.restore(); return true;
 }
-// a fielder standing on the field: infielders in the infield crouch, outfielders in theirs, picked to suit how big he is on screen
+// ── the players: built from code, a skeleton posed and shaded joint by joint (no pictures) ───────
+const RIGH = 92;                                                  // a standing figure is about 92 grid px tall
+function rigBlit(c, xL, yL, hLog, flip){                          // feet at (xL, yL), hLog logical px tall, soft shadow
+  const k = hLog / RIGH;
+  g.fillStyle = 'rgba(28,18,8,.30)'; g.beginPath(); g.ellipse(Math.round(xL), Math.round(yL) - .3, Math.max(2, hLog * .2), Math.max(.8, hLog * .045), 0, 0, 7); g.fill();
+  const sm = g.imageSmoothingEnabled; g.imageSmoothingEnabled = k < .8;
+  blit(c, Math.round(xL), Math.round(yL), k, flip);
+  g.imageSmoothingEnabled = sm;
+}
+// ready stance: knees bent, hands on the knees, glove low. 'grab' reaches down for a ball. out = taller, hands on knees
+function fielderPose(grab){
+  return grab ? {
+    crouch:6, lean:12, hip:[56,62], chest:[60,44], neck:[62,38], head:[64,29], nSh:[56,42], fSh:[67,42],
+    nEl:[52,56], nHa:[50,72], fEl:[66,56], fHa:[72,74], nKn:[48,80], nAn:[44,99], fKn:[66,80], fAn:[70,99], gloveA:170, front:1 }
+  : { crouch:6, lean:6, hip:[56,60], chest:[57,40], neck:[58,33], head:[58,24], nSh:[50,37], fSh:[65,37],
+    nEl:[47,50], nHa:[49,60], fEl:[68,50], fHa:[66,60], nKn:[48,80], nAn:[42,99], fKn:[66,80], fAn:[72,99], gloveA:160, front:1 };
+}
 function drawFielderSprite(xL, yL, pos, grab){
-  const hT = figH(yL / TU), out = pos === 'LF' || pos === 'CF' || pos === 'RF';
-  const lvl = hT <= 19 ? 'xs' : hT <= 32 ? 'sm' : 'md';
-  const name = grab && lvl !== 'xs' ? 'grab_' + lvl : (out ? 'out_' : 'in_') + lvl;
-  const flip = pos === '1B' || pos === '2B' || pos === 'RF';      // the right side faces the other way, so they do not look cloned
-  return drawTG(name, xL, yL, hT, flip);
+  const ft = fldTeam(), i = Math.max(0, FIELDERS.findIndex(f => f[2] === pos)), man = ft.lineup[i] || ft.lineup[0];
+  const hT = figH(yL / TU);
+  if (hT < 20){ drawTiny(xL, yL, hT * TU, ft.c1, ft.c2, man.look); return true; }
+  const key = `F${lookKey(man.look)}|${ft.c1}${ft.c2}|${grab ? 'g' : 'r'}`;
+  rigBlit(sprite(key, () => buildPlayer(fielderPose(grab), man.look, ft.c1, ft.c2, { front:1, number: i + 1 })), xL, yL, hT * TU * 1.0, false);
+  return true;
 }
-// the pitcher: set, leg lift, release, follow-through, from u (0..1)
+// a far-off or aerial player: a few pixels, but with a cap, a shaded shirt, white pants and a shadow
+function drawTiny(xL, yL, h, c1, c2, look){
+  const u = Math.max(1, Math.round(h / 9)), x = Math.round(xL), y = Math.round(yL);
+  const skin = look ? look.skin : '#d9a577', w = Math.max(3, Math.round(h * .42));
+  g.fillStyle = 'rgba(20,14,6,.32)'; g.beginPath(); g.ellipse(x, y, w * .75, Math.max(.8, h * .09), 0, 0, 7); g.fill();
+  R(x - w / 2, y - h * .30, w, h * .30, '#dfe3ea');                                    // pants
+  R(x - w / 2, y - h * .30, w, Math.max(1, u * .5), '#b9bfcc');
+  R(x - w / 2, y - 1, Math.max(1, w * .4), 1, '#1b1822'); R(x + w / 2 - Math.max(1, w * .4), y - 1, Math.max(1, w * .4), 1, '#1b1822');
+  R(x - w / 2 - u * .4, y - h * .66, w + u * .8, h * .38, c1);                         // shirt
+  R(x - w / 2 - u * .4, y - h * .66, w + u * .8, Math.max(1, u * .5), shade(c1, .25));
+  R(x + w / 2 - u * .2, y - h * .66, Math.max(1, u * .6), h * .38, shade(c1, -.28));
+  R(x - w * .3, y - h * .86, w * .6, h * .2, skin);                                    // head
+  R(x - w * .4, y - h * .94, w * .8, Math.max(1, h * .1), c1);                         // cap
+}
+// the pitcher: set, leg lift, stride, release, follow-through, from u (0..1) -- all one smooth rig
 function drawPitcherAt(xL, yL, u){
-  const name = u < .30 ? 'pit1' : u < .60 ? 'pit2' : u < .80 ? 'pit3' : 'pit4';
-  return drawTG(name, xL, yL, figH(yL / TU) * TGM[name].h / 65, false);
+  const ft = fldTeam(), p = curPitcher(), step = Math.round(clamp(u, 0, 1) * 14);
+  const c = sprite(`P${lookKey(p.look)}|${ft.c1}${ft.c2}|${step}`, () => buildPlayer(pitcherPose(step / 14), p.look, ft.c1, ft.c2, { front:1, number: 1 }));
+  return rigBlit(c, xL, yL, figH(yL / TU) * TU * 1.0, false), true;
 }
-// the batter: four frames, ready / load / contact / follow-through. The bat is part of each frame.
-const PX_BAT = 2.75;                                              // target px per art px, so he is as tall as the target's batter
+// the batter: the swing is one value (0 = waiting ... 1 = finished) driving a posed skeleton, bat in his hands
 function drawBatter(p, swingT, idle){
-  const k = swingT == null ? 0 : swingT < .20 ? 1 : swingT < .55 ? 2 : 3;
-  const name = 'bat' + (k + 1); if (!ready(TG[name])) return false;
-  const lefty = p.bats === 'L', cxT = tx(252), cx = lefty ? W - cxT : cxT;
-  const bob = swingT == null ? Math.sin(idle / 16) * .5 : 0;     // he rocks a little while he waits
-  return drawTG(name, cx, ty(449) + bob, TGM[name].h * PX_BAT, lefty);
+  const bt = batTeam(), lefty = p.bats === 'L', cxT = tx(252), cx = lefty ? W - cxT : cxT;
+  const st = swingT == null ? 'w' + (Math.floor(idle / 7) % 14) : Math.round(clamp(swingT, 0, 1) * 24);
+  const c = sprite(`B${lookKey(p.look)}|${bt.c1}${bt.c2}|${st}`, () => buildPlayer(
+    batterPose(swingT == null ? null : st / 24, swingT == null ? (+String(st).slice(1)) * 7 : 0), p.look, bt.c1, bt.c2, { number: p.num || 7, helmet:1 }));
+  rigBlit(c, cx, ty(449), 84, lefty);
+  return true;
 }
 // the catcher crouched behind the plate, the umpire right in front of him (his feet are off the bottom of the screen)
 function drawBehindPlate(){
-  drawTG('catcher', tx(386), ty(493), 136, false, true);
-  drawTG('ump', tx(386), ty(622), 238, false, true);
+  const ft = fldTeam(), p = ft.lineup[0];
+  const cc = sprite(`C${lookKey(p.look)}|${ft.c1}${ft.c2}`, () => buildPlayer({ crouch:0, lean:0,
+      hip:[56,74], chest:[56,54], neck:[56,45], head:[56,32], nSh:[47,50], fSh:[65,50],
+      nEl:[36,62], nHa:[28,54], fEl:[76,62], fHa:[83,60], nKn:[32,82], nAn:[41,101], fKn:[80,82], fAn:[71,101],
+      gloveA:200 }, p.look, ft.c1, ft.c2, { back:1, hardhat:1 }));
+  const k = 136 * TU / 70;
+  blit(cc, Math.round(tx(386)), Math.round(ty(493)), k, false);
+  drawUmp(tx(386), ty(633), ft, 238 * TU / 92);
 }
 // a fielder far away in the replay: a few pixels, but still shaded
 function drawMini(x, y, lk, c1, c2, k = 1){
@@ -1847,7 +1885,7 @@ function drawBall(x, y, r){
 }
 
 // the umpire leaning in behind the catcher
-function drawUmp(x, y, ft){
+function drawUmp(x, y, ft, k = .54){
   const key = `U${ft.ab}`;
   const c = sprite(key, () => buildPlayer({
       crouch:0, lean:0,
@@ -1856,7 +1894,7 @@ function drawUmp(x, y, ft){
       nEl:[38,58], nHa:[34,50], fEl:[74,58], fHa:[78,50],
       nKn:[36,80], nAn:[44,101], fKn:[76,80], fAn:[68,101],
     }, { skin:'#c88e5e', hair:'#1d1510', beard:0, bulk:1.1 }, '#242832', '#1b1f28', { back:1, hardhat:1 }));
-  blit(c, x, y, .54, false);
+  blit(c, x, y, k, false);
 }
 
 // ── the two cards facing off before an at-bat ──────────────────────────────
@@ -2053,7 +2091,7 @@ function drawAerial(B, bt){
     g.drawImage(im, Math.round(x0), 0, Math.round(AER.w * sc), 240);
   }
   const ph = 9.5;                                       // one size for everybody
-  const put = (x, y, name, flip) => drawTG(name, x, y + ph * .5, ph / TU, flip, false);
+  const put = (x, y, name) => { const run = name === 'run_away', t = run ? bt : fldTeam(); drawTiny(x, y + ph * .5, ph, t.c1, t.c2, null); };
   (FLD || []).forEach(f => {
     const q = aerPt(f.x, f.y);
     put(q.x, q.y, 'in_xs', false);
