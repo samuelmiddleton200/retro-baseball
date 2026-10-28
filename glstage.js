@@ -9,8 +9,8 @@ let seen = new Set(), lightsOn = false, ballMesh = null, shadowMesh = null, dots
 
 function lightsInit(){
   if (lightsOn) return; lightsOn = true;
-  GL.scene.add(new THREE.AmbientLight(0xffffff, .82));
-  const d = new THREE.DirectionalLight(0xfff0d8, .62); d.position.set(-40, 80, 60); GL.scene.add(d);
+  GL.scene.add(new THREE.AmbientLight(0xffffff, .72));
+  const d = new THREE.DirectionalLight(0xfff0d8, .55); d.position.set(-40, 80, 60); GL.scene.add(d);
   // the ball
   const c = document.createElement('canvas'); c.width = 64; c.height = 32; const g = c.getContext('2d');
   g.fillStyle = '#f7f4ea'; g.fillRect(0, 0, 64, 32); g.fillStyle = '#e9e4d6'; g.fillRect(0, 22, 64, 10);
@@ -35,7 +35,7 @@ function lightsInit(){
   trailLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(tp), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .9 })); trailLine.frustumCulled = false; GL.scene.add(trailLine);
 }
 
-function sig(o){ return [o.kind, o.skin, o.hair, o.cap, o.cap2, o.pants, o.glove ? 1 : 0].join('|'); }
+function sig(o){ return [o.kind, o.skin, o.hair, o.cap, o.cap2, o.pants, o.shirt, o.sleeve, o.helm, o.glove ? 1 : 0].join('|'); }
 // find or build the person called `key`; rebuilt if his look changes
 function ent(key, o){
   let e = ents[key]; const s = sig(o);

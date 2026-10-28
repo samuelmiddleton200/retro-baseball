@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27g';
+const BUILD = '10-27h';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1030,7 +1030,7 @@ function startGame(oppIdx, home, opts = {}){
 }
 function makePark(team){
   const kinds = [
-    { wall:'#1f5a2a', wallH:26, feature:'ivy',        pad:0, lf:300, cf:400, rf:330 },
+    { wall:'#1c3b40', wallH:26, feature:'ivy',        pad:0, lf:300, cf:400, rf:330 },
     { wall:'#1c6e4a', wallH:34, feature:'none',       pad:1, lf:310, cf:390, rf:302 },   // tall left wall
     { wall:'#17324f', wallH:20, feature:'scoreboard', pad:1, lf:330, cf:410, rf:318 },
     { wall:'#2a4a6a', wallH:22, feature:'waterfall',  pad:1, lf:322, cf:404, rf:322 },
@@ -1773,12 +1773,13 @@ function gxOK(){
   catch (e){ GX.on = false; }
   return GX.on;
 }
-function gxSize(){ if (GX.w !== W){ GL3D.rows = H; GL3D.resize(W, H); GX.w = W; } }
-const gxPants = t => t === fldTeam() ? '#e6e8ee' : '#c9ccd6';
+function gxSize(){ const rows = clamp(Math.round(cv.height / 4), 170, 300); if (GX.w !== W || GX.rows !== rows){ GL3D.rows = rows; GL3D.resize(W, H); GX.w = W; GX.rows = rows; } }
+
 const gxLook = m => ({ skin: (m.look && m.look.skin) || '#d9a577', hair: (m.look && m.look.hair) || '#2a1c14' });
 function gxPerson(key, kind, man, team, x, z, yaw, pose, o = {}){
   const L = gxLook(man);
-  return Object.assign({ key, kind, skin:L.skin, hair:L.hair, cap:team.c1, cap2:team.c2, pants:gxPants(team), x, z, y:0, yaw, pose }, o);
+  const away = team === M.away, shirt = away ? '#cfd3dc' : team.c1;      // road grey, or the home team's own colour
+  return Object.assign({ key, kind, skin:L.skin, hair:L.hair, cap:team.c1, cap2:team.c2, shirt, sleeve:team.c1, pants:away ? '#c4c8d2' : '#eceef3', x, z, y:0, yaw, pose }, o);
 }
 // where on the screen the strike zone is, so the aim circle and the timing ring sit on it
 function gxZone(){
@@ -1797,6 +1798,7 @@ function gxPitchBall(f){
   const cx = P.tx * .708, cy = 2.5 - P.ty * 1.0, bx = P.br[0] / 15, by = -P.br[1] / 15;
   return [lerp(rel[0], cx + bx * e, e), lerp(rel[1], cy + by * e, e), lerp(rel[2], -.7, f)];
 }
+const BAT_YAW = 64 * Math.PI / 180;                  // he is turned partly toward us, like the target, not square to the plate
 function gxBat(dt){
   gxZone();
   const S = gxBase(), ft = fldTeam(), bt = batTeam(), pit = curPitcher(), b = M.batter, lefty = b.bats === 'L';
@@ -1810,12 +1812,12 @@ function gxBat(dt){
   // the batter
   const sw = swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null;
   let bp = GL3D.poseBatter(sw, t); if (lefty) bp = GL3D.mirrorPose(bp);
-  S.people.push(gxPerson('bat', 'bat', b, bt, lefty ? 3.3 : -3.3, -.7, lefty ? -Math.PI / 2 : Math.PI / 2, bp));
+  S.people.push(gxPerson('bat', 'bat', b, bt, lefty ? 3.3 : -3.3, -.7, lefty ? -BAT_YAW : BAT_YAW, bp));
   // the catcher sets his glove where the pitch is going; the umpire stands behind him
   const gx = P && P.thrown ? clamp(-P.tx * .5, -1.2, 1.2) : 0, gy = P && P.thrown ? clamp(2.5 - P.ty, 1.3, 3.8) : 2.4;
   const cm = ft.lineup[7] || ft.lineup[0];
-  S.people.push(gxPerson('cat', 'catch', cm, ft, 0, 3.4, Math.PI, GL3D.poseCatcher(gx, gy, t), { glove:1, cap2:ft.c1 }));
-  S.people.push(gxPerson('ump', 'ump', { look:{ skin:'#c88e5e', hair:'#1d1510' } }, { c1:'#16191f', c2:'#16191f' }, .3, 9.6, Math.PI, GL3D.poseUmp(t), { pants:'#3a3f4c' }));
+  S.people.push(gxPerson('cat', 'catch', cm, ft, 0, 3.4, Math.PI, GL3D.poseCatcher(gx, gy, t), { glove:1, cap2:'#2f56c4', helm:'#2547a8' }));
+  S.people.push(gxPerson('ump', 'ump', { look:{ skin:'#c88e5e', hair:'#1d1510' } }, { c1:'#16191f', c2:'#16191f' }, .2, 12.6, Math.PI, GL3D.poseUmp(t), { pants:'#3a3f4c' }));
   FIELDERS.forEach(([d, lat, pos], i) => S.people.push(gxPerson('f' + i, 'field', ft.lineup[i] || ft.lineup[0], ft, lat, -d, 0, GL3D.poseReady(t + i * .7), { glove:1 })));
   // the ball
   if (P && P.thrown && P.state === 'flight' && P.t < P.dur){
@@ -1883,7 +1885,7 @@ function gxPlay(B){
     };
     run('runB', b, 0, 90 * (B.runN || 1));
     M.bases.forEach((p2, i) => { if (!p2) return; const adv = B.isCatch || B.play === 'groundout' ? 0 : (B.runN || 1); run('run' + i, p2, 90 * (i + 1), 90 * (i + 1) + adv * 90); });
-  } else S.people.push(gxPerson('runB', 'bat', b, bt, b.bats === 'L' ? 3.3 : -3.3, -.7, b.bats === 'L' ? -Math.PI / 2 : Math.PI / 2, GL3D.poseBatter(1, t)));
+  } else S.people.push(gxPerson('runB', 'bat', b, bt, b.bats === 'L' ? 3.3 : -3.3, -.7, b.bats === 'L' ? -BAT_YAW : BAT_YAW, GL3D.poseBatter(1, t)));
   // the ball and its white path
   S.ball = { x:B.lat, y:B.h + .4, z:-B.d, r:1.9 };
   if (B.t < .05) GX.trail = [];

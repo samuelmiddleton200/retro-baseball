@@ -24,68 +24,87 @@ function part(w, h, d, color, ox = 0, oy = 0, oz = 0, outline = true){
 }
 const piv = (parent, x = 0, y = 0, z = 0) => { const o = new THREE.Object3D(); o.position.set(x, y, z); parent.add(o); return o; };
 
+// a canvas used as the back of a jersey: team colour, a trim stripe, and the player's number
+function backTexture(col, trim, num){
+  const c = document.createElement('canvas'); c.width = 32; c.height = 32; const g = c.getContext('2d');
+  g.fillStyle = col; g.fillRect(0, 0, 32, 32); g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(0, 26, 32, 6); g.fillStyle = trim; g.fillRect(0, 0, 32, 2);
+  g.fillStyle = '#f4f1e8'; g.font = 'bold 15px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(num || 7), 16, 15);
+  const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; return t;
+}
+const HEADK = 2.0;                                 // chibi: the head is big
 GL.makePlayer = function(o){
-  // o: { skin, hair, cap (jersey colour), cap2 (trim), pants, kind: 'field'|'bat'|'catch'|'ump'|'pitch'|'run', number, lefty }
+  // o: { skin, hair, cap (jersey/cap colour), cap2 (trim), pants, kind: 'field'|'bat'|'catch'|'ump'|'pitch'|'run', number }
   const skin = o.skin || '#d9a577', jersey = o.shirt || o.cap || '#2c4a8a', trim = o.cap2 || '#d94a3c', pants = o.pants || '#dfe2ea', cap = o.cap || '#2c4a8a';
   const P = { o, root: new THREE.Group() };
   const root = P.root;
-  P.hips = piv(root, 0, 3, 0);
-  P.hips.add(part(1.12, .5, .68, pants));
+  P.body = new THREE.Group(); root.add(P.body); P.body.scale.set(.76, .76, .76);
+  P.hips = piv(P.body, 0, 3, 0);
+  P.hips.add(part(1.3, .5, .85, pants));
   P.spine = piv(P.hips, 0, .22, 0);
-  // torso: a chest and a belly, jersey over a belt
-  P.spine.add(part(1.3, 1.28, .78, jersey, 0, .78, 0));
-  P.spine.add(part(1.18, .22, .72, '#2a2a33', 0, .09, 0));                       // belt
-  if (o.kind === 'catch'){ P.spine.add(part(1.36, 1.1, .6, o.cap2 || '#2c4a8a', 0, .8, .1)); }   // chest protector
-  P.neck = piv(P.spine, 0, 1.55, 0);
-  P.head = piv(P.neck, 0, .18, 0);
-  P.head.add(part(.64, .66, .66, skin, 0, .32, 0));
-  // face: two eyes
-  const eyeM = lam('#1b1520');
-  [-.15, .15].forEach(x => { const e = new THREE.Mesh(new THREE.BoxGeometry(.1, .1, .04), eyeM); e.position.set(x, .38, .34); P.head.add(e); });
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(.16, .05, .03), lam('#8a4a3a')); mouth.position.set(0, .14, .34); P.head.add(mouth);
+  // torso: jersey with a numbered back
+  const dark = lam(jersey), back = new THREE.MeshLambertMaterial({ map: backTexture(jersey, trim, o.number) });
+  const tg = new THREE.BoxGeometry(1.5, 1.3, .92), torso = new THREE.Mesh(tg, [dark, dark, dark, dark, dark, back]); torso.position.set(0, .78, 0);
+  const to = new THREE.Mesh(tg, OUT); to.scale.set(1.09, 1.1, 1.1); torso.add(to); P.spine.add(torso);
+  P.spine.add(part(1.36, .2, .86, '#26262e', 0, .08, 0));                          // belt
+  P.spine.add(part(.5, .12, .2, '#f4f1e8', 0, 1.46, .4, false));                  // collar / placket
+  if (o.kind === 'catch') P.spine.add(part(1.56, 1.15, .7, o.cap2 || '#2c4a8a', 0, .8, .16));   // chest protector
+  P.neck = piv(P.spine, 0, 1.4, 0);
+  P.head = piv(P.neck, 0, .06, 0);
+  const hs = HEADK;
+  P.head.add(part(.62 * hs, .6 * hs, .6 * hs, skin, 0, .3 * hs, 0));
+  // face: big eyes with a highlight, a brow, a nose and a mouth
+  const eyeM = lam('#12101a'), shine = new THREE.MeshBasicMaterial({ color: 0xffffff }), brow = lam(o.hair || '#2a1c14');
+  [-1, 1].forEach(sx => {
+    const e = new THREE.Mesh(new THREE.BoxGeometry(.15 * hs * .8, .17 * hs * .8, .04), eyeM); e.position.set(sx * .16 * hs, .33 * hs, .3 * hs + .02); P.head.add(e);
+    const w = new THREE.Mesh(new THREE.BoxGeometry(.05, .05, .02), shine); w.position.set(sx * .16 * hs + .03, .37 * hs, .3 * hs + .05); P.head.add(w);
+    const br = new THREE.Mesh(new THREE.BoxGeometry(.2 * hs * .8, .04, .03), brow); br.position.set(sx * .16 * hs, .44 * hs, .3 * hs + .02); P.head.add(br);
+  });
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(.07 * hs, .1 * hs, .06), lam(new THREE.Color(skin).multiplyScalar(.82).getStyle())); nose.position.set(0, .25 * hs, .3 * hs + .03); P.head.add(nose);
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(.16 * hs, .035 * hs, .03), lam('#7a3a2e')); mouth.position.set(0, .13 * hs, .3 * hs + .02); P.head.add(mouth);
   if (o.kind === 'catch' || o.kind === 'ump'){
-    // a mask: dark bars over the face, and a hard hat
-    P.head.add(part(.7, .7, .1, '#20242e', 0, .3, .4, false));
-    P.head.add(part(.72, .36, .7, o.kind === 'catch' ? cap : '#16191f', 0, .62, 0));
-  } else if (o.kind === 'bat'){
-    P.head.add(part(.76, .42, .76, '#16203a', 0, .62, 0));                       // helmet dome
-    P.head.add(part(.14, .34, .5, '#16203a', .38, .38, .02, false));             // ear flap (left)
-    P.head.add(part(.7, .08, .3, '#16203a', 0, .5, .46, false));                 // short brim
+    P.head.add(part(.68 * hs, .66 * hs, .1, '#1b1f2a', 0, .3 * hs, .34 * hs, false));                 // the mask
+    const hc = o.kind === 'catch' ? (o.helm || '#2547a8') : '#16191f';
+    P.head.add(part(.7 * hs, .36 * hs, .68 * hs, hc, 0, .68 * hs, 0));                                  // the dome
+    P.head.add(part(.72 * hs, .62 * hs, .16 * hs, hc, 0, .3 * hs, -.34 * hs));                         // covers the back of the head
+    P.head.add(part(.14 * hs, .56 * hs, .5 * hs, hc, .36 * hs, .34 * hs, 0, false)); P.head.add(part(.14 * hs, .56 * hs, .5 * hs, hc, -.36 * hs, .34 * hs, 0, false));
+    P.head.add(part(.5 * hs, .05 * hs, .3 * hs, '#e8edf8', 0, .8 * hs, .12 * hs, false));               // shine
+  } else if (o.kind === 'bat' || o.kind === 'run'){
+    const hc2 = o.cap || '#15204a'; const hel = part(.7 * hs, .4 * hs, .68 * hs, hc2, 0, .66 * hs, 0); P.head.add(hel);
+    P.head.add(part(.32 * hs, .06 * hs, .3 * hs, '#6f8ed6', -.08 * hs, .84 * hs, .06 * hs, false));  // a bright strip along the top
+    P.head.add(part(.16 * hs, .42 * hs, .46 * hs, hc2, .36 * hs, .38 * hs, .02, false));         // ear flap
+    P.head.add(part(.6 * hs, .06 * hs, .26 * hs, hc2, 0, .56 * hs, .42 * hs, false));            // short brim
   } else {
-    P.head.add(part(.72, .3, .72, cap, 0, .62, 0));                              // the cap
-    P.head.add(part(.64, .07, .5, cap, 0, .5, .46, false));                      // the brim
+    P.head.add(part(.68 * hs, .32 * hs, .66 * hs, cap, 0, .66 * hs, 0));                              // the cap
+    P.head.add(part(.28 * hs, .07 * hs, .18 * hs, trim, 0, .74 * hs, .34 * hs, false));               // the logo
+    P.head.add(part(.6 * hs, .07 * hs, .46 * hs, cap, 0, .56 * hs, .42 * hs, false));                  // the brim
   }
-  const hair = part(.68, .22, .12, o.hair || '#2a1c14', 0, .5, -.34, false); P.head.add(hair);
+  P.head.add(part(.64 * hs, .2 * hs, .12 * hs, o.hair || '#2a1c14', 0, .5 * hs, -.32 * hs, false));
   // arms
   const arm = (side) => {                                                       // side: +1 is the player's left
-    const sh = piv(P.spine, side * BODY.shW, 1.3, 0), el = piv(sh, 0, -BODY.upper, 0), wr = piv(el, 0, -BODY.fore, 0);
-    sh.add(part(.38, BODY.upper + .1, .38, jersey, 0, -BODY.upper / 2, 0));
-    el.add(part(.32, BODY.fore + .06, .32, o.long ? jersey : skin, 0, -BODY.fore / 2, 0));
-    const hand = part(.3, .3, .3, skin, 0, -.14, 0); wr.add(hand);
+    const sh = piv(P.spine, side * .96, 1.22, 0), el = piv(sh, 0, -BODY.upper, 0), wr = piv(el, 0, -BODY.fore, 0);
+    sh.add(part(.5, BODY.upper + .1, .5, o.sleeve || jersey, 0, -BODY.upper / 2, 0));
+    el.add(part(.42, BODY.fore + .06, .42, o.kind === 'bat' || o.kind === 'run' ? (o.sleeve || '#15204a') : skin, 0, -BODY.fore / 2, 0));
+    const hand = part(.4, .4, .4, o.kind === 'bat' || o.kind === 'run' ? '#f1efe8' : skin, 0, -.16, 0); wr.add(hand);
     return { sh, el, wr, side, hand };
   };
   P.L = arm(1); P.R = arm(-1);
-  // legs
   const leg = (side) => {
-    const hp = piv(P.hips, side * BODY.hipW, -.2, 0), kn = piv(hp, 0, -BODY.thigh, 0), an = piv(kn, 0, -BODY.shin, 0);
-    hp.add(part(.5, BODY.thigh + .08, .5, pants, 0, -BODY.thigh / 2, 0));
-    kn.add(part(.42, BODY.shin + .06, .44, pants, 0, -BODY.shin / 2, 0));
-    kn.add(part(.44, .5, .46, o.sock || trim, 0, -BODY.shin + .5, 0, false));  // the sock showing
-    an.add(part(.46, .26, .95, '#17151d', 0, -.12, .26));                           // the shoe
+    const hp = piv(P.hips, side * .42, -.2, 0), kn = piv(hp, 0, -BODY.thigh, 0), an = piv(kn, 0, -BODY.shin, 0);
+    hp.add(part(.66, BODY.thigh + .08, .66, pants, 0, -BODY.thigh / 2, 0));
+    kn.add(part(.56, BODY.shin + .06, .58, pants, 0, -BODY.shin / 2, 0));
+    kn.add(part(.6, .55, .62, o.sock || trim, 0, -BODY.shin + .5, 0, false));
+    an.add(part(.6, .3, 1.15, '#17151d', 0, -.12, .32));
     return { hp, kn, an, side };
   };
   P.LL = leg(1); P.RL = leg(-1);
-  // props
   if (o.kind === 'bat'){
     P.bat = new THREE.Group();
-    const barrel = part(.36, 1.7, .36, '#d7a15a', 0, 2.2, 0); P.bat.add(barrel);
-    P.bat.add(part(.18, 1.6, .18, '#d7a15a', 0, .8, 0)); P.bat.add(part(.3, .3, .3, '#d7a15a', 0, -.1, 0, false));
-    P.bat.add(part(.2, .5, .2, '#2b2b33', 0, .35, 0, false));                                // the tape
-    root.add(P.bat);
+    P.bat.add(part(.42, 1.8, .42, '#d7a15a', 0, 2.25, 0)); P.bat.add(part(.2, 1.7, .2, '#d7a15a', 0, .85, 0)); P.bat.add(part(.34, .3, .34, '#d7a15a', 0, -.1, 0, false));
+    P.bat.add(part(.23, .5, .23, '#2b2b33', 0, .38, 0, false)); P.bat.add(part(.43, .14, .43, '#9a6a34', 0, 2.95, 0, false));
+    P.body.add(P.bat);
   }
-  if (o.glove){ P.glove = part(.62, .62, .5, '#8a5a2c', 0, -.3, .12); P.L.wr.add(P.glove); }
-  // soft shadow on the ground
-  const sh = new THREE.Mesh(new THREE.CircleGeometry(1.15, 14), new THREE.MeshBasicMaterial({ color: 0x0c1408, transparent: true, opacity: .34, depthWrite: false }));
+  if (o.glove){ P.glove = part(.8, .8, .62, '#8a5a2c', 0, -.36, .14); P.L.wr.add(P.glove); }
+  const sh = new THREE.Mesh(new THREE.CircleGeometry(1.3, 14), new THREE.MeshBasicMaterial({ color: 0x0c1408, transparent: true, opacity: .34, depthWrite: false }));
   sh.rotation.x = -Math.PI / 2; sh.position.y = .05; sh.scale.set(1, .62, 1); root.add(sh); P.shadow = sh;
   P.pose = {};
   return P;
@@ -143,7 +162,7 @@ GL.applyPose = function(P, pose){
   P.spine.rotation.set(-p.lean * D2R, p.twist * D2R, p.side * D2R);
   P.head.rotation.set(-p.headPitch * D2R, (p.headYaw - p.twist) * D2R, 0);
   P.root.updateMatrixWorld(true);
-  const W = v => P.root.localToWorld(V3(v[0], v[1], v[2]));
+  const W = v => P.body.localToWorld(V3(v[0], v[1], v[2]));
   // legs first (the hips are already placed)
   [[P.LL, p.LF, p.Lk, p.LFy], [P.RL, p.RF, p.Rk, p.RFy]].forEach(([l, f, k, fy]) => {
     const hip = l.hp;
@@ -170,7 +189,7 @@ GL.applyPose = function(P, pose){
       const l = P.L.wr.getWorldPosition(V3(0, 0, 0)), r = P.R.wr.getWorldPosition(V3(0, 0, 0));
       const grip = l.clone().add(r).multiplyScalar(.5);
       P.bat.visible = true;
-      const gl = P.root.worldToLocal(grip.clone());
+      const gl = P.body.worldToLocal(grip.clone());
       P.bat.position.copy(gl);
       const d = V3(p.bat[0], p.bat[1], p.bat[2]).normalize();
       P.bat.quaternion.setFromUnitVectors(V3(0, 1, 0), d);

@@ -58,17 +58,17 @@ GL.posePitcher = function(u){
 };
 
 // ── the batter, in his own frame (facing the plate; pitcher is on his left, +X) ─────────────────────
-const BAT_IDLE = [-.25, 1, .12], BAT_LOAD = [-.95, .75, -.2], BAT_HIT = [.15, .08, 1], BAT_FOLLOW = [.8, .85, -.25];
+const BAT_IDLE = [-.55, 1, -.55], BAT_LOAD = [-.95, .75, -.2], BAT_HIT = [.15, .08, 1], BAT_FOLLOW = [.8, .85, -.25];
 GL.poseBatter = function(swingT, t){
   const b = Math.sin(t * 2.4) * .05, w = Math.sin(t * 3.1) * .12;
-  const idle = mk({ hips:[0, 2.62 + b, 0], lean:10, twist:0, LF:[1.25, 0, .05], RF:[-1.25, 0, 0], Lk:[.2, 0, 1], Rk:[-.1, 0, 1], headYaw:84, headPitch:2,
-    L:[-.12, 4.62 + b, .5], R:[-.42, 4.68 + b, .44], Lh:[.3, 0, 0], Rh:[-.5, 0, 0], bat:[BAT_IDLE[0] + w, BAT_IDLE[1], BAT_IDLE[2]] });
+  const idle = mk({ hips:[0, 2.28 + b, 0], lean:18, twist:-8, LF:[1.45, 0, .15], RF:[-1.45, 0, -.1], Lk:[.6, 0, 1], Rk:[-.6, 0, 1], headYaw:-30, headPitch:6,
+    L:[-.45, 4.1 + b, .32], R:[-.85, 4.3 + b, -.05], Lh:[.4, 0, 0], Rh:[-.6, 0, 0], bat:[BAT_IDLE[0] + w, BAT_IDLE[1], BAT_IDLE[2]] });
   if (swingT == null) return idle;
-  const load = mk({ hips:[-.15, 2.55, 0], lean:8, twist:-18, LF:[1.35, .25, .05], RF:[-1.3, 0, 0], headYaw:88,
+  const load = mk({ hips:[-.15, 2.55, 0], lean:8, twist:-18, LF:[1.35, .25, .05], RF:[-1.3, 0, 0], headYaw:20,
     L:[-.7, 4.55, .12], R:[-1.0, 4.72, 0], Rh:[-.6, 0, -.3], bat:BAT_LOAD });
-  const swing = mk({ hips:[.25, 2.55, .1], lean:12, twist:38, LF:[1.8, 0, .05], RF:[-1.1, .2, 0], headYaw:80,
+  const swing = mk({ hips:[.25, 2.55, .1], lean:12, twist:38, LF:[1.8, 0, .05], RF:[-1.1, .2, 0], headYaw:40,
     L:[.55, 3.7, 1.55], R:[.1, 3.75, 1.7], Lh:[0, 0, 0], Rh:[.2, 0, 0], bat:BAT_HIT });
-  const fol = mk({ hips:[.35, 2.7, .1], lean:6, twist:105, LF:[1.85, 0, .05], RF:[-.8, .45, -.2], headYaw:30,
+  const fol = mk({ hips:[.35, 2.7, .1], lean:6, twist:105, LF:[1.85, 0, .05], RF:[-.8, .45, -.2], headYaw:50,
     L:[.55, 4.95, .55], R:[.15, 4.7, .55], bat:BAT_FOLLOW });
   return kf([[0, idle], [.20, load], [.46, swing], [1, fol]], swingT);
 };
@@ -76,7 +76,7 @@ GL.poseBatter = function(swingT, t){
 // ── the catcher and the umpire ─────────────────────────────────────────────────────────────────────
 GL.poseCatcher = function(gx, gy, t){        // gx, gy: where the glove is set (feet, in the catcher's own frame)
   const b = Math.sin(t * 2) * .03;
-  return mk({ hips:[0, 1.5 + b, -.7], lean:20, LF:[.95, 0, .55], RF:[-.95, 0, .55], Lk:[.4, 0, 1], Rk:[-.4, 0, 1], headPitch:-4,
+  return mk({ hips:[0, 1.25 + b, -.8], lean:26, LF:[1.05, 0, .65], RF:[-1.05, 0, .65], Lk:[.7, 0, 1], Rk:[-.7, 0, 1], headPitch:-10,
     L:[gx, gy, 1.9], R:[-.5, 1.6, .3], Lh:[.4, 0, 0], Rh:[-.4, 0, 0] });
 };
 GL.poseUmp = function(t){
