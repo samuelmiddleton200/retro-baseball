@@ -114,7 +114,7 @@ GL.makePlayer = function(o){
   if (o.kind === 'ump') [-1, 1].forEach(sx => P.spine.add(part(.6, .42, .72, '#20242e', sx * .98, 1.28, .05)));
   P.neck = piv(P.spine, 0, 1.4, 0);
   P.head = piv(P.neck, 0, .06, 0);
-  const hs = (o.kind === 'catch' || o.kind === 'ump') ? 1.55 : HEADK;
+  const hs = (o.kind === 'catch' || o.kind === 'ump') ? 1.85 : HEADK;
   P.head.add(blob(.7 * hs, .68 * hs, .66 * hs, skin, 0, .32 * hs, 0));
   // face: big eyes with a highlight, a brow, a nose and a mouth
   const face = new THREE.Mesh(new THREE.PlaneGeometry(.62 * hs, .62 * hs), new THREE.MeshLambertMaterial({ map: faceTexture(skin, o.hair || '#2a1c14'), transparent: true }));

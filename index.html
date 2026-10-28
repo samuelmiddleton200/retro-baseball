@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27u';
+const BUILD = '10-27v';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1991,15 +1991,15 @@ function drawBatter(p, swingT, idle){
   const st = swingT == null ? 'w' + phaseStep(idle / 60, 8) : Math.round(clamp(swingT, 0, 1) * 24);
   const o = gxPerson('bat', 'bat', p, bt, 0, 0, 0, null, {});
   const pose = swingT == null ? GL3D.poseBatter(null, phaseStep(idle / 60, 8) / 8 * 3) : GL3D.poseBatter(Math.round(clamp(swingT, 0, 1) * 24) / 24, 0);
-  return bakeStamp('b', 'B' + lookKey(p.look) + bt.c1 + '|' + st, o, pose, .5, cx, ty(449), 175, lefty);
+  return bakeStamp('b', 'B' + lookKey(p.look) + bt.c1 + '|' + st, o, pose, .5, cx, ty(449), 196, lefty);
 }
 function drawBehindPlate(){
   if (!plateOK()) return drawBehindPlateOld();
   const ft = fldTeam(), cm = ft.lineup[7] || ft.lineup[0];
   const oc = gxPerson('cat', 'catch', cm, ft, 0, 0, 0, null, { glove:1, cap2:'#2f56c4', helm:'#2547a8' });
-  bakeStamp('c', 'C' + lookKey(cm.look), oc, GL3D.poseCatcher(0, 2.4, 0), Math.PI, tx(386), ty(516), 195, false);
+  bakeStamp('c', 'C' + lookKey(cm.look), oc, GL3D.poseCatcher(0, 2.4, 0), Math.PI, tx(386), ty(520), 225, false);
   const ou = gxPerson('ump', 'ump', { look:{ skin:'#c88e5e', hair:'#1d1510' } }, { c1:'#16191f', c2:'#16191f', ab:'U' }, 0, 0, 0, null, { pants:'#3a3f4c' });
-  bakeStamp('u', 'U', ou, GL3D.poseUmp(0), Math.PI, tx(386), ty(632), 265, false);
+  bakeStamp('u', 'U', ou, GL3D.poseUmp(0), Math.PI, tx(386), ty(640), 300, false);
 }
 
 function drawBatterView(dt){
