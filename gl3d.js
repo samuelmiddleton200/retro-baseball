@@ -153,11 +153,11 @@ function buildPark(park, teamCols){
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(XW, DW), new THREE.MeshBasicMaterial({ map: tex }));
   ground.rotation.x = -Math.PI / 2; ground.position.set((X0 + XW / 2), 0, -(D0 + DW / 2)); G.add(ground);
   const nreg = { x0:-34, xw:68, d0:-22, dw:56, w:1024, h:844, near:true };
-  const near = new THREE.Mesh(new THREE.PlaneGeometry(nreg.xw, nreg.dw), new THREE.MeshBasicMaterial({ map: paintGround(park, nreg), transparent: true, depthWrite: false }));
+  const near = new THREE.Mesh(new THREE.PlaneGeometry(nreg.xw, nreg.dw), new THREE.MeshBasicMaterial({ map: paintGround(park, nreg), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
   near.rotation.x = -Math.PI / 2; near.position.set(nreg.x0 + nreg.xw / 2, .02, -(nreg.d0 + nreg.dw / 2)); G.add(near);
   // everything beyond the stands: dark concrete so nothing is ever see-through
   const under = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), new THREE.MeshBasicMaterial({ color: 0x1b2230 }));
-  under.rotation.x = -Math.PI / 2; under.position.y = -.3; G.add(under);
+  under.rotation.x = -Math.PI / 2; under.position.y = -4; G.add(under);
 
   // the fence and the seating bowl, as strips swept around the angle
   const crowd = crowdTexture(teamCols[0], teamCols[1]);
@@ -255,15 +255,17 @@ GL.init = function(canvas){
   GL.canvas = canvas;
   GL.renderer = new THREE.WebGLRenderer({ canvas, antialias:false, powerPreference:'default', stencil:false, alpha:false });
   GL.scene = new THREE.Scene(); GL.scene.background = hex('#8cc4ee');
-  GL.cam = new THREE.PerspectiveCamera(40, 16 / 9, .5, 3000);
+  GL.cam = new THREE.PerspectiveCamera(40, 16 / 9, 3, 3300);
   GL.world = new THREE.Group(); GL.scene.add(GL.world);                            // players, ball
   // the pixel-art pass: the scene is drawn small, then re-coloured with a limited palette and a fine dither
   GL.rt = new THREE.WebGLRenderTarget(4, 4, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+  try { GL.rt.depthTexture = new THREE.DepthTexture(4, 4); GL.rt.depthTexture.type = THREE.UnsignedIntType; } catch (e) {}              // a 24-bit depth buffer, so the ground never flickers
   GL.postMat = new THREE.ShaderMaterial({
     uniforms: { t: { value: GL.rt.texture }, res: { value: new THREE.Vector2(4, 4) }, levels: { value: 16 }, dith: { value: .45 } },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
     fragmentShader: `uniform sampler2D t; uniform vec2 res; uniform float levels; uniform float dith; varying vec2 vUv;
-      float bayer(vec2 p){ vec2 q = mod(floor(p), 4.); float a = mod(q.x, 2.) + mod(q.y, 2.) * 2.; return (a * 4. + floor(q.x / 2.) * 2. + floor(q.y / 2.)) / 16.; }
+      float bayer(vec2 p){ vec2 q = floor(p); float x1 = mod(q.x, 2.), y1 = mod(q.y, 2.), x2 = mod(floor(q.x / 2.), 2.), y2 = mod(floor(q.y / 2.), 2.);
+        return (abs(x1 - y1) * 8. + y1 * 4. + abs(x2 - y2) * 2. + y2) / 16.; }
       void main(){ vec3 c = texture2D(t, vUv).rgb; float b = bayer(vUv * res) - .5;
         c = clamp(c + b * dith / levels, 0., 1.); c = floor(c * levels + .5) / levels;
         gl_FragColor = vec4(c, 1.); }`,
