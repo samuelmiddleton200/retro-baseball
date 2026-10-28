@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27o';
+const BUILD = '10-27p';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1064,6 +1064,7 @@ function setupAtBat(){
   M.batter = curBatter();
   M.catcher = fldTeam().lineup[0];
   // the two cards face off first; tap to step in
+  if ((M.mode === 'offense' && !weBat()) || (M.mode === 'defense' && weBat())){ simHalfIfNeeded(); return; }   // the side you skip is played out instantly
   if (M.mode !== 'sim' && (userBats() || userPitches())){ phase = 'matchup'; P = null; swing = null; return; }
   nextPitch();
 }
@@ -1613,6 +1614,7 @@ function endHalf(){
   const i = M.inning, s = M.score;
   const mercy = i > 7 && Math.abs(s.home - s.away) >= 10;
   if (mercy || (i > 9 && s.home !== s.away) || (i >= 9 && !M.top && s.home > s.away)) return gameOver();
+  M.inter = { t:0 };                                         // the scoreboard between every half inning
   setupAtBat();
 }
 function gameOver(){
@@ -2092,12 +2094,16 @@ function ballIcon(cx, cy, r){
   g.strokeStyle = '#0b1830'; g.lineWidth = .9; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.stroke();
 }
 function drawHUD(){
+  drawScoreboard();
+  drawPitchInfo();
+}
+function drawScoreboard(){
   const a = M.away, h = M.home;
   // ── the scoreboard, top-left: two team rows, the count, the bases and the outs ──
   const X0 = UL(15), Y0 = ty(5), Wd = 198 * TU, Ht = 90 * TU;
   hudPanel(X0, Y0, Wd, Ht, '#00153c');
   g.fillStyle = '#334d75';                                                        // the target's lighter blue dividers
-  g.fillRect(UL(141), Y0 + 1, 1.1, Ht - 2); g.fillRect(X0 + 1, ty(66), Wd - 2, 1.1); g.fillRect(UL(111), ty(66), 1.1, Ht - 2 - 61 * TU);
+  g.fillRect(UL(141), Y0 + 1, 1.1, Ht - 2); g.fillRect(X0 + 1, ty(66), Wd - 2, 1.1);
   [[a, M.score.away, 10, 36], [h, M.score.home, 39, 65]].forEach(([t, sc, y0, y1]) => {
     const lum = (c => { const n = parseInt(c.slice(1), 16); return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000; })(t.c1);
     const chip = lum > 120 ? mix(t.c1, '#0a1a4a', .72) : lum < 70 ? mix(t.c1, t === a ? '#1f4aa8' : '#a3203f', .62) : t.c1, cg = g.createLinearGradient(0, ty(y0), 0, ty(y1));        // the team's own colour, as in the target
@@ -2121,7 +2127,8 @@ function drawHUD(){
   });
   g.fillStyle = '#e8eef9'; g.beginPath(); g.arc(dcx, dcy + 18 * TU, 2.4 * TU, 0, 7); g.fill();
   tt(`${M.outs} OUT${M.outs === 1 ? '' : 'S'}`, UL(177), ty(80), 19, '#ffffff', 'center');
-
+}
+function drawPitchInfo(){
   // ── the pitch info, bottom-left, once he lets go (or while you choose) ──
   let l1 = null, l2 = '';
   if (P && P.thrown){ l1 = PITCH_LABEL[P.type] || P.type; l2 = P.mph + ' MPH'; }
@@ -2932,6 +2939,7 @@ const toPix = e => ({ x: ((e.clientX * (devicePixelRatio || 1)) - OX) / SC, y: (
 
 function down(e){
   const p = toPix(e);
+  if (M && M.inter && M.inter.t > 350 && phase !== 'menu'){ M.inter = null; return; }
   touch = { x0:p.x, y0:p.y, x:p.x, y:p.y, t:performance.now(), used:false };
   for (const b of btns) if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h){ b.fn(); touch.used = true; return; }
   if (phase === 'pitching'){
@@ -2986,6 +2994,7 @@ function loop(now){
   else if (M){
     // ── simulation on a fixed clock, so the feel never depends on framerate ──
     ACC += dt;
+    if (M.inter) ACC = 0;
     let guard = 0;
     while (ACC >= SIM_DT && guard++ < 12){ if (!window.__freeze) stepAtBat(SIM_DT); ACC -= SIM_DT; }   // (__freeze is only for screenshots in tests)
     M.msgT += dt; if (M.msgT > 1600) M.msg = null;
@@ -2998,7 +3007,19 @@ function loop(now){
     else if (userBats()) drawSwingBtn();
     drawGameMenuBtn();
   }
+  if (M && M.inter && phase !== 'menu' && phase !== 'over'){ M.inter.t += dt; if (M.inter.t > 2600) M.inter = null; else drawInter(); }
   requestAnimationFrame(loop);
+}
+// the scoreboard shown big between half innings, the same panel as the one in play
+function drawInter(){
+  const a = Math.min(1, M.inter.t / 200), fade = M.inter.t > 2300 ? (2600 - M.inter.t) / 300 : 1;
+  g.globalAlpha = .86 * a * fade; g.fillStyle = '#02060e'; g.fillRect(0, 0, W, H); g.globalAlpha = a * fade;
+  const X0 = UL(15), Y0 = ty(5), Wd = 198 * TU, Ht = 90 * TU, k = Math.min(2.7, (W * .8) / Wd);
+  g.save(); g.translate(W / 2, H / 2 - 6); g.scale(k, k); g.translate(-(X0 + Wd / 2), -(Y0 + Ht / 2));
+  drawScoreboard(); g.restore();
+  tt(M.top ? 'TOP OF THE ' + ORD(M.inning) : 'BOTTOM OF THE ' + ORD(M.inning), W / 2, H / 2 + Ht * k / 2 + 14, 16, '#cfe0ff', 'center');
+  tt('TAP TO CONTINUE', W / 2, H - 14, 12, '#7f93b8', 'center');
+  g.globalAlpha = 1;
 }
 function drawBatterViewSafe(dt){ try { drawBatterView(dt); } catch(e){ R(0,0,W,H,'#0b1018'); } }
 
