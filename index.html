@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27x';
+const BUILD = '10-27y';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1989,14 +1989,14 @@ function drawFielderSprite(xL, yL, pos, grab, hOver){
 }
 function drawPitcherAt(xL, yL, u){
   if (!plateOK()) return drawPitcherAtOld(xL, yL, u);
-  const ft = fldTeam(), p = curPitcher(), step = Math.round(clamp(u, 0, 1) * 16), o = gxPerson('pit', 'pitch', p, ft, 0, 0, 0, null, { glove:1 });
+  const ft = fldTeam(), p = curPitcher(), step = Math.round(clamp(u, 0, 1) * 16), o = gxPerson('pit', 'pitch', p, ft, 0, 0, 0, null, { glove:1, cap:'#2748b8', cap2:'#e8eef8', shirt:'#2f58d0', sleeve:'#f2f4f8', pants:'#f2f4f8' });   // the target's pitcher: royal blue and white
   return bakeStamp('p', 'P' + lookKey(p.look) + ft.c1 + '|' + step, o, GL3D.posePitcher(step / 16), -.25, xL, yL, figH(yL / TU), false, 5.5);
 }
 function drawBatter(p, swingT, idle){
   if (!plateOK()) return drawBatterOld(p, swingT, idle);
   const bt = batTeam(), lefty = p.bats === 'L', cxT = tx(300), cx = lefty ? tx(478) : cxT;
   const st = swingT == null ? 'w' + phaseStep(idle / 60, 8) : Math.round(clamp(swingT, 0, 1) * 24);
-  const o = gxPerson('bat', 'bat', p, bt, 0, 0, 0, null, {});
+  const o = gxPerson('bat', 'bat', p, bt, 0, 0, 0, null, { cap:'#0e1424', shirt:'#161d36', sleeve:'#161d36', pants:'#b4b8c4', skin:'#c9936a', hair:'#14100c' });   // the target's batter: black helmet, navy top, grey pants
   const pose = swingT == null ? GL3D.poseBatter(null, phaseStep(idle / 60, 8) / 8 * 3) : GL3D.poseBatter(Math.round(clamp(swingT, 0, 1) * 24) / 24, 0);
   return bakeStamp('b', 'B' + lookKey(p.look) + bt.c1 + '|' + st, o, pose, .5, cx, ty(449), 196, lefty);
 }
