@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-28a';
+const BUILD = '10-28b';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2009,6 +2009,47 @@ function drawBehindPlate(){
   bakeStamp('u', 'U', ou, GL3D.poseUmp(0), Math.PI, tx(386), ty(640), 300, false);
 }
 
+
+// ── the target's own characters, animated: the sprites cut from the picture are moved, leaned and swung, not redrawn ──
+const TS = {}; ['batter_body', 'bat', 'pitcher', 'corner_l', 'corner_r', 'mid_l', 'mid_r', 'far_c'].forEach(n => { const im = new Image(); im.onload = () => imgReady++; im.src = 'assets/tgt/' + n + '.png'; TS[n] = im; });
+const TSM = { batter_body:{ x:222, y:246, k:3, px:16.5, py:20.5, foot:.366 }, bat:{ k:3, hx:15.5, hy:20.5 }, pitcher:{ x:388, y:171, k:2, foot:.385, w:26, h:31 } };
+const easeIO = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+const sgm = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
+// the swing: swingT 0..1 -> how far the bat has turned (deg, clockwise on screen) and how the body leans
+function batAngle(t){ t = Math.min(1, t * 1.15);
+  const ld = easeIO(sgm(t, 0, .2)), sw = easeIO(sgm(t, .2, .56)), fo = easeIO(sgm(t, .56, 1));
+  return -14 * ld + (150 + 14) * sw - 30 * fo;                    // cocks back, whips through to level, finishes high
+}
+function drawTargetBatter(swingT, lefty){
+  const B = TS.batter_body, BT = TS.bat; if (!ready(B) || !ready(BT)) return false;
+  const m = TSM.batter_body, mb = TSM.bat, k = m.k * TU, t = swingT == null ? 0 : swingT;
+  const lean = (swingT == null ? 0 : -2.5 * easeIO(sgm(t, 0, .2)) + 8 * easeIO(sgm(t, .2, .56)) - 4 * easeIO(sgm(t, .56, 1)));
+  const fx = tx(m.x + m.foot * B.width * m.k), fy = ty(m.y + B.height * m.k);        // his feet
+  g.save(); g.imageSmoothingEnabled = false;
+  if (lefty){ g.translate(tx(387) * 2, 0); g.scale(-1, 1); }
+  g.translate(fx, fy); g.rotate(lean * Math.PI / 180); g.translate(-fx, -fy);
+  const bx = tx(m.x), by = ty(m.y);
+  g.drawImage(B, bx, by, B.width * k, B.height * k);
+  const gx = bx + m.px * k, gy = by + m.py * k;                                      // the hands
+  g.translate(gx, gy); g.rotate(batAngle(t) * Math.PI / 180); g.translate(-mb.hx * mb.k * TU, -mb.hy * mb.k * TU);
+  { const L = 1.45; g.translate(mb.hx * mb.k * TU, mb.hy * mb.k * TU); g.scale(L, 1); g.translate(-mb.hx * mb.k * TU, -mb.hy * mb.k * TU); }   // the bat is drawn longer than its cut-out so it reaches the zone
+  g.drawImage(BT, 0, 0, BT.width * mb.k * TU, BT.height * mb.k * TU);
+  g.restore();
+  g.fillStyle = 'rgba(20,14,6,.28)'; g.beginPath(); g.ellipse(fx, fy, 22 * TU, 4 * TU, 0, 0, 7); g.fill();
+  return true;
+}
+function drawTargetPitcher(u){
+  const P0 = TS.pitcher; if (!ready(P0)) return false;
+  const m = TSM.pitcher, k = m.k * TU, fx = tx(m.x + m.foot * m.w * m.k), fy = ty(m.y + m.h * m.k - 2);
+  // windup (u 0..0.7): rocks back and lifts; stride and release (0.7..0.9); follow-through (0.9..1.14)
+  const wu = easeIO(sgm(u, .12, .6)), st = easeIO(sgm(u, .6, .86)), fo = easeIO(sgm(u, .86, 1.14));
+  const lean = -9 * wu + 20 * st + 14 * fo, rise = -5 * wu + 2 * st, sx = 1 + .04 * wu - .06 * fo;
+  g.save(); g.imageSmoothingEnabled = false; g.translate(fx, fy + rise * TU); g.rotate(lean * Math.PI / 180); g.scale(sx, 1 - .05 * st);
+  g.drawImage(P0, -m.foot * m.w * k, -m.h * k, m.w * k, m.h * k); g.restore();
+  g.fillStyle = 'rgba(20,14,6,.25)'; g.beginPath(); g.ellipse(fx, fy, 12 * TU, 2.4 * TU, 0, 0, 7); g.fill();
+  return true;
+}
+
 function drawBatterView(dt){
   if (!plateOK() && gxOK()){ try { return gxBat(dt); } catch (e){ GX.on = false; console.error(e); } }
   const park = M.park; park.excite = M.exc;
@@ -2023,10 +2064,10 @@ function drawBatterView(dt){
   let u = 0;
   if (P && P.thrown) u = clamp(.70 + (P.t / P.dur) * .44, 0, 1);
   else if (P) u = clamp((P.windup || 0) * .70, 0, .70);
-  if (!PM || !(P && P.thrown && u < .84)){ if (PM) patchBox('pit'); drawPitcherAt(M0.x, M0.y - 14 * TU, u); }   // in the target the pitcher is mid-release, so that frame is the picture itself
+  if (!PM || !(P && P.thrown && u < .84 && u > .66)){ if (PM) patchBox('pit'); if (!(PM && drawTargetPitcher(u))) drawPitcherAt(M0.x, M0.y - 14 * TU, u); }   // in the target the pitcher is mid-release, so that frame is the picture itself
 
   // the batter waits, then swings; the catcher crouches with the umpire right in front of him
-  if (!PM || swing || M.batter.bats === 'L'){ if (PM) patchBox('bat'); drawBatter(M.batter, swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null, frame); }   // waiting at the plate he is the picture's own batter
+  if (!PM || swing || M.batter.bats === 'L'){ if (PM) patchBox('bat'); const sT = swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null; if (!(PM && drawTargetBatter(sT, M.batter.bats === 'L'))) drawBatter(M.batter, sT, frame); }   // waiting at the plate he is the picture's own batter
 
   // the timing cue: a ring closes in on the strike zone; tap when it touches (green = best)
   if (P && P.thrown && P.state === 'flight' && !swing && userBats()){
