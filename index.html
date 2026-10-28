@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-28h';
+const BUILD = '10-28i';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2008,7 +2008,7 @@ function drawFielderSprite(xL, yL, pos, grab, hOver){
 function drawPitcherAt(xL, yL, u){
   if (!plateOK()) return drawPitcherAtOld(xL, yL, u);
   const ft = fldTeam(), p = curPitcher(), step = Math.round(clamp(u, 0, 1) * 16), o = gxPerson('pit', 'pitch', p, ft, 0, 0, 0, null, { glove:1, cap:'#2748b8', cap2:'#e8eef8', shirt:'#2f58d0', sleeve:'#f2f4f8', pants:'#f2f4f8' });   // the target's pitcher: royal blue and white
-  return bakeStamp('p', 'P' + lookKey(p.look) + ft.c1 + '|' + step, o, GL3D.posePitcher(step / 16), -.25, xL, yL, figH(yL / TU), false, 5.5);
+  return bakeStamp('p', 'P' + lookKey(p.look) + '|' + step, o, GL3D.posePitcher(step / 16), -.2, tx(412), ty(232), 74, false, 5.9);
 }
 function drawBatter(p, swingT, idle){
   if (!plateOK()) return drawBatterOld(p, swingT, idle);
@@ -2082,7 +2082,7 @@ function drawBatterView(dt){
   let u = 0;
   if (P && P.thrown) u = clamp(.70 + (P.t / P.dur) * .44, 0, 1);
   else if (P) u = clamp((P.windup || 0) * .70, 0, .70);
-  if (!PM || !(P && P.thrown && u < .84 && u > .66)){ if (PM) patchBox('pit'); if (!(PM && drawTargetPitcher(u))) drawPitcherAt(M0.x, M0.y - 14 * TU, u); }   // in the target the pitcher is mid-release, so that frame is the picture itself
+  if (!PM || !(P && P.thrown && u < .84 && u > .66)){ if (PM) patchBox('pit'); drawPitcherAt(M0.x, M0.y - 14 * TU, u); }   // in the target the pitcher is mid-release, so that frame is the picture itself
 
   // the batter waits, then swings; the catcher crouches with the umpire right in front of him
   if (!PM || swing || M.batter.bats === 'L'){ if (PM) patchBox('bat'); const sT = swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null; if (!(PM && drawTargetBatter(sT, M.batter.bats === 'L'))) drawBatter(M.batter, sT, frame); }   // waiting at the plate he is the picture's own batter
