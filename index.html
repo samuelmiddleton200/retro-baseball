@@ -212,7 +212,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-27z';
+const BUILD = '10-28a';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2109,26 +2109,22 @@ function drawUmp(x, y, ft){
 // ── the two cards facing off before an at-bat ──────────────────────────────
 function drawMatchup(){
   btns = [];
-  drawFieldHD(M.park, frame);
-  drawFielders(fldTeam());
-  R(0, 0, W, H, '#060a12cc');
+  if (plateOK()){ drawPlateBG(); PLATE_ON = true; drawScoreboard(); R(0, 0, W, H, '#050a18c0'); } else { drawFieldHD(M.park, frame); drawFielders(fldTeam()); R(0, 0, W, H, '#060a12cc'); }
   const ft = fldTeam(), bt = batTeam(), pit = curPitcher(), b = M.batter;
-  textb(`${M.inning > 9 ? 'EXTRAS' : (M.top ? 'TOP ' : 'BOT ') + M.inning}  -  ${M.outs} OUT`,
-    W / 2, 10, '#8e97a8', 8, 'center');
+  tt(`${M.inning > 9 ? 'EXTRAS' : (M.top ? 'TOP ' : 'BOT ') + M.inning}  -  ${M.outs} OUT`, W / 2, 10, 15, '#cfe0ff', 'center');
   const cw = 72, ch = 118, y = 30;
   // the pitcher on the left, the batter on the right
   drawCardFor(W / 2 - cw - 26, y, pit, ft, cw, ch);
   drawCardFor(W / 2 + 26, y, b, bt, cw, ch);
-  textb('PITCHING', W / 2 - cw / 2 - 26, y - 11, '#ff8f6a', 7, 'center');
-  textb('AT BAT', W / 2 + cw / 2 + 26, y - 11, '#6fd3ff', 7, 'center');
-  textb('VS', W / 2, y + ch / 2 - 8, '#5c6473', 12, 'center');
+  tt('PITCHING', W / 2 - cw / 2 - 26, y - 9, 15, '#ff9a7a', 'center');
+  tt('AT BAT', W / 2 + cw / 2 + 26, y - 9, 15, '#7fd6ff', 'center');
+  tt('VS', W / 2, y + ch / 2 - 8, 30, '#8196bd', 'center');
   // a line of numbers under each
   const ps = pit.st, bs = b.st;
-  textb(`${ps.ko} K`, W / 2 - cw / 2 - 26, y + ch + 5, '#8e97a8', 7, 'center');
-  textb(`${bs.ab ? (bs.h / bs.ab).toFixed(3).replace('0.', '.') : '.000'}  ${bs.hr} HR`,
-    W / 2 + cw / 2 + 26, y + ch + 5, '#8e97a8', 7, 'center');
+  tt(`${ps.ko} K`, W / 2 - cw / 2 - 26, y + ch + 8, 15, '#cfe0ff', 'center');
+  tt(`${bs.ab ? (bs.h / bs.ab).toFixed(3).replace('0.', '.') : '.000'}  ${bs.hr} HR`, W / 2 + cw / 2 + 26, y + ch + 8, 15, '#cfe0ff', 'center');
   const hint = userBats() ? 'TAP TO STEP IN' : 'TAP TO PITCH';
-  textb(hint, W / 2, H - 28, Math.sin(frame / 14) > 0 ? '#ffd23f' : '#c8a52f', 10, 'center');
+  tt(hint, W / 2, H - 28, 22, Math.sin(frame / 14) > 0 ? '#ffd23f' : '#c8a52f', 'center');
   btns.push({ x:0, y:0, w:W, h:H, fn: () => { nextPitch(); } });
 }
 // a card drawn straight from a player, using his own team's colours
