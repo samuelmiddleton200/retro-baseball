@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-01c';
+const BUILD = '11-01d';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2124,8 +2124,8 @@ function gpHead(i){
   try {
     const cv = document.createElement('canvas'); cv.width = im.naturalWidth; cv.height = im.naturalHeight;
     const x = cv.getContext('2d'); x.drawImage(im, 0, 0); const d = x.getImageData(0, 0, cv.width, cv.height).data;
-    let top = -1; for (let y = 0; y < cv.height && top < 0; y++) for (let xx = 0; xx < cv.width; xx++) if (d[(y * cv.width + xx) * 4 + 3] > 60){ top = y; break; }
-    let sx = 0, n = 0; for (let y = top; y < top + cv.height * .16; y++) for (let xx = 0; xx < cv.width; xx++) if (d[(y * cv.width + xx) * 4 + 3] > 60){ sx += xx; n++; }
+    let sx = 0, n = 0;       // the helmet: magenta pixels in the upper half (the bat tip can poke above the head)
+    for (let y = 0; y < cv.height * .5; y++) for (let xx = 0; xx < cv.width; xx++){ const q = (y * cv.width + xx) * 4; if (d[q + 3] > 60 && d[q] > 90 && d[q + 2] > 90 && d[q + 1] < d[q] * .6){ sx += xx; n++; } }
     if (n) hx = sx / n;
   } catch (e){}
   return GP_HEAD[i] = hx;
