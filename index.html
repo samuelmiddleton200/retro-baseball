@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-02c';
+const BUILD = '11-02d';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1049,6 +1049,19 @@ function startGame(oppIdx, home, opts = {}){
   };
   M.pitcherHome.st.ip = M.pitcherHome.st.ip || 0;
   phase = 'atbat'; setupAtBat();
+  setTimeout(warmHitView, 400);                                // build the 3D park while the first pitch is still coming, not at the first hit
+}
+// The high 3D view that shows a ball in play builds the whole stadium (textures, crowd, towers) the first time it is drawn: 3-4 seconds
+// of freeze right at contact. Do that work up front, once per park, while nothing is happening.
+let WARMED = '';
+function warmHitView(){
+  try {
+    if (!M || !gxOK()) return;
+    const S = gxBase(); if (WARMED === S.parkKey + S.parkCols.join()) return;
+    WARMED = S.parkKey + S.parkCols.join();
+    gxSize(); S.view = 'air'; S.scale = 2.4; S.zone = false; S.people = [];
+    GL3D.frame(S);
+  } catch (e){ console.error('warm', e); }
 }
 function makePark(team){
   const kinds = [
@@ -2050,7 +2063,7 @@ function gxSprites(list, B){
   rows.forEach(({ p, q }) => {
     const prev = GX.sp[p.key]; GX.sp[p.key] = [p.x, p.z];
     if (p.sp && GPF.ready && GP.ready){                        // the painted figures: the same sprites as the at-bat view, sized by perspective
-      const head = GL3D.toScreen(p.x, 6.2, p.z, W, H), hPx = Math.max(10, (q.y - head.y) * 1.05);
+      const head = GL3D.toScreen(p.x, 6.2, p.z, W, H), hPx = Math.max(12, Math.round((q.y - head.y) * 1.05 / 3) * 3);       // sizes in steps of 3, so the scaled-sprite cache is reused instead of rebuilt every frame
       const bob = (p.sp.bob || 0) * hPx * .03;
       if (p.sp.bat) gpStamp(GP.batter[0], 'B0', p.cap, q.x, q.y, hPx / TU, false, .96);
       else gpStamp(GPF.img[p.sp.f], 'FD' + p.sp.f, p.cap, q.x, q.y - bob, hPx / TU, !!p.sp.flip, .96);
