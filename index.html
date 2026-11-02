@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-01i';
+const BUILD = '11-01j';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2470,6 +2470,7 @@ function drawScoreboard(between){
   else tt(`${M.outs} OUT${M.outs === 1 ? '' : 'S'}`, UL(177), ty(80), 19, '#ffffff', 'center');
 }
 function drawPitchInfo(){
+  if (phase !== 'pitching') return;                                  // no pitch box while you bat; it is only a prompt while you pitch
   // ── the pitch info, bottom-left, once he lets go (or while you choose) ──
   let l1 = null, l2 = '';
   if (PLATE_ON && !(P && P.thrown) && phase !== 'pitching') { l1 = PITCH_LABEL[pitchSel] || '4-SEAM FASTBALL'; l2 = 'READY'; }
