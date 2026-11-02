@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-01l';
+const BUILD = '11-02a';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1279,7 +1279,11 @@ function ballAt(f){
   const tx = ZONE.x + ZONE.w / 2 + P.tx * ZONE.w / 2, ty = ZONE.y + ZONE.h / 2 + P.ty * ZONE.h / 2;
   return { x: lerp(rel.x, tx + P.br[0] * e, e), y: lerp(rel.y, ty + P.br[1] * e, e), r: lerp(1.6, 4.6, e) };
 }
-function releasePt(){ const m = proj(60.5, 0); return { x: m.x + 7 * TU, y: m.y - 62 * TU }; }
+function releasePt(){
+  // the ball leaves the hand of the painted pitcher: sprite pixel (28, 59) of the release frame, so it never pops in somewhere else
+  if (typeof GPP !== 'undefined' && GPP.ready && plateOK()){ const k = 80 * TU / (402 * .96); return { x: tx(412) - 160 * k + 28 * k, y: ty(232) - 402 * k + 59 * k }; }
+  const m = proj(60.5, 0); return { x: m.x + 7 * TU, y: m.y - 62 * TU };
+}
 const mittPt = () => ({ x: ZONE.x + ZONE.w / 2, y: ZONE.y + ZONE.h * .85 });
 const inZone = () => Math.abs(P.tx) <= 1 && Math.abs(P.ty) <= 1;
 
@@ -2296,10 +2300,11 @@ function drawBatterView(dt){
     }
     drawBall(q.x, q.y, q.r);
   }
+  else if (P && P.thrown && P.t >= P.dur && !(P.caught > 0) && P.state !== 'inplay' && !P.result){ const e = ballAt(1); drawBall(e.x, e.y, e.r); }
   else if (P && P.caught > 0 && P.state !== 'inplay'){            // into the catcher's mitt, with a little pop
     // from where the pitch ended to the catcher's mitt: 0 = where it ended, 1 = in the mitt (it used to run the other way,
     // snapping to the mitt and sliding back out, which on a ball looked like it flew off and returned somewhere random)
-    const k = clamp(P.caught / 260, 0, 1), end = mittPt(), from = ballAt(1);
+    const k0 = clamp(P.caught / 260, 0, 1), k = k0 * k0 * (3 - 2 * k0), end = mittPt(), from = ballAt(1);
     const x = lerp(from.x, end.x, k), y = lerp(from.y, end.y, k);
     drawBall(x, y, 3.4);
     if (k > .9){ const pop = (k - .9) * 10;
