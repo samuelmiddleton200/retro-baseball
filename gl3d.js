@@ -21,24 +21,23 @@ window.GL3D = GL;
 // (the foul ground real parks have: 10 to 30 ft wide), then across behind the plate about 62 ft back
 const FOUL_W = 25, BACK_D = 62;
 const wallPoly = (park) => {
-  const side = (P, sx) => { const x0 = Math.SQRT1_2 * P, d0 = Math.SQRT1_2 * P, x1 = x0 + sx * FOUL_W * Math.SQRT1_2, d1 = d0 - FOUL_W * Math.SQRT1_2;
-    const s = d1 - 52, x2 = x1 - sx * s;                              // run back toward the plate, parallel to the line
-    return [[x0, d0], [x1, d1], [x2, 52], [sx * 40, -BACK_D]]; };
+  // from the pole the wall runs back along the line, flaring out as it comes in (foul ground widens beside the infield: dugouts, then
+  // the box seats), and swings round behind the plate in one smooth curve
+  const side = (P, sx) => {
+    const t0 = Math.SQRT1_2 * P, at = (t, w) => [sx * (t + w * Math.SQRT1_2), t - w * Math.SQRT1_2];
+    return [at(t0, 25), at(190, 34), at(130, 46), at(90, 62), at(58, 78), [sx * 78, -22], [sx * 62, -48], [sx * 34, -66]];
+  };
   const R = side(park.rf, 1), L = side(park.lf, -1);
-  return R.concat([[0, -BACK_D]], L.slice().reverse());              // right side from the pole, behind the plate, up the left side
+  return R.concat([[0, -70]], L.slice().reverse());
 };
 function fenceR(park, deg){
   const a = Math.abs(deg);
   const wd = d => d < 0 ? lerp(park.lf, park.cf, (clamp(d, -45, 0) + 45) / 45) : lerp(park.cf, park.rf, clamp(d, 0, 45) / 45);
   if (a <= 45) return wd(deg);
-  const t = deg * D2R, ux = Math.sin(t), ud = Math.cos(t), pts = wallPoly(park);
-  for (let i = 0; i < pts.length - 1; i++){                           // where the ray from the plate meets the wall
-    const [x0, d0] = pts[i], [x1, d1] = pts[i + 1], ex = x1 - x0, ed = d1 - d0, den = ux * ed - ud * ex;
-    if (Math.abs(den) < 1e-9) continue;
-    const r = (x0 * ed - d0 * ex) / den, u = (x0 * ud - d0 * ux) / den;
-    if (r > 0 && u >= 0 && u <= 1) return r;
-  }
-  return 70;
+  // past the foul poles the stands sweep round in one smooth bowl: far out beside the poles, closing in gradually to about 75 ft behind
+  // the plate, so the wall never hugs a foul line and then veers off
+  const r45 = wd(deg < 0 ? -45 : 45), u = clamp((a - 45) / 135, 0, 1);
+  return 75 + (r45 - 75) * Math.pow(1 - u, 8);
 }
 GL.fenceR = fenceR;
 const toX = (d, lat) => lat, toZ = (d, lat) => -d;
