@@ -1109,7 +1109,7 @@ function spread(p){
    the point of contact — it is never teleported anywhere.
    ═══════════════════════════════════════════════════════════════════════════ */
 const SIM_HZ = 120, SIM_DT = 1000 / SIM_HZ;      // the simulation always steps at this rate
-const BAT_LAG = 170;                             // ms from the start of the swing to the bat meeting the ball: the ball is about 11 ft out when he goes (half-speed pitch)
+const BAT_LAG = 250;                             // ms from the start of the swing to the bat meeting the ball: the ball is about 11 ft out when he goes (half-speed pitch)
 const SWING_ANIM = 260;                          // how long the swing animation runs
 const SET_TIME = 1400, WINDUP_TIME = 900;        // the pitcher sets, then winds up
 const CATCH_TIME = 320;                          // the ball carrying on into the mitt
@@ -1133,14 +1133,16 @@ const CFG = {
   CQ_MIN: 0.5, CQ_MAX: 1.0,     // exit velo = power * contact quality
   FB_BASE: 70, FB_SLOPE: 0.58,  // fastball mph = 70 + (rating - 60) * 0.58
   OFFSPEED_SLOW: { CV: 15, SL: 11, CH: 13 },
-  SPRINT_BASE: 22, SPRINT_SLOPE: 0.15,   // top speed ft/s = 22 + (rating - 60) * 0.15
+  SPRINT_BASE: 25, SPRINT_SLOPE: 0.09,   // top speed ft/s = 25 + (rating - 60) * 0.09  (25 to 30 ft/s: the MLB range)
   ARM_BASE: 60, ARM_SLOPE: 0.5, // throw mph = 60 + (rating - 60) * 0.5
   // fielders and runners
   REACT_SLOW: 0.4, REACT_FAST: 0.2,      // reaction delay, worst to best fielding
   FIELDER_ACCEL_T: 1.0,         // seconds to reach top speed
-  RUNNER_ACCEL_T: 1.4, RUN_START_DELAY: 0.3,   // home to first: ~3.9 s elite, ~4.4 s average, ~5 s slow
-  CATCH_RADIUS: 3, CATCH_H: 8,   // a fielder catches a ball within 3 ft of him and under 8 ft high
-  ROUTE_EFF: 0.8,               // a fielder never runs the perfect straight line: 0.8 means 25% more ground than the crow flies
+  RUNNER_ACCEL_T: 1.2, RUN_START_DELAY: 0.2,   // 90 ft: ~3.8 s a 120, ~4.05 s a 90, ~4.4 s a 60 (MLB: 3.7 to 4.2 s)
+  CATCH_RADIUS: 2, CATCH_H: 8,   // a fly ball is caught only when the fielder is right under it: within 2 ft, and the ball under 8 ft high
+  CATCH_MIN_H: 1,               // a ball under a foot off the ground when it gets to him is a ground ball, not a catch
+  INFIELD_DIVE: 6,              // an infielder can stab a low liner this far from him (a lunge, not a dive)
+  ROUTE_EFF: 0.92,              // a fielder never runs the perfect straight line: 0.92 means about 9% more ground than the crow flies
   BACK_PENALTY: 0.4,            // extra seconds to read and turn on a ball hit over his head
   DIVE_REACH: 11,               // ...and a ball rolling along the ground can be stopped with a dive this far away
   TRANSFER_GROUND: 0.65, TRANSFER_AIR: 0.40,   // glove to release
@@ -1394,7 +1396,14 @@ function planFielders(){
     for (let k = 0; k < B.path.length; k += 2){
       const p = B.path[k], t = k / 120; if (p[2] > CFG.CATCH_H) continue;
       const D = Math.hypot(p[1] - f.d, p[0] - f.lat);
-      if (fldReach(f, Math.max(0, D - (p[2] < 2.5 ? CFG.DIVE_REACH : CFG.CATCH_RADIUS))) + (p[1] > f.d + 8 ? CFG.BACK_PENALTY : 0) <= t){ hit = { t, p, D, R: p[2] < 2.5 ? CFG.DIVE_REACH : CFG.CATCH_RADIUS }; break; }
+      // In the air he has to be right under it (2 ft). The long dive reach is only for a ball that has landed and is rolling:
+      // before, a fly ball dropping below 2.5 ft counted as "on the ground" and was caught from 11 ft away.
+      const air = t < B.T;
+      if (air && p[2] < CFG.CATCH_MIN_H) continue;         // under a foot it is already a ground ball, not a catch
+      const infield = f.d < 150;
+      // in the air he must be right under it (2 ft); only an infielder gets a lunge at a low liner, and the long dive is for a landed, rolling ball in the infield
+      const Rr = air ? (p[2] < 2.5 && infield ? CFG.INFIELD_DIVE : CFG.CATCH_RADIUS) : (p[2] < 2.5 && infield ? CFG.DIVE_REACH : CFG.CATCH_RADIUS);
+      if (fldReach(f, Math.max(0, D - Rr)) + (p[1] > f.d + 8 ? CFG.BACK_PENALTY : 0) <= t){ hit = { t, p, D, R: Rr }; break; }
     }
     if (!hit){ const D = Math.hypot(last[1] - f.d, last[0] - f.lat); hit = { t: Math.max(tEnd, fldReach(f, Math.max(0, D - CFG.CATCH_RADIUS))), p: last, D, R: CFG.CATCH_RADIUS }; }
     f.hit = hit; f.need = hit.t;
@@ -1417,7 +1426,7 @@ function stepFielders(dt){
 // the batter and the throw: the whole play, worked out once at contact
 function planOutcome(B, c){
   const b = M.batter, spd = b.speed, tf = B.tf, pf = B.pf;
-  const inAir = !B.grounder && tf <= B.T + .03 && B.la >= CFG.GROUND_MAX_LA;
+  const inAir = !B.grounder && tf < B.T && c.hit.p[2] >= CFG.CATCH_MIN_H && B.la >= CFG.GROUND_MAX_LA;     // a catch: right under it, at least a foot up
   const bases = [[63.64, 63.64], [127.28, 0], [63.64, -63.64], [0, 0]];
   const baseDist = n => Math.hypot(pf[0] - bases[n - 1][0], pf[1] - bases[n - 1][1]);
   const throwArr = (n, tr) => tf + tr + baseDist(n) / c.armFps;
@@ -2013,6 +2022,56 @@ function bakeStamp(kind, key, o, pose, yaw, xL, yL, hT, flip, refFt){
   g.fillStyle = 'rgba(20,14,6,.28)'; g.beginPath(); g.ellipse(Math.round(xL), Math.round(yL) - .2, Math.max(2, hT * TU * .16), Math.max(.8, hT * TU * .035), 0, 0, 7); g.fill();
   return true;
 }
+// ── painted gameplay figures (ChatGPT sheets, cut by tools/slice_batter.py): one image per animation frame, all on a common
+// canvas with the feet at the bottom centre.  Magenta kit is recoloured to the club, like the card portraits. ────────────
+const GP = { batter: [], ready: false };
+for (let i = 0; i < 8; i++){
+  const im = new Image(); im.onload = () => { im._ok = true; GP.ready = GP.batter.every(f => f._ok); }; im.onerror = () => {};
+  im.src = `assets/gp/batter${i}.png`; GP.batter.push(im);
+}
+const GP_CACHE = new Map();
+// every magenta pixel (helmet, jersey) takes the club's colour and keeps its shading
+function gpTint(img, key, c1){
+  const k = key + c1;
+  if (GP_CACHE.has(k)) return GP_CACHE.get(k);
+  const cv = document.createElement('canvas'); cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+  const x = cv.getContext('2d'); x.drawImage(img, 0, 0);
+  try {
+    const im = x.getImageData(0, 0, cv.width, cv.height), d = im.data, [br, bg, bb] = hexRgb(c1);
+    for (let p = 0; p < d.length; p += 4){
+      if (d[p + 3] < 8) continue;
+      const r = d[p], gr = d[p + 1], b = d[p + 2];
+      if (r > 70 && b > 70 && gr < r * .66 && gr < b * .66 && Math.abs(r - b) < r * .42){
+        const lum = .3 * r + .59 * gr + .11 * b, t = clamp((lum - 34) / 90, 0, 1), f = .34 + .95 * t, hi = t > .85 ? 30 : 0;
+        d[p] = clamp(br * f + hi, 0, 255); d[p + 1] = clamp(bg * f + hi, 0, 255); d[p + 2] = clamp(bb * f + hi, 0, 255);
+      }
+    }
+    x.putImageData(im, 0, 0);
+  } catch (e){}
+  GP_CACHE.set(k, cv);
+  return cv;
+}
+// The swing, as a timeline around contact (rel = ms from contact, negative = before it). The stance and load HOLD so the
+// anticipation reads (about 150 ms of load at BAT_LAG 250), then stride, swing, contact and follow-through each last 50 ms,
+// so the swing snaps. Frames: 0 stance, 1 bat waggle, 2 load, 3 stride, 4 swing, 5 contact, 6 follow-through, 7 finish.
+function batterFrame(rel, idle){
+  if (rel == null) return (idle % 90) < 7 ? 1 : 0;      // he waits in his stance; the bat gives a little waggle every 1.5 s
+  if (rel < -100) return 2;
+  if (rel < -50) return 3;
+  if (rel < 0) return 4;
+  if (rel < 50) return 5;
+  if (rel < 100) return 6;
+  return 7;
+}
+// stamp one painted figure: feet at (xL, yL), about hT target pixels tall; `flip` mirrors him about his own feet
+function gpStamp(img, key, c1, xL, yL, hT, flip, figFrac){
+  const cv = gpTint(img, key, c1), s = (hT * TU) / (cv.height * (figFrac || .97)), dw = cv.width * s, dh = cv.height * s;
+  g.fillStyle = 'rgba(20,14,6,.30)'; g.beginPath(); g.ellipse(Math.round(xL), Math.round(yL) - .5, Math.max(4, hT * TU * .20), Math.max(1.2, hT * TU * .04), 0, 0, 7); g.fill();
+  g.save(); g.translate(Math.round(xL), Math.round(yL - dh)); if (flip) g.scale(-1, 1);
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+  g.drawImage(cv, Math.round(-dw / 2), 0, Math.round(dw), Math.round(dh));
+  g.imageSmoothingEnabled = false; g.restore();
+}
 const phaseStep = (t, n) => Math.floor((t * 1.6) % 1 * n);
 function drawFielderSprite(xL, yL, pos, grab, hOver){
   if (!plateOK()) return drawFielderSpriteOld(xL, yL, pos, grab);
@@ -2025,7 +2084,12 @@ function drawPitcherAt(xL, yL, u){
   const ft = fldTeam(), p = curPitcher(), step = Math.round(clamp(u, 0, 1) * 16), o = gxPerson('pit', 'pitch', p, ft, 0, 0, 0, null, { glove:1, cap:'#2748b8', cap2:'#e8eef8', shirt:'#2f58d0', sleeve:'#f2f4f8', pants:'#f2f4f8' });   // the target's pitcher: royal blue and white
   return bakeStamp('p', 'P' + lookKey(p.look) + '|' + step, o, GL3D.posePitcher(step / 16), -.2, tx(412), ty(232), 74, false, 5.9);
 }
-function drawBatter(p, swingT, idle){
+function drawBatter(p, swingT, idle, rel){
+  if (GP.ready){
+    const bt = batTeam(), lefty = p.bats === 'L';
+    const f = batterFrame(rel, idle);
+    return gpStamp(GP.batter[f], 'B' + f, bt.c1, lefty ? tx(478) : tx(300), ty(449), 196, lefty);
+  }
   if (!plateOK()) return drawBatterOld(p, swingT, idle);
   const bt = batTeam(), lefty = p.bats === 'L', cxT = tx(300), cx = lefty ? tx(478) : cxT;
   const st = swingT == null ? 'w' + phaseStep(idle / 60, 8) : Math.round(clamp(swingT, 0, 1) * 24);
@@ -2100,7 +2164,9 @@ function drawBatterView(dt){
   drawPitcherAt(M0.x, M0.y - 14 * TU, u);
 
   // the batter waits, then swings; the catcher crouches with the umpire right in front of him
-  { const sT = swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null; drawBatter(M.batter, sT, frame); }
+  { const sT = swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null;
+    const rel = swing && swing.t >= 0 ? swing.t - (swing.contactAt - swing.start) : null;
+    drawBatter(M.batter, sT, frame, rel); }
 
   // the timing cue: a ring closes in on the strike zone; tap when it touches (green = best)
   if (P && P.thrown && P.state === 'flight' && !swing && userBats()){
@@ -2122,7 +2188,9 @@ function drawBatterView(dt){
     drawBall(q.x, q.y, q.r);
   }
   else if (P && P.caught > 0 && P.state !== 'inplay'){            // into the catcher's mitt, with a little pop
-    const k = clamp(1 - P.caught / 260, 0, 1), end = mittPt(), from = ballAt(1);
+    // from where the pitch ended to the catcher's mitt: 0 = where it ended, 1 = in the mitt (it used to run the other way,
+    // snapping to the mitt and sliding back out, which on a ball looked like it flew off and returned somewhere random)
+    const k = clamp(P.caught / 260, 0, 1), end = mittPt(), from = ballAt(1);
     const x = lerp(from.x, end.x, k), y = lerp(from.y, end.y, k);
     drawBall(x, y, 3.4);
     if (k > .9){ const pop = (k - .9) * 10;
