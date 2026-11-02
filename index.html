@@ -12,6 +12,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Retro Baseball">
 <meta name="theme-color" content="#0b1018">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-192.png">
@@ -124,12 +126,12 @@ const gauss = () => (Math.random() + Math.random() + Math.random() + Math.random
 // ── ratings and their colors (the user's scale) ────────────────────────────
 // 60-69 grey, 70-79 green, 80-89 blue, 90-99 yellow, 100-109 orange, 110-120 red
 const TIERS = [
-  { min:60,  col:'#9aa6bd', name:'Common' },
-  { min:70,  col:'#54d67a', name:'Green'  },
-  { min:80,  col:'#4aa3ff', name:'Blue'   },
-  { min:90,  col:'#ffd23f', name:'Gold'   },
-  { min:100, col:'#ff9330', name:'Orange' },
-  { min:110, col:'#ff4d4d', name:'Red'    },
+  { min:60,  col:'#9aa6bd', name:'Common'    },
+  { min:70,  col:'#54d67a', name:'Uncommon'  },
+  { min:80,  col:'#4aa3ff', name:'Rare'      },
+  { min:90,  col:'#b26bff', name:'Epic'      },
+  { min:100, col:'#ffd23f', name:'Legendary' },
+  { min:110, col:'#ff4d4d', name:'Mythic'    },
 ];
 const tierOf = v => TIERS[clamp(Math.floor((v - 60) / 10), 0, 5)];
 const colOf = v => tierOf(v).col;
@@ -212,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '10-28j';
+const BUILD = '11-01b';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -288,15 +290,28 @@ const shade = (hex, amt) => {
   const f = v => clamp(Math.round(v + 255 * amt), 0, 255);
   return `rgb(${f(n >> 16 & 255)},${f(n >> 8 & 255)},${f(n & 255)})`;
 };
-function text(s, x, y, c = '#fff', size = 7, align = 'left'){
-  g.font = `${size}px ui-monospace, "Courier New", monospace`;
+const MONO = 'ui-monospace, "Courier New", monospace', PIXF = '"Silkscreen", "Courier New", monospace';
+let FONT = PIXF;                                          // menus: the pixel font. Cards switch to MONO while they draw.
+const fontOf = size => FONT === PIXF ? `${Math.max(5, size * .86).toFixed(1)}px ${PIXF}` : `${size}px ${MONO}`;
+try { document.fonts.load('400 10px Silkscreen'); document.fonts.load('700 10px Silkscreen'); } catch (e) {}
+// squeeze a string into maxW: smaller type first (down to 4.6px), then an ellipsis
+function fitText(s, size, maxW){
+  g.font = fontOf(size);
+  if (!maxW) return s;
+  let sz = size, w = g.measureText(s).width;
+  while (w > maxW && sz > 4.6){ sz -= .35; g.font = fontOf(sz); w = g.measureText(s).width; }
+  while (w > maxW && s.length > 1){ s = s.slice(0, -2) + '…'; w = g.measureText(s).width; if (s.length <= 2) break; }
+  return s;
+}
+function text(s, x, y, c = '#fff', size = 7, align = 'left', maxW){
+  s = fitText(String(s), size, maxW);
   g.textAlign = align; g.textBaseline = 'top'; g.fillStyle = c;
   g.fillText(s, x | 0, y | 0);
 }
-function textb(s, x, y, c = '#fff', size = 7, align = 'left'){
+function textb(s, x, y, c = '#fff', size = 7, align = 'left', maxW){
   // Small text gets a single soft shadow; big callouts get a full outline so they
   // carry over the grass and the crowd. A heavy outline on small text reads as a smudge.
-  g.font = `${size}px ui-monospace, "Courier New", monospace`;
+  s = fitText(String(s), size, maxW);
   g.textAlign = align; g.textBaseline = 'top';
   g.fillStyle = 'rgba(0,0,0,.72)';
   if (size >= 10) [[1,0],[-1,0],[0,1],[0,-1]].forEach(d => g.fillText(s, (x + d[0]) | 0, (y + d[1]) | 0));
@@ -2171,7 +2186,7 @@ function drawMatchup(){
   if (plateOK()){ drawPlateBG(); PLATE_ON = true; drawScoreboard(); R(0, 0, W, H, '#050a18c0'); } else { drawFieldHD(M.park, frame); drawFielders(fldTeam()); R(0, 0, W, H, '#060a12cc'); }
   const ft = fldTeam(), bt = batTeam(), pit = curPitcher(), b = M.batter;
   tt(`${M.inning > 9 ? 'EXTRAS' : (M.top ? 'TOP ' : 'BOT ') + M.inning}  -  ${M.outs} OUT`, W / 2, 10, 15, '#cfe0ff', 'center');
-  const cw = 72, ch = 118, y = 30;
+  const cw = 80, ch = 112, y = 32;
   // the pitcher on the left, the batter on the right
   drawCardFor(W / 2 - cw - 26, y, pit, ft, cw, ch);
   drawCardFor(W / 2 + 26, y, b, bt, cw, ch);
@@ -2186,34 +2201,8 @@ function drawMatchup(){
   tt(hint, W / 2, H - 28, 22, Math.sin(frame / 14) > 0 ? '#ffd23f' : '#c8a52f', 'center');
   btns.push({ x:0, y:0, w:W, h:H, fn: () => { nextPitch(); } });
 }
-// a card drawn straight from a player, using his own team's colours
-function drawCardFor(x, y, p, team, w, h){
-  const saved = G.teams[G.team];
-  const ovr = ovrOf(p), ti = clamp(Math.floor((ovr - 60) / 10), 0, 5), tc = TIERS[ti].col;
-  R(x, y, w, h, '#0c1019');
-  const bg1 = mix(tc, '#0b1018', .70), bg2 = mix(tc, '#0b1018', .50);
-  for (let i = 0; i < h - 4; i++) R(x + 2, y + 2 + i, w - 4, 1, mix(bg1, bg2, i / h));
-  g.save(); g.beginPath(); g.rect(x + 2, y + 2, w - 4, h - 4); g.clip();
-  const ak = (h * .74) / RH;
-  const art = sprite(`MU${lookKey(p.look)}|${team.c1}${team.c2}|${p.pos}|${p.num}`, () => buildPlayer(
-    isPitcher(p)
-      ? { crouch:1, lean:-2, hip:[55,56], chest:[56,34], neck:[56,27], head:[56,16],
-          nSh:[49,30], fSh:[63,30], nEl:[50,43], nHa:[52,34], fEl:[62,42], fHa:[58,33],
-          nKn:[50,76], nAn:[48,99], fKn:[62,76], fAn:[64,99], gloveA:170, front:1 }
-      : { crouch:0, lean:-1, hip:[54,56], chest:[55,34], neck:[55,27], head:[56,16],
-          nSh:[50,31], fSh:[59,30], nEl:[46,39], nHa:[44,26], fEl:[49,41], fHa:[46,28],
-          nKn:[48,76], nAn:[45,99], fKn:[62,75], fAn:[66,99], batA:-100, helmet:1 },
-    p.look, team.c1, team.c2, { number:p.num, front:isPitcher(p), helmet:!isPitcher(p) }));
-  g.drawImage(art, Math.round(x + w / 2 - 56 * ak), Math.round(y + h * .18), Math.round(RW * ak), Math.round(RH * ak));
-  g.restore();
-  g.strokeStyle = tc; g.lineWidth = 1; g.strokeRect(x + .5, y + .5, w - 1, h - 1);
-  if (ti >= 3) g.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
-  R(x + 2, y + 2, w - 4, 9, '#0b1018cc');
-  textb(p.name.split(' ').pop().slice(0, 10).toUpperCase(), x + w / 2, y + 3, '#f2efe6', 7, 'center');
-  R(x + 2, y + h - 13, w - 4, 11, '#0b1018cc');
-  textb(String(ovr), x + 5, y + h - 12, tc, 10);
-  textb(p.pos, x + w - 5, y + h - 11, '#b9c2d2', 7, 'right');
-}
+// a card drawn straight from a player, in his own team's colours: the same card as everywhere else
+function drawCardFor(x, y, p, team, w, h){ drawCard(x, y, p, w, h, frame, { team }); }
 
 // the top bar: score, inning, count, bases
 const UI_FONT = '"Bahnschrift","DIN Condensed","Arial Narrow","Roboto Condensed",Impact,system-ui,sans-serif';
@@ -2447,7 +2436,7 @@ function drawPlay(){
    Every player you own is a card. Packs come in four tiers, each card is
    revealed by tapping it, and the longer it spins the better it is.
    ═══════════════════════════════════════════════════════════════════════════ */
-const CARD_W = 60, CARD_H = 100;                 // a card's size in game pixels
+const CARD_W = 60, CARD_H = 84;                 // a card's size in game pixels
 const PACKS = {
   bronze:  { n:'Bronze',  price:1000,  col:'#b07a46', col2:'#e0a86a', p:[.55,.30,.12,.025,.004,.001] },
   silver:  { n:'Silver',  price:3000,  col:'#8d97a8', col2:'#d2dae6', p:[.30,.35,.25,.080,.017,.003] },
@@ -2471,10 +2460,11 @@ const sellPrice = c => Math.round(Math.pow(Math.max(0, ovrOf(c) - 55), 2) * 1.1)
 const inUse = id => G.slots.lineup.includes(id) || G.slots.rot.includes(id) || G.slots.pen.includes(id);
 
 // roll one card out of a pack
-function rollCard(packKey){
-  const p = PACKS[packKey].p;
-  let r = Math.random(), a = 0, tier = 0;
-  for (let i = 0; i < 6; i++){ a += p[i]; if (r < a){ tier = i; break; } }
+function rollCard(packKey, forceTier){
+  let tier = 0;
+  if (forceTier != null) tier = forceTier;
+  else { const p = PACKS[packKey].p; let r = Math.random(), a = 0;
+    for (let i = 0; i < 6; i++){ a += p[i]; if (r < a){ tier = i; break; } } }
   const lvl = TIER_LO[tier] + Math.floor(Math.random() * (TIER_HI[tier] - TIER_LO[tier] + 1));
   // a quarter of the cards are pitchers, as on a real roster
   const c = chance(.26) ? makePitcher(lvl, pick(['SP','SP','SP','RP','RP','CP']))
@@ -2484,13 +2474,29 @@ function rollCard(packKey){
   const cur = ovrOf(c), d = lvl - cur;
   keys.forEach(k => c[k] = clamp(c[k] + d, 60, 120));
   c.id = _cardId++; c.lvl = 0; c.ovr = ovrOf(c); c.num = ri(1, 72);
+  c.tm = ri(0, G.teams.length - 1);                            // which club's colours he wears on his card
   return c;
 }
 
 // ── card art ───────────────────────────────────────────────────────────────
-// A head-and-shoulders portrait, the same way real cards are framed. The rig
-// already draws the player, so the portrait is that sprite cropped to the bust.
-function cardBust(c, team){
+// Five things make a card read at a glance, like the reference: a metal frame that gets fancier with the tier, a
+// head-and-shoulders portrait that is THIS player (his own face, hair and team colours), the big rating on a plate,
+// a team badge, and four ratings in the colour of their own band.
+const TIER_LABEL = ['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'];
+const CARD_PAL = [
+  { frame:'#a9b3c7', lite:'#eef2fa', dark:'#3a4356', top:'#6b7890', bot:'#232b3b' },
+  { frame:'#52d67b', lite:'#c4f7d3', dark:'#1b5632', top:'#33995c', bot:'#0f2c1e' },
+  { frame:'#4aa3ff', lite:'#cbe4ff', dark:'#17457d', top:'#2f78c8', bot:'#0e2240' },
+  { frame:'#b26bff', lite:'#ead6ff', dark:'#4a1d85', top:'#8d48d9', bot:'#25103f' },
+  { frame:'#ffd23f', lite:'#fff2b0', dark:'#7a5a10', top:'#d6a526', bot:'#3a2a0a' },
+  { frame:'#ff4d4d', lite:'#ffc2b0', dark:'#7d1414', top:'#d83030', bot:'#3b0b0b' },
+];
+const tierIdx = c => clamp(Math.floor((ovrOf(c) - 60) / 10), 0, 5);
+// which club's colours he wears: pack players come from all 30 teams, your own roster wears yours
+const cardTeam = c => (c.tm != null && G.teams[c.tm]) ? G.teams[c.tm] : G.teams[G.team];
+
+// the old hand-drawn portrait, kept as the fallback when WebGL is not there
+function cardBustRig(c, team){
   const key = `BU${lookKey(c.look)}|${team.c1}${team.c2}|${isPitcher(c) ? 'P' : 'H'}`;
   return sprite(key, () => buildPlayer({
       crouch:0, lean:0,
@@ -2500,110 +2506,227 @@ function cardBust(c, team){
       nKn:[50,76], nAn:[48,99], fKn:[62,76], fAn:[64,99],
     }, c.look, team.c1, team.c2, { front:1 }));
 }
-// the tier metal: a bevelled frame that catches the light at the top left
-function tierFrame(x, y, w, h, tc, t, ti){
-  const lite = mix(tc, '#ffffff', .55), dark = mix(tc, '#000000', .45), mid = tc;
-  R(x, y, w, h, dark);
-  for (let i = 0; i < h; i++) R(x + 1, y + 1 + i, w - 2, 1, mix(lite, mid, clamp(i / h * 1.5, 0, 1)));
-  R(x + 1, y + 1, w - 2, 1, lite); R(x + 1, y + 1, 1, h - 2, lite);
-  R(x + 1, y + h - 2, w - 2, 1, dark); R(x + w - 2, y + 1, 1, h - 2, dark);
-  // a diagonal sheen, brighter the better the card
-  const sh = ti >= 3 ? .22 : .12;
-  for (let i = 0; i < h; i++){
-    const sx = x + 2 + ((i * 1.6 + (ti >= 4 ? t / 26 : 0)) % (w + h)) - h * .5;
-    if (sx > x + 2 && sx < x + w - 3) R(sx, y + 1 + i, 2, 1, `rgba(255,255,255,${sh})`);
+// the portraits: painted in ChatGPT, 240 x ~318 each (assets/portraits/pNN.png), caps and jerseys in magenta so
+// they can be recoloured to any club. A player always gets the same face: the three that match his skin tone best, one picked from his name.
+const PORT_N = 32, PORT = [], PORT_CACHE = new Map();
+for (let i = 0; i < PORT_N; i++){
+  const im = new Image(); im.onload = () => { im._ok = true; }; im.onerror = () => {};
+  im.src = `assets/portraits/p${String(i).padStart(2, '0')}.png`; PORT.push(im);
+}
+const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+function portSkin(i){                                   // the average skin colour in the middle of the face
+  const p = PORT[i]; if (p._skin) return p._skin;
+  const cv = document.createElement('canvas'); cv.width = 24; cv.height = 24; const x = cv.getContext('2d');
+  x.drawImage(p, p.naturalWidth * .40, p.naturalHeight * .46, p.naturalWidth * .20, p.naturalHeight * .12, 0, 0, 24, 24);
+  let r = 0, gg = 0, b = 0;
+  try { const d = x.getImageData(0, 0, 24, 24).data; for (let k = 0; k < d.length; k += 4){ r += d[k]; gg += d[k + 1]; b += d[k + 2]; } r /= 576; gg /= 576; b /= 576; }
+  catch (e){ r = 200; gg = 150; b = 110; }
+  return p._skin = [r, gg, b];
+}
+function nameHash(c){ let h = 7; for (const ch of c.name) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; }
+// Every player gets his own face where there are enough: the faces nearest his skin tone, the least-used first, and it is
+// remembered on the card (c.face) so he always looks the same. Mirrored copies and road-grey jerseys tell repeats apart.
+function portraitFor(c){
+  if (c.face != null && PORT[c.face] && PORT[c.face]._ok) return c.face;
+  const ok = []; PORT.forEach((p, i) => { if (p._ok) ok.push(i); });
+  if (!ok.length) return -1;
+  const sk = hexRgb((c.look && c.look.skin) || '#d9a577');
+  const ranked = ok.map(i => { const s = portSkin(i); return [Math.hypot(s[0] - sk[0], s[1] - sk[1], s[2] - sk[2]), i]; }).sort((a, b) => a[0] - b[0]);
+  let pool = ranked.filter(r => r[0] <= ranked[0][0] + 55).slice(0, 12);
+  if (pool.length < 4) pool = ranked.slice(0, Math.min(4, ranked.length));
+  const used = {}; ((G && G.cards) || []).forEach(z => { if (z.face != null) used[z.face] = (used[z.face] || 0) + 1; });
+  const h = nameHash(c);
+  pool.sort((a, b) => (used[a[1]] || 0) - (used[b[1]] || 0) || ((h + a[1] * 7) % 13) - ((h + b[1] * 7) % 13));
+  c.face = pool[0][1];
+  return c.face;
+}
+// recolour: the cap in the club's colour; the jersey in the club's colour at home, road-grey on every third card
+function portraitTinted(i, team, road){
+  const key = i + team.c1 + (road ? 'r' : '');
+  if (PORT_CACHE.has(key)) return PORT_CACHE.get(key);
+  const src = PORT[i], cv = document.createElement('canvas'); cv.width = src.naturalWidth; cv.height = src.naturalHeight;
+  const x = cv.getContext('2d'); x.drawImage(src, 0, 0);
+  try {
+    const im = x.getImageData(0, 0, cv.width, cv.height), d = im.data, cap = hexRgb(team.c1), jer = road ? [196, 202, 214] : cap;
+    for (let p = 0; p < d.length; p += 4){
+      if (d[p + 3] < 8) continue;
+      const r = d[p], gr = d[p + 1], b = d[p + 2];
+      if (r > 60 && b > 60 && gr < r * .62 && gr < b * .62 && Math.abs(r - b) < r * .4){
+        const row = (p / 4 / cv.width) | 0, base = row > cv.height * .36 ? jer : cap;
+        const lum = .3 * r + .59 * gr + .11 * b, t = clamp((lum - 34) / 74, 0, 1), f = (road && row > cv.height * .36 ? .55 : .36) + (road && row > cv.height * .36 ? .55 : .92) * t, hi = t > .86 ? 28 : 0;
+        d[p] = clamp(base[0] * f + hi, 0, 255); d[p + 1] = clamp(base[1] * f + hi, 0, 255); d[p + 2] = clamp(base[2] * f + hi, 0, 255);
+      }
+    }
+    x.putImageData(im, 0, 0);
+  } catch (e){}
+  PORT_CACHE.set(key, cv);
+  return cv;
+}
+// the portrait window: his face, top-aligned so cap, eyes and chin are always in
+function cardPortrait(c, team, px, py, pw, ph){
+  const i = portraitFor(c);
+  g.save(); g.beginPath(); g.rect(px, py, pw, ph); g.clip();
+  if (i >= 0){
+    const h = nameHash(c), flip = (h >> 3) % 2 === 1, road = h % 3 === 0;
+    const cv = portraitTinted(i, team, road), sc = pw / cv.width * .86, dw = cv.width * sc, dh = cv.height * sc;
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    if (flip){ g.translate(px + pw / 2, 0); g.scale(-1, 1); g.translate(-(px + pw / 2), 0); }
+    g.drawImage(cv, Math.round(px + (pw - dw) / 2), py + 2, Math.round(dw), Math.round(dh));
+    g.imageSmoothingEnabled = false;
+  } else {                                              // faces not loaded yet: the old hand-drawn bust
+    const bust = cardBustRig(c, team), SRC = { x:39, y:2, w:34, h:36 }, sc = (pw / SRC.w) * 1.06;
+    g.drawImage(bust, SRC.x, SRC.y, SRC.w, SRC.h, Math.round(px + pw / 2 - SRC.w * sc / 2), Math.round(py), Math.round(SRC.w * sc), Math.round(SRC.h * sc));
   }
-  // corner notches
-  [[0,0],[1,0],[0,1],[1,1]].forEach(([cx, cy]) =>
-    R(x + (cx ? w - 5 : 2), y + (cy ? h - 5 : 2), 3, 3, lite));
+  g.restore();
 }
 
-function drawCard(x, y, c, w = CARD_W, h = CARD_H, t = 0, o = {}){
-  const ovr = ovrOf(c), ti = clamp(Math.floor((ovr - 60) / 10), 0, 5), tc = TIERS[ti].col;
-  const team = o.team || G.teams[G.team];
-  const k = w / CARD_W;
-  const F = Math.max(2, Math.round(3 * k));             // frame thickness
-  tierFrame(x, y, w, h, tc, t, ti);
-
-  // ── the portrait panel ──────────────────────────────────────────────────
-  const px = x + F, py = y + F, pw = w - F * 2, ph = Math.round(h * .455);
-  const deep = mix(tc, '#0a0e16', .70), shal = mix(tc, '#0a0e16', .42);
-  for (let i = 0; i < ph; i++) R(px, py + i, pw, 1, mix(shal, deep, i / ph));
-  // the bust, cropped out of the full sprite and scaled to fill the panel
-  g.save(); g.beginPath(); g.rect(px, py, pw, ph); g.clip();
-  const bust = cardBust(c, team);
-  const SRC = { x:39, y:2, w:34, h:36 };                // the head-and-shoulders box in the rig
-  const sc = (pw / SRC.w) * 1.06;
-  g.drawImage(bust, SRC.x, SRC.y, SRC.w, SRC.h,
-    Math.round(px + pw / 2 - SRC.w * sc / 2), Math.round(py),
-    Math.round(SRC.w * sc), Math.round(SRC.h * sc));
-  g.restore();
-
-  // ── the big rating, top right ───────────────────────────────────────────
-  const rs = Math.round(15 * k);
-  textb(String(ovr), x + w - F - 2, y + F + 1, '#ffffff', rs, 'right');
-
-  // ── position badge, and which way he bats ───────────────────────────────
-  const by = py + ph - Math.round(10 * k), bh = Math.round(9 * k);
-  const bw = Math.round(15 * k);
-  R(px, by, bw, bh, mix(tc, '#000000', .25)); R(px, by, bw, 1, mix(tc, '#ffffff', .4));
-  text(c.pos, px + bw / 2, by + 1, '#ffffff', Math.round(6 * k), 'center');
-  const hand = isPitcher(c) ? (c.throws || 'R') : (c.bats || 'R');
-  R(px + pw - bw, by, bw, bh, mix(tc, '#000000', .25));
-  R(px + pw - bw, by, bw, 1, mix(tc, '#ffffff', .4));
-  text(hand + (isPitcher(c) ? 'P' : 'B'), px + pw - bw / 2, by + 1, '#ffffff', Math.round(6 * k), 'center');
-
-  // ── name bar ────────────────────────────────────────────────────────────
-  const ny = py + ph + 1, nh = Math.round(11 * k);
-  R(px, ny, pw, nh, mix(tc, '#07090f', .58));
-  R(px, ny, pw, 1, mix(tc, '#ffffff', .22));
-  const parts = c.name.split(' ');
-  const nm = (parts[0][0] + '. ' + parts[parts.length - 1]).toUpperCase();
-  text(nm.slice(0, 13), px + pw / 2, ny + Math.round(2 * k), ti >= 3 ? '#ffffff' : '#e8ecf5',
-       Math.round(7 * k), 'center');
-
-  // ── the four ratings ────────────────────────────────────────────────────
-  const sy = ny + nh, boxH = y + h - F - sy;
-  const rows = statsOf(c);
-  const rowH = boxH / 4, fs = clamp(Math.round(rowH - 1.5), 5, 9);
-  R(px, sy, pw, boxH, mix(tc, '#07090f', .80));
-  rows.forEach(([lbl, key], i) => {
-    const ry = Math.round(sy + i * rowH + (rowH - fs) / 2 - .5);
-    text(lbl, px + Math.round(3 * k), ry, ti >= 3 ? mix(tc, '#ffffff', .45) : '#97a3ba', fs);
-    text(String(c[key]), px + pw - Math.round(3 * k), ry, '#ffffff', fs, 'right');
-  });
-  if (c.lvl) text(`+${c.lvl}`, px + pw / 2, sy - Math.round(9 * k), '#7fd38f', Math.round(6 * k), 'center');
-
-  // red cards burn
-  if (ti === 5){
-    // flames licking up the two edges
-    for (let i = 0; i < 9; i++){
-      const fy = y + h - 2 - ((t / 90 + i * 11) % (h - 2));
-      const wob = Math.sin(t / 70 + i) * 1.4;
-      R(x - 1 + wob, fy, 2, 3, i % 2 ? '#ff8a2a' : '#ffd23f');
-      R(x + w - 1 - wob, fy, 2, 3, i % 2 ? '#ffd23f' : '#ff8a2a');
+// the metal frame; every tier up adds something
+function cardFrame(x, y, w, h, ti, t, k){
+  const P = CARD_PAL[ti], F = Math.max(2, Math.round(3 * k));
+  // glow that spills outside the card for the top three tiers
+  if (ti >= 3){
+    const rgb = ti === 3 ? '178,107,255' : ti === 4 ? '255,210,63' : '255,77,77';
+    const pulse = .5 + .5 * Math.sin(t / 340);
+    for (let i = 4; i > 0; i--) R(x - i, y - i, w + i * 2, h + i * 2, `rgba(${rgb},${(.05 + .03 * pulse) * (5 - i) / 4 * (ti - 2)})`);
+  }
+  R(x, y, w, h, '#05070d');
+  for (let i = 0; i < h - 2; i++) R(x + 1, y + 1 + i, w - 2, 1, mix(P.lite, P.frame, clamp(i / (h * .30), 0, 1)));
+  for (let i = Math.round(h * .55); i < h - 2; i++) R(x + 1, y + 1 + i, w - 2, 1, mix(P.frame, P.dark, clamp((i - h * .55) / (h * .45), 0, 1)));
+  R(x + 1, y + 1, w - 2, 1, 'rgba(255,255,255,.65)'); R(x + 1, y + 1, 1, h - 2, 'rgba(255,255,255,.33)');
+  R(x + 1, y + h - 2, w - 2, 1, P.dark); R(x + w - 2, y + 1, 1, h - 2, P.dark);
+  // chamfered corners
+  [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([cx, cy]) => { const ax = cx ? x + w - 2 : x, ay = cy ? y + h - 2 : y; R(ax, ay, 2, 2, '#05070d'); });
+  // tier ornaments
+  const stud = (sx, sy) => { R(sx, sy, 2, 2, P.lite); R(sx + 1, sy + 1, 1, 1, P.dark); };
+  if (ti >= 1){ stud(x + 3, y + 3); stud(x + w - 5, y + 3); stud(x + 3, y + h - 5); stud(x + w - 5, y + h - 5); }
+  if (ti >= 2){
+    [[x + 2, y + 2, 1, 1], [x + w - 3, y + 2, -1, 1], [x + 2, y + h - 3, 1, -1], [x + w - 3, y + h - 3, -1, -1]].forEach(([bx, by, dx, dy]) => {
+      for (let i = 0; i < 5; i++){ R(bx + dx * i, by, 1, 1, P.lite); R(bx, by + dy * i, 1, 1, P.lite); } });
+  }
+  if (ti >= 3){
+    R(x + 2, y + 2, w - 4, 1, P.lite); R(x + 2, y + h - 3, w - 4, 1, P.dark);
+    const dia = (dx, dy) => { R(dx, dy - 1, 1, 3, P.lite); R(dx - 1, dy, 3, 1, P.lite); };
+    dia(x + w / 2, y + 2); dia(x + w / 2, y + h - 3); dia(x + 2, y + h * .5); dia(x + w - 3, y + h * .5);
+  }
+  // a sheen that sweeps across the frame (faster on the rarer cards)
+  const sp = ti >= 4 ? 22 : 34, sh = ti >= 3 ? .30 : .14;
+  for (let i = 0; i < h; i++){
+    const sx = x + ((i * 1.5 + t / sp) % (w + h * .8)) - h * .4;
+    if (sx > x + 1 && sx < x + w - 3) R(sx, y + 1 + i, 2, 1, `rgba(255,255,255,${sh})`);
+  }
+  if (ti === 5){                                                  // red cards burn
+    for (let i = 0; i < 12; i++){
+      const fy = y + h - 2 - ((t / 70 + i * 9) % (h - 2)), wob = Math.sin(t / 60 + i * 1.7) * 1.6;
+      R(x - 2 + wob, fy, 2, 3, i % 2 ? '#ff8a2a' : '#ffd23f'); R(x + w - wob, fy, 2, 3, i % 2 ? '#ffd23f' : '#ff8a2a');
     }
     R(x, y, w, 1, '#ffd23f'); R(x, y + h - 1, w, 1, '#ff6a2a');
   }
-  if (o.badge) textb(o.badge, x + w / 2, y + h / 2 - 4, '#ffd23f', 8, 'center');
+  return F;
 }
 
-// the back of a card: the season's numbers
-function drawCardBack(x, y, c, w, h){
-  const ovr = ovrOf(c), ti = clamp(Math.floor((ovr - 60) / 10), 0, 5), tc = TIERS[ti].col;
-  R(x, y, w, h, '#0c1019');
-  for (let i = 0; i < h - 4; i++) R(x + 2, y + 2 + i, w - 4, 1, mix('#121a28', '#0b1018', i / h));
-  g.strokeStyle = tc; g.strokeRect(x + .5, y + .5, w - 1, h - 1);
-  textb(c.name, x + w / 2, y + 6, '#f2efe6', 8, 'center');
+function drawCard(x, y, c, w = CARD_W, h = CARD_H, t = 0, o = {}){ const f0 = FONT; FONT = MONO; try { drawCardInner(x, y, c, w, h, t, o); } finally { FONT = f0; } }
+function drawCardInner(x, y, c, w, h, t, o){
+  const ovr = ovrOf(c), ti = tierIdx(c), P = CARD_PAL[ti], team = o.team || cardTeam(c);
+  const k = w / CARD_W, mini = w < 34, compact = w < 48;
+  const F = cardFrame(x, y, w, h, ti, t, k);
+
+  // portrait window: the tier's colours, with a light burst behind the head on the good ones
+  const px = x + F, py = y + F, pw = w - F * 2, ph = Math.round(h * (compact ? .60 : .52));
+  for (let i = 0; i < ph; i++) R(px, py + i, pw, 1, mix(P.top, P.bot, i / ph));
+  if (ti >= 3 && !mini){                                          // a soft glow behind the head
+    const gr = g.createRadialGradient(px + pw / 2, py + ph * .45, 2, px + pw / 2, py + ph * .45, pw * .75);
+    gr.addColorStop(0, `rgba(255,255,255,${.30 + (ti - 3) * .08})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(px, py, pw, ph);
+  }
+  cardPortrait(c, team, px, py, pw, ph);
+  if (ti === 5 && !mini){                                          // holo shimmer sliding over the portrait
+    g.save(); g.beginPath(); g.rect(px, py, pw, ph); g.clip();
+    for (let i = -ph; i < pw + ph; i += 7){
+      const sx = px + ((i + t / 30) % (pw + ph)), hue = (i * 9 + t / 8) % 360;
+      g.fillStyle = `hsla(${hue},95%,70%,.13)`;
+      g.beginPath(); g.moveTo(sx, py); g.lineTo(sx + 3, py); g.lineTo(sx + 3 - ph * .6, py + ph); g.lineTo(sx - ph * .6, py + ph); g.fill();
+    }
+    g.restore();
+  }
+  R(px, py + ph, pw, 1, P.dark);
+
+  // team badge, top left
+  if (!mini){
+    const bw = Math.round(15 * k), bh = Math.round(9 * k);
+    R(px + 1, py + 1, bw, bh, '#05070d'); R(px + 2, py + 2, bw - 2, bh - 2, team.c1);
+    R(px + 2, py + 2, bw - 2, 1, 'rgba(255,255,255,.35)');
+    const lumB = (.3 * hexRgb(team.c1)[0] + .59 * hexRgb(team.c1)[1] + .11 * hexRgb(team.c1)[2]) / 255;
+    if (!compact) text(team.ab, px + 1 + bw / 2, py + 2 + Math.round(1 * k), lumB > .55 ? '#101010' : '#ffffff', Math.max(5, Math.round(5.5 * k)), 'center', bw - 3);
+  }
+  // the big rating, top right, white with a dark outline
+  const rs = clamp(Math.round(w * (mini ? .30 : .205)), 8, 20);                      // the rating scales with the card, and never wider than 60% of it
+  textb(String(ovr), px + pw - 2, py + 1, '#ffffff', rs, 'right', pw * .6);
+  if (mini){ drawCardMiniName(x, y, w, h, c, ti, F, py + ph); return; }
+
+  // position and handedness tabs on the portrait's lower edge
+  const by = py + ph - Math.round(9 * k), bh2 = Math.round(9 * k), bw2 = Math.round(16 * k);
+  [[px, c.pos], [px + pw - bw2, (isPitcher(c) ? (c.throws || 'R') + 'P' : (c.bats || 'R') + 'B')]].forEach(([tx0, s]) => {
+    R(tx0, by, bw2, bh2, 'rgba(5,7,13,.88)'); R(tx0, by, bw2, 1, P.frame);
+    text(s, tx0 + bw2 / 2, by + Math.round(1.5 * k), '#ffffff', Math.max(5, Math.round(6 * k)), 'center');
+  });
+
+  // name bar
+  const ny = py + ph + 1, nh = Math.round((compact ? 9 : 11) * k);
+  R(px, ny, pw, nh, '#07090f'); R(px, ny + nh - 1, pw, 1, P.frame);
+  const parts = c.name.split(' ');
+  const nm = (parts[0][0] + '. ' + parts[parts.length - 1]).toUpperCase();
+  text(compact ? parts[parts.length - 1].toUpperCase() : nm, px + pw / 2, ny + Math.round((compact ? 1.6 : 2.4) * k), '#ffffff', Math.max(5, Math.round(7 * k)), 'center', pw - 4);
+
+  // the four ratings, each in the colour of its own band
+  const sy = ny + nh, boxH = y + h - F - sy;
+  R(px, sy, pw, boxH, '#0a0d16');
+  if (compact){
+    statsOf(c).forEach(([lbl, key], i) => text(String(c[key]), px + pw * (i + .5) / 4, sy + Math.max(0, (boxH - 5) / 2), colOf(c[key]), 5, 'center'));
+    return;
+  }
+  const rowH = boxH / 4, fs = clamp(Math.round(rowH - 1.5), 5, 9);
+  statsOf(c).forEach(([lbl, key], i) => {
+    const ry = Math.round(sy + i * rowH + (rowH - fs) / 2 - .5);
+    if (i) R(px + 2, Math.round(sy + i * rowH), pw - 4, 1, 'rgba(255,255,255,.06)');
+    text(lbl, px + Math.round(3 * k), ry, mix(P.frame, '#ffffff', .35), fs);
+    text(String(c[key]), px + pw - Math.round(3 * k), ry, colOf(c[key]), fs, 'right');
+  });
+  if (o.isNew){ R(x + 3, y + h * .30, 26 * k, 9 * k, '#e63946'); text('NEW!', x + 3 + 13 * k, y + h * .30 + 1.5 * k, '#fff', Math.max(5, 6 * k), 'center'); }
+  if (o.badge) textb(o.badge, x + w / 2, y + h / 2 - 4, '#ffd23f', 8, 'center');
+}
+// the small version used in trays: portrait, rating and a last name
+function drawCardMiniName(x, y, w, h, c, ti, F, below){
+  const ny = below + 1, nh = y + h - F - ny;
+  R(x + F, ny, w - F * 2, nh, '#07090f');
+  const parts = c.name.split(' ');
+  text(parts[parts.length - 1].toUpperCase(), x + w / 2, ny + Math.max(1, (nh - 5) / 2), '#fff', 5, 'center', w - F * 2 - 2);
+}
+
+// the back of a card: same frame, the season's numbers, what he's worth
+function drawCardBack(x, y, c, w, h, t = 0){ const f0 = FONT; FONT = MONO; try { drawCardBackInner(x, y, c, w, h, t); } finally { FONT = f0; } }
+function drawCardBackInner(x, y, c, w, h, t){
+  const ovr = ovrOf(c), ti = tierIdx(c), P = CARD_PAL[ti], k = w / CARD_W;
+  const F = cardFrame(x, y, w, h, ti, t, k);
+  const ix = x + F, iy = y + F, iw = w - F * 2, ih = h - F * 2;
+  for (let i = 0; i < ih; i++) R(ix, iy + i, iw, 1, mix('#151d2e', '#0a0e17', i / ih));
+  const fs = Math.max(5, Math.round(6.5 * k));
+  textb(c.name.toUpperCase(), x + w / 2, iy + 3 * k, '#ffffff', Math.max(6, Math.round(7 * k)), 'center', iw - 4);
+  text(`${TIER_LABEL[ti]} \u00b7 ${c.pos}`, x + w / 2, iy + 11 * k, P.frame, Math.max(5, Math.round(5.5 * k)), 'center', iw - 4);
+  R(ix + 3, iy + 18 * k, iw - 6, 1, P.dark);
   const s = c.st || newStat();
   const rows = isPitcher(c)
     ? [['IP', s.ip], ['K', s.ko], ['ER', s.er], ['W-L', `${s.w}-${s.l}`]]
-    : [['AB', s.ab], ['H', s.h], ['HR', s.hr], ['RBI', s.rbi],
-       ['AVG', (s.ab ? s.h / s.ab : 0).toFixed(3).replace('0.', '.')]];
+    : [['AB', s.ab], ['H', s.h], ['HR', s.hr], ['RBI', s.rbi], ['AVG', (s.ab ? s.h / s.ab : 0).toFixed(3).replace('0.', '.')]];
+  text('THIS SEASON', x + w / 2, iy + 20 * k, '#8fa0c8', Math.max(5, Math.round(5 * k)), 'center', iw - 4);
+  const rh = 6.4 * k;
   rows.forEach((r, i) => {
-    textb(r[0], x + 8, y + 22 + i * 12, '#8e97a8', 7);
-    textb(String(r[1]), x + w - 8, y + 22 + i * 12, '#f2efe6', 7, 'right');
+    const ry = iy + 27 * k + i * rh;
+    if (i % 2) R(ix + 2, ry - 1, iw - 4, rh, 'rgba(255,255,255,.05)');
+    text(r[0], ix + 4 * k, ry, '#9fb0d8', fs); text(String(r[1]), ix + iw - 4 * k, ry, '#ffffff', fs, 'right');
   });
+  const by = iy + 27 * k + 5 * rh + 2 * k;
+  R(ix + 3, by, iw - 6, 1, P.dark);
+  text(`OVERALL ${ovr}`, x + w / 2, by + 2.5 * k, P.lite, Math.max(5, Math.round(5.5 * k)), 'center', iw - 4);
 }
 
 // ── opening a pack ─────────────────────────────────────────────────────────
@@ -2614,13 +2737,13 @@ function buyPack(kind, n){
   G.coins -= cost;
   const cards = [];
   for (let i = 0; i < n * 3; i++) cards.push(rollCard(kind));
-  OPEN = { kind, cards, i:0, t:0, spin:null, revealed:[] };
+  OPEN = { kind, cards, i:0, t:0, spin:null, revealed:[], n };
   menu = 'open'; save();
 }
 function freePack(){
   if (Date.now() < (G.freeAt || 0)) return;
   G.freeAt = Date.now() + 24 * 3600 * 1000;
-  OPEN = { kind:'bronze', cards:[rollCard('bronze'), rollCard('bronze'), rollCard('bronze')], i:0, t:0, spin:null, revealed:[] };
+  OPEN = { kind:'bronze', cards:[rollCard('bronze'), rollCard('bronze'), rollCard('bronze')], i:0, t:0, spin:null, revealed:[], n:1, free:true };
   menu = 'open'; save();
 }
 // tapping the face-down card starts the spin; better cards spin more and faster
@@ -2646,166 +2769,216 @@ function openTick(dt){
   }
   if (sp.landed){
     sp.flash -= dt;
-    if (sp.flash < -300){ OPEN.spin = null; OPEN.i++; if (OPEN.i >= OPEN.cards.length) OPEN.done = true; }
+    if (sp.next){ OPEN.spin = null; OPEN.i++; if (OPEN.i >= OPEN.cards.length) OPEN.done = true; }     // it stays on screen until you tap
   }
 }
 function drawOpen(){
   btns = [];
-  R(0, 0, W, H, '#070a10');
-  const P2 = PACKS[OPEN.kind];
-  textb(`${P2.n.toUpperCase()} PACK`, W / 2, 8, P2.col2, 9, 'center');
-  textb(`${OPEN.i + (OPEN.spin ? 1 : 0)} / ${OPEN.cards.length}`, W / 2, 20, '#8e97a8', 7, 'center');
+  const P2 = PACKS[OPEN.kind] || TRADE_PACK, cx = W / 2, cy = 112, sp = OPEN.spin;
+  // deep navy with a pool of light behind the action
+  R(0, 0, W, H, UI.navy);
+  const pool = g.createRadialGradient(cx, cy, 8, cx, cy, 190);
+  pool.addColorStop(0, 'rgba(80,120,240,.55)'); pool.addColorStop(1, 'rgba(15,31,85,0)');
+  g.fillStyle = pool; g.fillRect(0, 0, W, H);
+  ptitle(`${P2.n.toUpperCase()}${OPEN.kind === 'trade' ? '' : ' PACK'}`, cx, 6, 11, P2.col2);
+  if (!OPEN.done) text(`card ${Math.min(OPEN.i + 1, OPEN.cards.length)} of ${OPEN.cards.length}`, cx, 22, UI.ice, 7, 'center');
 
-  // the cards already turned over, lined up along the bottom
-  const shown = OPEN.revealed.slice(-10);
-  shown.forEach((c, i) => {
-    const w = 26, x = W / 2 - (shown.length * 29) / 2 + i * 29;
-    drawCard(x, H - 48, c, w, 44, OPEN.t);
-  });
+  // turning light rays behind the card; stronger for better pulls
+  const rays = (strength, col) => {
+    g.save(); g.beginPath(); g.rect(0, 0, W, H); g.clip();
+    for (let r = 0; r < 12; r++){
+      const a = r / 12 * Math.PI * 2 + OPEN.t / 1600;
+      g.fillStyle = `rgba(${col},${.05 + strength * .09})`;
+      g.beginPath(); g.moveTo(cx, cy);
+      g.lineTo(cx + Math.cos(a) * 260, cy + Math.sin(a) * 260); g.lineTo(cx + Math.cos(a + .13) * 260, cy + Math.sin(a + .13) * 260); g.fill();
+    }
+    g.restore();
+  };
 
+  // ── all done: every card from the pack on one screen ──
   if (OPEN.done){
-    textb('ALL YOURS', W / 2, H / 2 - 26, '#ffd23f', 16, 'center');
-    button(W / 2 - 50, H / 2 + 2, 100, 20, 'DONE', () => { OPEN = null; menu = 'shop'; }, '#2f6fe0');
+    ptitle('ALL YOURS!', cx, 20, 14, UI.yellow);
+    const n = OPEN.revealed.length, big = n <= 5, cw = big ? 54 : n <= 10 ? 40 : 28, ch = Math.round(cw * 1.4), gap = 5;
+    const per = Math.min(n, Math.floor((W - 20) / (cw + gap))), rows = Math.ceil(n / per);
+    const x0 = cx - (per * (cw + gap) - gap) / 2, y0 = 44;
+    OPEN.revealed.forEach((c, i) => drawCard(x0 + (i % per) * (cw + gap), y0 + Math.floor(i / per) * (ch + gap), c, cw, ch, OPEN.t));
+    const by = Math.min(H - 28, y0 + rows * (ch + gap) + 6);
+    const again = OPEN.kind !== 'trade' && OPEN.n ? Math.round(PACKS[OPEN.kind].price * BULK.find(b => b[0] === OPEN.n)[1] * OPEN.n) : 0;
+    const can = again > 0 && G.coins >= again;
+    if (OPEN.kind === 'trade') button(cx - 52, by, 104, 20, 'TRADE MORE', () => { OPEN = null; menu = 'trade'; }, '#2f6fe0', '#fff', 8);
+    else button(cx - 118, by, 112, 20, can ? `OPEN ANOTHER · ${fmt(again)}` : 'NOT ENOUGH COINS', () => { if (can){ const k = OPEN.kind, n = OPEN.n; buyPack(k, n); } }, can ? '#2f6fe0' : '#161b26', '#fff', 7);
+    button(cx - 2 + 6, by, 56, 20, 'SHOP', () => { OPEN = null; menu = 'shop'; }, '#1a2030', '#fff', 8);
+    button(cx + 66, by, 64, 20, 'MY CARDS', () => { OPEN = null; menu = 'cards'; }, '#1a2030', '#fff', 7);
     return;
   }
-  const cx = W / 2, cy = 112, sp = OPEN.spin;
+
+  // the cards already turned over, in a row along the bottom
+  const shown = OPEN.revealed.slice(-10);
+  shown.forEach((c, i) => { const w = 26, x = cx - (shown.length * 29) / 2 + i * 29; drawCard(x, H - 46, c, w, 36, OPEN.t); });
+
+  const w = 76, h = 107;
   if (!sp){
-    // face down, waiting for a tap
-    const bob = Math.sin(OPEN.t / 300) * 2;
-    const w = 72, h = 120;
-    R(cx - w/2, cy - h/2 + bob, w, h, '#101726');
-    g.strokeStyle = P2.col; g.lineWidth = 1; g.strokeRect(cx - w/2 + .5, cy - h/2 + bob + .5, w - 1, h - 1);
-    R(cx - w/2 + 4, cy - h/2 + bob + 4, w - 8, h - 8, mix(P2.col, '#0b1018', .55));
-    // a ball stitched on the back
-    g.fillStyle = mix(P2.col2, '#0b1018', .25); g.beginPath(); g.arc(cx, cy + bob, 17, 0, 7); g.fill();
-    g.fillStyle = '#0b1018'; g.beginPath(); g.arc(cx, cy + bob, 14, 0, 7); g.fill();
-    g.fillStyle = P2.col2; g.beginPath(); g.arc(cx, cy + bob, 11, 0, 7); g.fill();
-    R(cx - 11, cy + bob - 1, 22, 2, '#b8322f');
-    textb('TAP TO REVEAL', cx, cy + h/2 + bob + 8, '#8e97a8', 8, 'center');
-    btns.push({ x: cx - w/2, y: cy - h/2, w, h, fn: revealNext });
+    // the pack itself, waiting: tap to tear it open
+    const bob = Math.sin(OPEN.t / 300) * 3;
+    rays(.3, '255,255,255');
+    if (OPEN.kind === 'trade' || OPEN.i > 0){
+      // a face-down card
+      uiBox(cx - w / 2, cy - h / 2 + bob, w, h, mix(UI.blueDD, P2.col, .35));
+      g.fillStyle = P2.col2; g.beginPath(); g.arc(cx, cy + bob, 14, 0, 7); g.fill();
+      g.fillStyle = UI.navy; g.fillRect(cx - 14, cy + bob - 1, 28, 2);
+    } else drawPackArt(cx - w / 2, cy - h / 2 + bob, w, h, OPEN.kind, true, OPEN.t);
+    const pulse = .6 + .4 * Math.sin(OPEN.t / 220);
+    ptitle(OPEN.i === 0 && OPEN.kind !== 'trade' ? 'TAP TO OPEN' : 'TAP TO REVEAL', cx, cy + h / 2 + 8, 9, `rgba(255,255,255,${.7 + .3 * pulse})`);
+    btns.push({ x: cx - w / 2, y: cy - h / 2, w, h, fn: revealNext });
     return;
   }
+
   // the spin: the card turns edge-on over and over, faster near the end
-  const f = clamp(sp.t / sp.dur, 0, 1);
-  const eased = 1 - Math.pow(1 - f, 2.1);                       // slows down as it lands
-  const ang = eased * sp.turns * Math.PI;
-  const sx = Math.abs(Math.cos(ang));
-  const w = 72, h = 120, tc = TIERS[sp.ti].col;
-  // glow builds as the better cards spin
-  if (sp.ti >= 3){
+  const f = clamp(sp.t / sp.dur, 0, 1), eased = 1 - Math.pow(1 - f, 2.1);
+  const ang = eased * sp.turns * Math.PI, sx = Math.abs(Math.cos(ang)), tc = TIERS[sp.ti].col;
+  const rgb = sp.ti >= 5 ? '255,77,77' : sp.ti >= 4 ? '255,210,63' : sp.ti >= 3 ? '178,107,255' : '255,255,255';
+  rays(sp.landed ? 1 : f * (sp.ti + 1) / 6, rgb);
+  if (sp.ti >= 3){                                          // glow builds as the better cards spin
     const gl = f * (sp.ti - 2) / 3;
-    for (let i = 6; i > 0; i--) R(cx - w/2 - i*2, cy - h/2 - i*2, w + i*4, h + i*4, `rgba(${sp.ti>=5?'255,77,77':sp.ti>=4?'255,147,48':'255,210,63'},${.05 * gl})`);
+    for (let i = 6; i > 0; i--) R(cx - w / 2 - i * 2, cy - h / 2 - i * 2, w + i * 4, h + i * 4, `rgba(${rgb},${.05 * gl})`);
   }
   const cw = Math.max(2, Math.round(w * sx));
   if (sp.landed){
-    // it lands: a flash in the card's colour, then the card itself
+    drawCard(cx - w / 2, cy - h / 2, OPEN.cards[OPEN.i], w, h, OPEN.t);
     const fl = clamp(sp.flash / 420, 0, 1);
-    drawCard(cx - w/2, cy - h/2, OPEN.cards[OPEN.i], w, h, OPEN.t);
-    if (fl > 0) R(cx - w/2 - 4, cy - h/2 - 4, w + 8, h + 8, mix(tc, '#ffffff', .5).replace('#', 'rgba').length ? `rgba(255,255,255,${fl * .5})` : '#fff');
-    if (sp.flash <= 0) textb('TAP', cx, cy + h/2 + 10, '#8e97a8', 7, 'center');
-    btns.push({ x:0, y:0, w:W, h:H, fn: () => { if (sp.flash < 260) sp.flash = -400; } });
+    if (fl > 0) R(cx - w / 2 - 4, cy - h / 2 - 4, w + 8, h + 8, `rgba(255,255,255,${fl * .55})`);
+    if (sp.ti >= 2) ptitle(`${TIER_LABEL[sp.ti]} PULL!`, cx, cy - h / 2 - 18, sp.ti >= 4 ? 12 : 10, tc);
+    if (sp.flash <= 0) ptitle('TAP', cx, cy + h / 2 + 8, 8, UI.ice);
+    btns.push({ x:0, y:0, w:W, h:H, fn: () => { if (sp.flash < 260) sp.next = true; } });
   } else {
-    const face = Math.cos(ang) > 0;                             // front or back of the card
-    if (face) { g.save(); g.translate(cx, 0); g.scale(sx, 1); g.translate(-cx, 0);
-      drawCard(cx - w/2, cy - h/2, OPEN.cards[OPEN.i], w, h, OPEN.t); g.restore(); }
-    else { R(cx - cw/2, cy - h/2, cw, h, mix(P2.col, '#0b1018', .45));
-      g.strokeStyle = P2.col; g.strokeRect(cx - cw/2 + .5, cy - h/2 + .5, cw - 1, h - 1); }
+    const face = Math.cos(ang) > 0;                         // front or back of the card
+    if (face){ g.save(); g.translate(cx, 0); g.scale(sx, 1); g.translate(-cx, 0);
+      drawCard(cx - w / 2, cy - h / 2, OPEN.cards[OPEN.i], w, h, OPEN.t); g.restore(); }
+    else { R(cx - cw / 2, cy - h / 2, cw, h, mix(UI.blueDD, tc, .45));
+      g.strokeStyle = '#fff'; g.strokeRect(cx - cw / 2 + .5, cy - h / 2 + .5, cw - 1, h - 1); }
   }
 }
 
 // ── the shop ───────────────────────────────────────────────────────────────
 let shopSel = 'gold';
 
-// a foil pack: a tall wrapper with a batter's silhouette behind the name
+// a foil pack: crimped wrapper, a real player's face in a burst of light, the name on a ribbon
+const PACK_FACE = { bronze:5, silver:0, gold:10, diamond:17 };           // a rookie, a youngster, a veteran, a star
 function drawPackArt(x, y, w, h, key, on, t){
-  const Pk = PACKS[key];
-  const c1 = mix(Pk.col, '#000000', .36), c2 = Pk.col, c3 = mix(Pk.col2, '#ffffff', .25);
-  R(x - 1, y - 1, w + 2, h + 2, '#05070d');
-  for (let i = 0; i < h; i++){                              // the foil gradient
-    const f = i / h;
-    R(x, y + i, w, 1, mix(mix(c3, c2, clamp(f * 1.7, 0, 1)), c1, clamp((f - .45) * 1.8, 0, 1)));
+  const Pk = PACKS[key], dark = mix(Pk.col, '#000000', .55), mid = Pk.col, lite = mix(Pk.col2, '#ffffff', .30);
+  // wrapper body: a smooth metallic gradient with the corners knocked off
+  R(x + 1, y, w - 2, h, '#05070d'); R(x, y + 1, w, h - 2, '#05070d');
+  const body = g.createLinearGradient(x, y, x + w, y + h);
+  body.addColorStop(0, lite); body.addColorStop(.35, mid); body.addColorStop(.7, dark); body.addColorStop(1, mix(dark, '#000000', .35));
+  g.fillStyle = body; g.fillRect(x + 1, y + 1, w - 2, h - 2);
+  // crimped top and bottom edges
+  for (let i = 0; i < w - 2; i += 3){
+    R(x + 1 + i, y + 1, 2, 4, i % 6 ? mix(lite, '#ffffff', .5) : mid);
+    R(x + 1 + i, y + h - 5, 2, 4, i % 6 ? dark : mix(dark, '#000000', .4));
   }
-  // the crimped top of the wrapper
-  for (let i = 0; i < w; i += 3) R(x + i, y, 2, 4, mix(c3, '#ffffff', .4));
-  R(x, y + 4, w, 1, mix(c1, '#000000', .3));
-  // a batter in silhouette behind the lettering
-  g.save(); g.beginPath(); g.rect(x + 2, y + 6, w - 4, h - 8); g.clip();
-  const sil = sprite('SIL' + key, () => buildPlayer({
-      crouch:0, lean:-1, hip:[54,56], chest:[55,34], neck:[55,27], head:[56,16],
-      nSh:[50,31], fSh:[59,30], nEl:[46,39], nHa:[44,26], fEl:[49,41], fHa:[46,28],
-      nKn:[48,76], nAn:[45,99], fKn:[62,75], fAn:[66,99], batA:-100, helmet:1 },
-      { skin:'#2a3040', hair:'#2a3040', beard:0, bulk:1 },
-      mix(Pk.col, '#000000', .55), mix(Pk.col, '#000000', .55), {}));
-  const k = (h * .62) / RH;
-  g.globalAlpha = .55;
-  g.drawImage(sil, Math.round(x + w / 2 - 56 * k), Math.round(y + h * .10),
-    Math.round(RW * k), Math.round(RH * k));
-  g.globalAlpha = 1;
-  // a diagonal shine that drifts
-  for (let i = 0; i < h; i++){
-    const sx = x + ((i * 1.5 + t / 40) % (w + h)) - h * .5;
-    if (sx > x + 2 && sx < x + w - 3) R(sx, y + i, 3, 1, 'rgba(255,255,255,.13)');
+  R(x + 1, y + 5, w - 2, 1, mix(dark, '#000000', .3)); R(x + 1, y + h - 6, w - 2, 1, mix(lite, '#ffffff', .3));
+  // the window: a burst of light and a face
+  const wx = x + 5, wy = y + 9, ww = w - 10, wh = Math.round(h * .50);
+  g.save(); g.beginPath(); g.rect(wx, wy, ww, wh); g.clip();
+  const bg = g.createRadialGradient(wx + ww / 2, wy + wh * .45, 3, wx + ww / 2, wy + wh * .45, ww * .8);
+  bg.addColorStop(0, mix(Pk.col2, '#ffffff', .6)); bg.addColorStop(.45, Pk.col2); bg.addColorStop(1, mix(dark, '#000000', .3));
+  g.fillStyle = bg; g.fillRect(wx, wy, ww, wh);
+  for (let r = 0; r < 10; r++){                                       // rays
+    const a = r / 10 * Math.PI * 2 + t / 2400;
+    g.fillStyle = 'rgba(255,255,255,.13)'; g.beginPath(); g.moveTo(wx + ww / 2, wy + wh * .5);
+    g.lineTo(wx + ww / 2 + Math.cos(a) * ww, wy + wh * .5 + Math.sin(a) * ww); g.lineTo(wx + ww / 2 + Math.cos(a + .2) * ww, wy + wh * .5 + Math.sin(a + .2) * ww); g.fill();
+  }
+  const fi = PACK_FACE[key];
+  if (PORT[fi] && PORT[fi]._ok){
+    const cv = portraitTinted(fi, { c1: mix(Pk.col, '#101a40', .35) }, false), sc = (wh - 3) / (cv.height * .72), dw = cv.width * sc, dh = cv.height * sc;   // the whole head, cap to chin, fits the window
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(cv, Math.round(wx + (ww - dw) / 2), wy + 3, Math.round(dw), Math.round(dh));
+    g.imageSmoothingEnabled = false;
+  }
+  // a shine that sweeps across the window
+  for (let i = 0; i < wh; i++){
+    const sx = wx + ((i * 1.4 + t / 36) % (ww + wh)) - wh * .5;
+    if (sx > wx && sx < wx + ww - 2) R(sx, wy + i, 3, 1, 'rgba(255,255,255,.22)');
   }
   g.restore();
-  // the name, in two lines, on a dark band
-  const ny = y + h - 30;
-  R(x + 2, ny, w - 4, 20, '#070b14cc');
-  text(Pk.n.toUpperCase(), x + w / 2, ny + 2, c3, 9, 'center');
-  text('PACK', x + w / 2, ny + 11, c3, 8, 'center');
-  text('3 CARDS', x + w / 2, y + h - 9, '#c6cfe0', 6, 'center');
-  // the edge, brighter when it is the one you are looking at
-  g.strokeStyle = on ? '#ffffff' : mix(Pk.col, '#000000', .2);
-  g.lineWidth = 1; g.strokeRect(x + .5, y + .5, w - 1, h - 1);
-  if (on){ g.strokeStyle = Pk.col2; g.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3); }
+  R(wx - 1, wy - 1, ww + 2, 1, '#05070d'); R(wx - 1, wy + wh, ww + 2, 1, '#05070d'); R(wx - 1, wy, 1, wh, '#05070d'); R(wx + ww, wy, 1, wh, '#05070d');
+  // the ribbon with the name, and a "3 cards" star
+  const ry = wy + wh + 4, rh = Math.max(16, h - (ry - y) - 11);
+  R(x + 2, ry, w - 4, rh, '#0b1230'); R(x + 2, ry, w - 4, 1, lite); R(x + 2, ry + rh - 1, w - 4, 1, dark);
+  const fs = Math.min(10, Math.max(7, w / 9));
+  ptitle(Pk.n.toUpperCase(), x + w / 2, ry + 2, fs, '#ffffff');
+  text('PACK', x + w / 2, ry + 3 + fs * 1.15, lite, Math.max(5, fs * .75), 'center');
+  R(x + w - 19, y + 8, 16, 11, '#e63946'); R(x + w - 19, y + 8, 16, 1, '#ff8f98');
+  text('x3', x + w - 11, y + 10, '#ffffff', 6, 'center');
+  // little sparkles
+  for (let i = 0; i < 4; i++){
+    const sp = (t / 500 + i * .27) % 1, sx = x + 6 + ((i * 53) % (w - 14)), sy = wy + 6 + ((i * 29) % Math.max(10, wh - 14));
+    if (sp < .35){ const a = Math.sin(sp / .35 * Math.PI); R(sx - 1, sy, 3, 1, `rgba(255,255,255,${a})`); R(sx, sy - 1, 1, 3, `rgba(255,255,255,${a})`); }
+  }
+  g.strokeStyle = on ? '#ffffff' : mix(Pk.col, '#000000', .1); g.lineWidth = 1; g.strokeRect(x + .5, y + .5, w - 1, h - 1);
 }
 
 function drawShop(){
   btns = [];
-  R(0, 0, W, H, '#0a0f1a');
-  for (let i = 0; i < H; i++) R(0, i, W, 1, mix('#121a2c', '#080c15', i / H));
-  // the bar across the top, with what you have
-  R(0, 0, W, 20, '#070b14'); R(0, 20, W, 1, '#1d2740');
-  textb('SHOP', 8, 5, '#ffd23f', 11);
-  g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(W - 96, 10, 5, 0, 7); g.fill();
-  g.fillStyle = '#b8902c'; g.beginPath(); g.arc(W - 96, 11, 4, 0, 7); g.fill();
-  text(G.coins.toLocaleString(), W - 86, 6, '#ffd23f', 9);
+  uiBg();
+  // ── the bar across the top: where you are, what you can reach, what you have ──
+  R(0, 0, W, 24, UI.blueDD); R(0, 24, W, 2, '#ffffff');
+  button(6, 4, 52, 16, 'BACK', () => menu = 'title', '#1a2030', '#fff', 7);
+  ptitle('SHOP', 68, 6, 11, '#ffffff', 'left');
+  coinText(G.coins, W - 8, 8, 9, UI.yellow, 'right');
+  button(W - 188, 4, 62, 16, 'MY CARDS', () => menu = 'cards', '#1a2030', '#fff', 7);
+  button(W - 252, 4, 60, 16, 'TRADE 5→1', () => { menu = 'trade'; tradeSel = []; }, '#1a2030', '#fff', 7);
 
-  // a free bronze pack once a day
-  const left = (G.freeAt || 0) - Date.now();
-  const fx = 8, fy = 26;
-  const fb = left > 0 ? '#161c28' : '#20502a';
-  R(fx - 1, fy - 1, 106, 24, '#05070d'); R(fx, fy, 104, 22, fb);
-  R(fx, fy, 104, 1, shade(fb, .34)); R(fx, fy + 21, 104, 1, shade(fb, -.3));
-  text('FREE BRONZE', fx + 5, fy + 4, left > 0 ? '#5c6473' : '#9ae6a0', 8);
-  text(left > 0 ? `in ${Math.ceil(left / 3600000)}h` : 'ready — tap', fx + 5, fy + 13,
-       left > 0 ? '#49505f' : '#e8ecf5', 7);
-  if (left <= 0) btns.push({ x:fx, y:fy, w:104, h:22, fn: freePack });
+  // ── the free daily pack: one clear strip ──
+  const left = (G.freeAt || 0) - Date.now(), ready = left <= 0;
+  uiBox(8, 31, W - 16, 24, ready ? '#1d6b3a' : UI.blueDD);
+  ptitle('FREE DAILY PACK', 16, 36, 8, ready ? '#ffffff' : UI.ice, 'left');
+  if (ready){
+    text('a free bronze pack is waiting for you', 118, 38, '#c8ffd8', 7);
+    button(W - 98, 34, 84, 18, 'OPEN FREE', freePack, '#2f6fe0', '#fff', 8);
+  } else {
+    const hrs = Math.floor(left / 3600000), mins = Math.floor(left % 3600000 / 60000);
+    text(`next one in ${hrs}h ${String(mins).padStart(2, '0')}m`, 118, 38, UI.ice, 7);
+    const fw = 90, fx = W - fw - 16;
+    R(fx, 41, fw, 6, UI.navy); R(fx, 41, Math.round(fw * clamp(1 - left / 86400000, 0, 1)), 6, UI.yellow);
+  }
 
-  const keys = Object.keys(PACKS);
-  const pw = Math.min(74, (W - 24) / 4 - 5), ph = 108, py = 54;
+  // ── the four packs, each with its price on it ──
+  const keys = Object.keys(PACKS), gap = 6, pw = Math.floor((W - 16 - gap * 3) / 4), ph = 92, py = 60;
   keys.forEach((k, i) => {
-    const x = 10 + i * (pw + 5);
-    drawPackArt(x, py, pw, ph, k, shopSel === k, frame);
-    // the odds strip under each pack
-    let bx = x;
-    PACKS[k].p.forEach((pp, ti) => { const ww = Math.max(1, Math.round(pp * pw));
-      R(bx, py + ph + 3, ww, 4, TIERS[ti].col); bx += ww; });
-    text(`${Math.round((PACKS[k].p[4] + PACKS[k].p[5]) * 100)}% orange+`,
-      x + pw / 2, py + ph + 9, '#9aa6bd', 6, 'center');
-    btns.push({ x, y:py, w:pw, h:ph, fn: () => shopSel = k });
+    const x = 8 + i * (pw + gap), on = shopSel === k, Pk = PACKS[k];
+    const lift = on ? -2 + Math.sin(frame / 14) * 1.2 : 0;
+    uiBox(x, py + lift, pw, ph, on ? UI.blueD : UI.blueDD);
+    if (on){ R(x + 2, py + lift + 2, pw - 4, 2, UI.yellow); }
+    drawPackArt(x + 6, py + lift + 8, pw - 12, ph - 30, k, on, frame);
+    coinText(Pk.price, x + pw / 2, py + lift + ph - 17, 9, on ? UI.yellow : '#ffffff', 'center');
+    text('3 cards', x + pw / 2, py + lift + ph - 7, UI.ice, 6, 'center');
+    btns.push({ x, y:py - 2, w:pw, h:ph + 4, fn: () => shopSel = k });
+    if (on){ R(x + pw / 2 - 4, py - 7 + Math.sin(frame / 10) * 1.5, 8, 2, UI.yellow); R(x + pw / 2 - 2, py - 5 + Math.sin(frame / 10) * 1.5, 4, 2, UI.yellow); }
   });
 
-  // buy one, five or ten
-  const P3 = PACKS[shopSel];
-  BULK.forEach(([n, mult], i) => {
-    const cost = Math.round(P3.price * mult * n), can = G.coins >= cost;
-    const bw2 = (W - 20) / 3 - 6, x = 10 + i * ((W - 20) / 3);
-    button(x, H - 27, bw2, 22, `${n}x   ${fmt(cost)}`, () => buyPack(shopSel, n),
-      can ? mix(P3.col, '#0b1018', .34) : '#161b26', can ? '#ffffff' : '#525c72', 9);
-    if (mult < 1) text(`-${Math.round((1 - mult) * 100)}%`, x + bw2 - 3, H - 28, '#7fd38f', 6, 'right');
+  // ── what is in the selected pack: the odds, as six coloured chips ──
+  const P3 = PACKS[shopSel], iy = py + ph + 6;
+  uiBox(8, iy, W - 16, 44);
+  ptitle(`${P3.n.toUpperCase()} PACK ODDS`, 16, iy + 5, 7, P3.col2, 'left');
+  const cw6 = Math.floor((W - 16 - 16 - 5 * 4) / 6);
+  P3.p.forEach((pp, ti) => {
+    const x = 16 + ti * (cw6 + 4), T = TIERS[ti];
+    R(x, iy + 16, cw6, 24, UI.navy); R(x, iy + 16, cw6, 3, T.col);
+    text(`${Math.max(pp * 100 < 1 ? Math.round(pp * 1000) / 10 : Math.round(pp * 100), 0)}%`, x + cw6 / 2, iy + 21, '#ffffff', 7, 'center');
+    text(TIER_LABEL[ti], x + cw6 / 2, iy + 29, T.col, 5, 'center', cw6 - 4);
+    text(`${TIER_LO[ti]}-${TIER_HI[ti]}`, x + cw6 / 2, iy + 34, UI.ice, 5, 'center');
   });
-  button(8, H - 52, 60, 17, 'BACK', () => menu = 'title', '#1a2030', '#fff', 7);
-  button(W - 76, H - 52, 68, 17, 'MY CARDS', () => menu = 'cards', '#2f6fe0', '#fff', 7);
+
+  // ── buy one, five or ten: always the whole row, and it says why a button is off ──
+  const by = iy + 50, bw3 = Math.floor((W - 16 - 8) / 3);
+  BULK.forEach(([n, mult], i) => {
+    const cost = Math.round(P3.price * mult * n), can = G.coins >= cost, x = 8 + i * (bw3 + 4);
+    button(x, by, bw3, 22, `BUY ${n}  ·  ${cost.toLocaleString()}`, () => buyPack(shopSel, n), can ? '#2f6fe0' : '#161b26', '#fff', 8);
+    if (mult < 1) { R(x + bw3 - 30, by - 4, 30, 9, UI.green); text(`SAVE ${Math.round((1 - mult) * 100)}%`, x + bw3 - 15, by - 3, '#ffffff', 5, 'center'); }
+    if (!can) text(`need ${(cost - G.coins).toLocaleString()} more`, x + bw3 / 2, by + 24, '#ffd2ce', 6, 'center');
+    else text(`${n * 3} cards`, x + bw3 / 2, by + 24, UI.ice, 6, 'center');
+  });
 }
 
 // ── the collection ─────────────────────────────────────────────────────────
@@ -2820,16 +2993,17 @@ function myCards(){
 }
 function drawCards(){
   btns = [];
-  R(0, 0, W, H, '#0b1018');
-  textb('MY CARDS', 10, 6, '#ffd23f', 11);
-  textb(`${G.cards.length} cards · ${G.coins.toLocaleString()} coins`, W - 10, 8, '#ffd23f', 8, 'right');
+  uiBg();
+  R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff');
+  ptitle('MY CARDS', 10, 3, 10, '#ffffff', 'left');
+  text(`${G.cards.length} cards`, W - 100, 5, UI.ice, 7, 'right'); coinText(G.coins, W - 8, 4, 8, UI.yellow, 'right');
   [['all','All'], ['hit','Hitters'], ['pit','Pitchers'], ['bench','Bench']].forEach(([k, l], i) => {
     const x = 10 + i * 62, on = colFilter === k;
-    R(x, 20, 58, 14, on ? '#2f6fe0' : '#131924');
-    textb(l, x + 29, 23, on ? '#fff' : '#8e97a8', 7, 'center');
-    btns.push({ x, y:20, w:58, h:14, fn: () => { colFilter = k; colScroll = 0; } });
+    if (on) R(x, 22, 58, 14, UI.yellow); else uiBox(x, 22, 58, 14);
+    text(l, x + 29, 25, on ? '#241a00' : '#ffffff', 7, 'center');
+    btns.push({ x, y:22, w:58, h:14, fn: () => { colFilter = k; colScroll = 0; } });
   });
-  const list = myCards(), cw = 44, ch = 78, per = Math.floor((W - 16) / (cw + 4));
+  const list = myCards(), cw = 44, ch = 62, per = Math.floor((W - 16) / (cw + 4));
   const rows = Math.ceil(list.length / per), maxScroll = Math.max(0, rows * (ch + 6) - (H - 70));
   colScroll = clamp(colScroll, 0, maxScroll);
   g.save(); g.beginPath(); g.rect(0, 38, W, H - 62); g.clip();
@@ -2837,7 +3011,7 @@ function drawCards(){
     const x = 8 + (i % per) * (cw + 4), y = 42 + Math.floor(i / per) * (ch + 6) - colScroll;
     if (y > H || y < 10) return;
     drawCard(x, y, c, cw, ch, frame, { });
-    if (inUse(c.id)) R(x + cw - 8, y + 2, 6, 6, '#54d67a');
+    if (inUse(c.id)){ R(x, y + ch + 1, cw, 2, '#54d67a'); }                              // a green bar under the card: he is in your lineup
     btns.push({ x, y, w:cw, h:ch, fn: () => { colSel = c.id; cardFlip = false; menu = 'card'; } });
   });
   g.restore();
@@ -2846,18 +3020,24 @@ function drawCards(){
     button(W - 26, H - 48, 20, 20, '▼', () => colScroll = Math.min(maxScroll, colScroll + 60));
   }
   button(10, H - 22, 70, 18, 'BACK', () => menu = 'title');
+  button(W / 2 - 50, H - 22, 100, 18, 'TRADE IN 5→1', () => { menu = 'trade'; tradeSel = []; }, '#6a3aa8', '#fff', 8);
   button(W - 86, H - 22, 76, 18, 'LINEUP', () => menu = 'lineup', '#2f6fe0');
 }
 
 // ── one card: upgrade, sell, put him in the lineup ────────────────────────
-let upStat = 0;
+let upStat = 0, cardFlipA = 0;
 function drawCardView(){
   btns = [];
-  R(0, 0, W, H, '#0b1018');
+  uiBg();
   const c = cardById(colSel);
   if (!c){ menu = 'cards'; return; }
-  const cw = 92, chh = 152, cx = 18, cy = 40;
-  if (cardFlip) drawCardBack(cx, cy, c, cw, chh); else drawCard(cx, cy, c, cw, chh, frame);
+  const cw = 92, chh = 129, cx = 18, cy = 40;
+  // the flip: the card turns edge-on, and the other side comes round
+  cardFlipA += clamp((cardFlip ? 1 : 0) - cardFlipA, -.085, .085);
+  const fsx = Math.max(.03, Math.abs(Math.cos(cardFlipA * Math.PI)));
+  g.save(); g.translate(cx + cw / 2, 0); g.scale(fsx, 1); g.translate(-(cx + cw / 2), 0);
+  if (cardFlipA > .5) drawCardBack(cx, cy, c, cw, chh, frame); else drawCard(cx, cy, c, cw, chh, frame);
+  g.restore();
   btns.push({ x:cx, y:cy, w:cw, h:chh, fn: () => cardFlip = !cardFlip });
   textb(cardFlip ? 'tap for the front' : 'tap for his stats', cx + cw / 2, cy + chh + 4, '#5c6473', 6, 'center');
 
@@ -2900,19 +3080,89 @@ function drawCardView(){
 }
 let upFx = 0;
 
+// ── trading cards in: 5 of one colour for 1 random card of the next colour up ──────────────────────
+let tradeTier = 0, tradeSel = [];
+const TRADE_N = 5, TRADE_PACK = { n:'Trade-in', col:'#9b59ff', col2:'#dcc2ff' };
+const spareOf = ti => G.cards.filter(c => tierIdx(c) === ti && !inUse(c.id)).sort((a, b) => ovrOf(a) - ovrOf(b));
+function doTrade(){
+  if (tradeSel.length !== TRADE_N || tradeTier >= 5) return;
+  const give = tradeSel.map(cardById).filter(Boolean);
+  if (give.length !== TRADE_N || give.some(c => inUse(c.id) || tierIdx(c) !== tradeTier)){ tradeSel = []; return; }
+  G.cards = G.cards.filter(c => !tradeSel.includes(c.id));
+  const c = rollCard('bronze', tradeTier + 1);
+  OPEN = { kind:'trade', cards:[c], i:0, t:0, spin:null, revealed:[], from:'trade' };
+  tradeSel = []; menu = 'open'; save();
+}
+function drawTrade(){
+  btns = [];
+  uiBg();
+  R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff');
+  ptitle('TRADE IN', 10, 3, 10, '#ffffff', 'left');
+  text(`${TRADE_N} cards of one colour  →  1 random card of the next colour`, 110, 5, UI.ice, 7);
+  // one chip per colour: how many spare cards you have of it
+  TIERS.forEach((T, ti) => {
+    const n = spareOf(ti).length, on = tradeTier === ti, x = 10 + ti * 56;
+    R(x, 33, 52, 20, on ? mix(T.col, '#0b1018', .35) : '#131924');
+    R(x, 33, 52, 2, T.col);
+    if (on){ g.strokeStyle = '#fff'; g.strokeRect(x + .5, 33.5, 51, 19); }
+    text(TIER_LABEL[ti], x + 26, 38, on ? '#fff' : UI.ice, 6, 'center', 48);
+    text(ti === 5 ? 'max' : `${n} spare`, x + 26, 45, ti === 5 ? '#8aa0d0' : n >= TRADE_N ? '#9af0ae' : '#ffffff', 6, 'center', 48);
+    btns.push({ x, y:33, w:52, h:20, fn: () => { tradeTier = ti; tradeSel = []; } });
+  });
+  const list = spareOf(tradeTier), cw = 40, ch = 56, per = Math.floor((W - 16) / (cw + 4));
+  if (tradeTier >= 5) textb('Red is the top colour: nothing to trade up to.', W / 2, 90, '#ffffff', 8, 'center');
+  else if (!list.length) textb('No spare cards of this colour (lineup cards cannot be traded).', W / 2, 90, '#ffffff', 8, 'center', W - 20);
+  list.slice(0, per * 2).forEach((c, i) => {
+    const x = 8 + (i % per) * (cw + 4), y = 66 + Math.floor(i / per) * (ch + 6), sel = tradeSel.includes(c.id);
+    drawCard(x, y - (sel ? 4 : 0), c, cw, ch, frame);
+    if (sel){ R(x, y + ch - 3, cw, 3, '#54d67a'); textb('✓', x + cw / 2, y + 14, '#54d67a', 14, 'center'); }
+    btns.push({ x, y:y - 4, w:cw, h:ch + 4, fn: () => {
+      if (sel) tradeSel = tradeSel.filter(id => id !== c.id); else if (tradeSel.length < TRADE_N) tradeSel.push(c.id); } });
+  });
+  if (list.length > per * 2) text(`+${list.length - per * 2} more (lowest shown first)`, W / 2, H - 52, UI.ice, 6, 'center');
+  const ready = tradeSel.length === TRADE_N && tradeTier < 5;
+  const nextName = tradeTier < 5 ? TIER_LABEL[tradeTier + 1] : '';
+  button(W / 2 - 100, H - 42, 200, 20, ready ? `TRADE ${TRADE_N} FOR 1 ${nextName}` : `PICK ${TRADE_N - tradeSel.length} MORE`,
+    ready ? doTrade : () => {}, ready ? '#2a6a3a' : '#161b26', ready ? '#fff' : '#525c72', 8);
+  button(W / 2 + 108, H - 42, 80, 20, 'AUTO PICK', () => { tradeSel = list.slice(0, TRADE_N).map(c => c.id); }, '#1a2030', '#fff', 7);
+  button(10, H - 22, 70, 18, 'BACK', () => { menu = 'cards'; tradeSel = []; });
+  button(W - 86, H - 22, 76, 18, 'SHOP', () => { menu = 'shop'; tradeSel = []; }, '#2f6fe0');
+}
+
+// ── best lineup: put the strongest card at every spot in one tap ──────────────────────────────────
+let lineMsg = '', lineMsgT = 0;
+function bestLineup(){
+  const hit = G.cards.filter(c => !isPitcher(c)).sort((a, b) => ovrOf(b) - ovrOf(a));
+  const spot = Array(9).fill(null), left = [];
+  hit.forEach(c => { const i = POS.indexOf(c.pos); if (i >= 0 && !spot[i]) spot[i] = c; else left.push(c); });
+  [8, 0, 1, 2, 3, 4, 5, 6, 7].forEach(i => { if (!spot[i] && left.length) spot[i] = left.shift(); });   // the best leftover bat takes DH first
+  const pit = G.cards.filter(isPitcher).sort((a, b) => ovrOf(b) - ovrOf(a)), used = new Set();
+  const take = pred => { const c = pit.find(p => !used.has(p.id) && pred(p)); if (c) used.add(c.id); return c; };
+  const rot = [0, 1, 2, 3, 4].map(() => take(p => p.pos === 'SP') || take(() => true));
+  const cp = take(p => p.pos === 'CP') || take(p => p.pos === 'RP') || take(() => true);
+  const pen = [0, 1, 2, 3].map(() => take(p => p.pos === 'RP') || take(() => true));
+  const keep = (arr, old) => arr.map((c, i) => c ? c.id : old[i]);
+  G.slots.lineup = keep(spot, G.slots.lineup); G.slots.rot = keep(rot, G.slots.rot); G.slots.pen = keep(pen.concat([cp]), G.slots.pen);
+  rebuildTeam(); save();
+  const all = [...G.slots.lineup, ...G.slots.rot, ...G.slots.pen].map(cardById).filter(Boolean);
+  lineMsg = `Best lineup set: team overall ${Math.round(all.reduce((s, c) => s + ovrOf(c), 0) / all.length)}`;
+  lineMsgT = 2400;
+}
+
 // ── setting the lineup ─────────────────────────────────────────────────────
 let lineSel = null;    // { where:'lineup'|'rot'|'pen', i }
 function drawLineup(){
   btns = [];
-  R(0, 0, W, H, '#0b1018');
-  textb('LINEUP', 10, 6, '#ffd23f', 11);
+  uiBg();
+  R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff');
+  ptitle('LINEUP', 10, 3, 10, '#ffffff', 'left');
   if (lineSel){
     // picking a replacement for one slot
     const want = lineSel.where === 'lineup' ? 'hit' : 'pit';
     const list = G.cards.filter(c => (want === 'pit') === isPitcher(c) && !inUse(c.id))
       .sort((a, b) => ovrOf(b) - ovrOf(a)).slice(0, 24);
     textb('Pick a card for that spot', 10, 20, '#b9c2d2', 8);
-    const cw = 42, ch = 70, per = Math.floor((W - 16) / (cw + 4));
+    const cw = 42, ch = 59, per = Math.floor((W - 16) / (cw + 4));
     list.forEach((c, i) => {
       const x = 8 + (i % per) * (cw + 4), y = 34 + Math.floor(i / per) * (ch + 6);
       if (y + ch > H - 26) return;
@@ -2927,119 +3177,162 @@ function drawLineup(){
   const SW = 74;
   const slot = (where, i, lbl, x, y) => {
     const c = cardById(G.slots[where][i]);
-    R(x, y, SW, 16, '#131924');
-    R(x, y, 2, 16, '#2a3550');
-    textb(lbl, x + 4, y + 4, '#5c6473', 7);
+    uiBox(x, y, SW, 16);
+    textb(lbl, x + 5, y + 5, UI.yellow, 7);
     if (c){
-      textb(c.name.split(' ').pop().slice(0, 7), x + 19, y + 4, '#f2efe6', 7);
-      textb(String(ovrOf(c)), x + SW - 4, y + 3, colOf(ovrOf(c)), 8, 'right');
-    } else textb('empty', x + 19, y + 4, '#3d4659', 7);
+      textb(c.name.split(' ').pop(), x + 19, y + 5, '#ffffff', 7, 'left', SW - 19 - 24);
+      textb(String(ovrOf(c)), x + SW - 5, y + 4, colOf(ovrOf(c)), 8, 'right');
+    } else textb('empty', x + 19, y + 5, UI.ice, 7);
     btns.push({ x, y, w:SW, h:16, fn: () => lineSel = { where, i } });
   };
-  textb('BATTING ORDER', 10, 22, '#8e97a8', 7);
+  textb('BATTING ORDER', 10, 24, UI.ice, 7);
   G.slots.lineup.forEach((id, i) => slot('lineup', i, String(i + 1), 10, 34 + i * 19));
-  textb('ROTATION', 92, 22, '#8e97a8', 7);
+  textb('ROTATION', 92, 24, UI.ice, 7);
   G.slots.rot.forEach((id, i) => slot('rot', i, 'SP', 92, 34 + i * 19));
-  textb('BULLPEN', 174, 22, '#8e97a8', 7);
+  textb('BULLPEN', 174, 24, UI.ice, 7);
   G.slots.pen.forEach((id, i) => slot('pen', i, i === 4 ? 'CP' : 'RP', 174, 34 + i * 19));
   // what the whole roster averages out to
   const all = [...G.slots.lineup, ...G.slots.rot, ...G.slots.pen].map(cardById).filter(Boolean);
   const team = all.length ? Math.round(all.reduce((s, c) => s + ovrOf(c), 0) / all.length) : 0;
-  textb('TEAM', 262, 22, '#8e97a8', 7);
-  textb(String(team), 262, 34, colOf(team), 22);
-  textb('overall', 262, 60, '#5c6473', 7);
-  textb('Tap a spot to swap in', 262, 80, '#5c6473', 7);
-  textb('any spare card.', 262, 90, '#5c6473', 7);
+  textb('TEAM', 262, 24, UI.ice, 7);
+  ptitle(String(team), 262, 34, 22, UI.yellow, 'left');
+  textb('overall', 262, 62, UI.ice, 7);
+  textb('Tap a spot to swap in', 262, 82, '#ffffff', 7);
+  textb('any spare card.', 262, 92, '#ffffff', 7);
+  button(W / 2 - 55, H - 22, 110, 18, 'BEST LINEUP', bestLineup, '#2a6a3a', '#fff', 8);
+  if (lineMsgT > 0){ lineMsgT -= 16; textb(lineMsg, W / 2, H - 36, '#9af0ae', 7, 'center'); }
   button(10, H - 22, 70, 18, 'BACK', () => menu = 'cards');
   button(W - 86, H - 22, 76, 18, 'SHOP', () => menu = 'shop', '#2f6fe0');
 }
 const fmt = n => n >= 1000 ? (n / 1000).toFixed(n % 1000 ? 1 : 0) + 'k' : String(n);
 
 let menu = 'title', btns = [];
+// ── the Retro Basket look: bright blue ground, dark-blue boxes with white edges, chunky yellow buttons ──────────────
+const UI = { blue:'#2f5fd8', blueD:'#2149b4', blueDD:'#17348a', navy:'#0f1f55', yellow:'#ffd23f', yellowD:'#c99a12', red:'#e24b3b', green:'#44c45d', ice:'#cfe0ff' };
+const uiBg = () => R(0, 0, W, H, UI.blue);
+// a box: 2px white edge, corners knocked off by a pixel
+function uiBox(x, y, w, h, fill = UI.blueDD){
+  R(x + 1, y, w - 2, h, '#ffffff'); R(x, y + 1, w, h - 2, '#ffffff');
+  R(x + 2, y + 2, w - 4, h - 4, fill);
+}
+// big titles: white (or a colour) with a navy drop shadow
+function ptitle(s, x, y, size, c = '#ffffff', align = 'center'){
+  g.font = `700 ${Math.round(size * .86)}px ${PIXF}`; g.textAlign = align; g.textBaseline = 'top';
+  g.fillStyle = UI.navy; g.fillText(s, x | 0, (y + Math.max(2, size * .18)) | 0);
+  g.fillStyle = c; g.fillText(s, x | 0, y | 0);
+}
+const BTN_YELLOW = new Set(['#2f6fe0', '#2a6a3a', '#6a3aa8']);
+const BTN_OFF = new Set(['#161b26', '#1a1f2a']);
+const BTN_RED = new Set(['#4a2030', '#2a1a1a']);
 function button(x, y, w, h, label, fn, col = '#1a2230', tc = '#fff', size = 8){
-  R(x, y, w, h, shade(col, -.34));                       // the dark edge all the way round
-  R(x + 1, y + 1, w - 2, h - 2, col);
-  R(x + 1, y + 1, w - 2, 1, shade(col, .26));            // light catches the top
-  R(x + 1, y + 1, 1, h - 2, shade(col, .14));
-  R(x + 1, y + h - 2, w - 2, 1, shade(col, -.22));       // shadow along the bottom
-  R(x + w - 2, y + 2, 1, h - 3, shade(col, -.16));
-  R(x + 1, y + 1, 1, 1, shade(col, .4)); R(x + w - 2, y + h - 2, 1, 1, shade(col, -.3));
-  (size >= 10 ? textb : text)(label, x + w / 2, y + (h - size) / 2 - 1, tc, size, 'center');
+  const off = BTN_OFF.has(col);
+  const kind = off ? 'off' : BTN_YELLOW.has(col) ? 'yellow' : BTN_RED.has(col) ? 'red' : 'box';
+  const fs = Math.round(size * .86);
+  g.font = `700 ${fs}px ${PIXF}`; g.textAlign = 'center'; g.textBaseline = 'top';
+  if (kind === 'box'){
+    uiBox(x, y, w, h, col === '#1a2230' || col === '#1a2030' ? UI.blueDD : mix(UI.blueDD, col, .35));
+    g.fillStyle = tc; g.fillText(label, (x + w / 2) | 0, (y + (h - fs) / 2) | 0);
+  } else {
+    const body = kind === 'yellow' ? UI.yellow : kind === 'red' ? UI.red : '#4d525e';
+    const dark = kind === 'yellow' ? UI.yellowD : kind === 'red' ? '#9c2f23' : '#383c46';
+    R(x + 1, y + 3, w - 2, h - 3, UI.navy); R(x, y + 4, w, h - 5, UI.navy);          // the drop shadow
+    R(x + 1, y, w - 2, h - 2, body); R(x, y + 1, w, h - 4, body);
+    R(x + 2, y + 1, w - 4, 1, 'rgba(255,255,255,.45)');
+    R(x + 1, y + h - 4, w - 2, 2, dark);
+    g.fillStyle = kind === 'yellow' ? '#241a00' : kind === 'red' ? '#ffffff' : '#9aa0ad';
+    g.fillText(label, (x + w / 2) | 0, (y + (h - 3 - fs) / 2 + 1) | 0);
+  }
   btns.push({ x, y, w, h, fn });
 }
+// a small coin, for prices and the balance
+function coinIcon(x, y, r = 4){
+  g.fillStyle = UI.yellowD; g.beginPath(); g.arc(x, y + 1, r, 0, 7); g.fill();
+  g.fillStyle = UI.yellow; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  g.fillStyle = UI.yellowD; g.fillRect(x - 1, y - r + 2, 2, r * 2 - 3);
+}
+function coinText(n, x, y, size = 8, c = UI.yellow, align = 'left'){
+  const s = n.toLocaleString(), wpx = s.length * size * .62;
+  const x0 = align === 'center' ? x - (wpx + size + 4) / 2 : align === 'right' ? x - wpx - size - 4 : x;
+  coinIcon(x0 + size / 2, y + size / 2, size * .5);
+  text(s, x0 + size + 3, y, c, size);
+}
+
 function drawMenu(){
   btns = [];
-  R(0, 0, W, H, '#0b1018');
-  for (let i = 0; i < 60; i++) R(0, i, W, 1, `rgb(${11 + i / 3 | 0},${16 + i / 2 | 0},${24 + i | 0})`);
+  uiBg();
   if (menu === 'title'){
-    textb('RETRO', W / 2, 30, '#ffd23f', 26, 'center');
-    textb('BASEBALL', W / 2, 58, '#fff', 26, 'center');
-    text('build ' + BUILD, W - 6, H - 10, '#3d4659', 6, 'right');
+    ptitle('RETRO', W / 2, 22, 28, UI.yellow);
+    ptitle('BASEBALL', W / 2, 54, 28, '#ffffff');
+    text('build ' + BUILD, W - 6, H - 10, UI.ice, 6, 'right');
     const me = G && myTeam();
     if (me){
-      textb(`${me.city} ${me.nick}   ${me.w}-${me.l}`, W / 2, 96, me.c2, 9, 'center');
+      ptitle(`${me.city} ${me.nick}   ${me.w}-${me.l}`, W / 2, 94, 8, '#ffffff');
       button(W / 2 - 70, 116, 140, 22, G.day < G.seasonLen ? `PLAY GAME ${G.day + 1}/${G.seasonLen}` : 'SEASON DONE', () => {
         if (G.day >= G.seasonLen) return;
         const s = G.sched[G.day]; startGame(s.opp, s.home);
       }, '#2f6fe0');
-      button(W / 2 - 108, 142, 68, 18, 'MY CARDS', () => menu = 'cards', '#243a5e');
-      button(W / 2 - 34, 142, 68, 18, 'SHOP', () => menu = 'shop', '#3a2f12');
-      button(W / 2 + 40, 142, 68, 18, 'LINEUP', () => menu = 'lineup', '#243a5e');
+      button(W / 2 - 108, 142, 68, 18, 'MY CARDS', () => menu = 'cards');
+      button(W / 2 - 34, 142, 68, 18, 'SHOP', () => menu = 'shop');
+      button(W / 2 + 40, 142, 68, 18, 'LINEUP', () => menu = 'lineup');
       button(W / 2 - 108, 164, 68, 18, 'STANDINGS', () => menu = 'stand');
       button(W / 2 - 34, 164, 68, 18, 'ROSTER', () => menu = 'roster');
       button(W / 2 + 40, 164, 68, 18, 'NEW TEAM', () => menu = 'pick', '#2a1a1a');
-      textb(`${G.coins.toLocaleString()} coins`, W / 2, 190, '#ffd23f', 9, 'center');
+      coinText(G.coins, W / 2, 192, 9, UI.yellow, 'center');
     } else button(W / 2 - 70, 120, 140, 24, 'START', () => menu = 'pick', '#2f6fe0');
   }
   else if (menu === 'pick'){
-    textb('PICK YOUR TEAM', W / 2, 8, '#ffd23f', 10, 'center');
+    ptitle('PICK YOUR TEAM', W / 2, 5, 10, '#ffffff');
+    const cols = Math.max(4, Math.floor((W - 8) / 70)), tx0 = (W - cols * 70 + 4) / 2;
     TEAMS.forEach((t, i) => {
-      const x = 8 + (i % 6) * 70, y = 26 + Math.floor(i / 6) * 32;
+      const x = tx0 + (i % cols) * 70, y = 26 + Math.floor(i / cols) * 31;
       R(x, y, 66, 28, t.c1); R(x, y, 66, 3, t.c2);
       textb(t.ab, x + 33, y + 8, '#fff', 9, 'center');
-      textb(t.nick.slice(0, 9), x + 33, y + 19, '#ffffffaa', 6, 'center');
+      textb(t.nick, x + 33, y + 19, '#ffffffcc', 6, 'center', 60);
       btns.push({ x, y, w:66, h:28, fn: () => { newGame(t.ab); menu = 'title'; } });
     });
   }
   else if (menu === 'roster'){
-    const me = myTeam();
-    textb(`${me.city} ${me.nick}`, 8, 6, me.c2, 10);
-    textb('LINEUP', 8, 22, '#9aa6bd', 7); textb('CON POW SPD FLD', 150, 22, '#9aa6bd', 7);
-    me.lineup.forEach((p, i) => {
-      const y = 32 + i * 11;
-      textb(p.pos, 8, y, '#ffd23f', 7); textb(p.name, 26, y, '#fff', 7);
-      [p.contact, p.power, p.speed, p.fielding].forEach((v, j) => textb(String(v), 158 + j * 26, y, colOf(v), 7));
-      textb(String(p.ovr), 266, y, colOf(p.ovr), 8);
-    });
-    textb('ROTATION', 290, 22, '#9aa6bd', 7); textb('VEL CTL STA', 360, 22, '#9aa6bd', 7);
-    me.rot.concat(me.pen).slice(0, 10).forEach((p, i) => {
-      const y = 32 + i * 11;
-      textb(p.pos, 290, y, '#54d67a', 6); textb(p.name.split(' ')[1].slice(0, 8), 306, y, '#fff', 7);
-      [p.velocity, p.control, p.stamina].forEach((v, j) => textb(String(v), 362 + j * 22, y, colOf(v), 7));
-    });
-    button(W - 56, H - 20, 50, 16, 'BACK', () => menu = 'title');
+    const me = myTeam(), cw = Math.floor((W - 24) / 2), L = 8, Rt = 16 + cw, sw = 19;
+    R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff');
+    ptitle(`${me.city} ${me.nick}`, 10, 3, 9, '#ffffff', 'left');
+    const side = (x0, title, heads, rows, n) => {
+      const xr = x0 + cw - 2, firstStat = xr - 22 - (n - 1) * sw;
+      uiBox(x0 - 5, 20, cw + 6, 24 + rows.length * 12);                        // a dark panel, so the colour-coded numbers read
+      textb(title, x0, 25, UI.yellow, 6);
+      heads.forEach((h, j) => textb(h, xr - 22 - (n - 1 - j) * sw, 25, UI.ice, 5, 'right'));
+      textb('OVR', xr, 25, UI.ice, 5, 'right');
+      rows.forEach((r, i) => {
+        const y = 36 + i * 12;
+        textb(r.pos, x0, y, r.posCol, 6);
+        textb(r.name, x0 + 15, y, '#ffffff', 7, 'left', firstStat - sw + 3 - (x0 + 15));
+        r.vals.forEach((v, j) => textb(String(v), xr - 22 - (n - 1 - j) * sw, y, colOf(v), 6, 'right'));
+        textb(String(r.ovr), xr, y, colOf(r.ovr), 7, 'right');
+      });
+    };
+    side(L, 'LINEUP', ['CON', 'POW', 'SPD', 'FLD'], me.lineup.map(p => ({ pos:p.pos, posCol:UI.yellow, name:p.name, vals:[p.contact, p.power, p.speed, p.fielding], ovr:p.ovr })), 4);
+    side(Rt, 'PITCHERS', ['VEL', 'CTL', 'STA'], me.rot.concat(me.pen).slice(0, 10).map((p, i) => ({ pos:i < 5 ? 'SP' : i === 9 ? 'CP' : 'RP', posCol:'#54d67a', name:p.name, vals:[p.velocity, p.control, p.stamina], ovr:p.ovr })), 3);
+    button(W - 58, H - 20, 50, 16, 'BACK', () => menu = 'title');
   }
   else if (menu === 'shop'){ drawShop(); return; }
   else if (menu === 'cards'){ drawCards(); return; }
   else if (menu === 'card'){ drawCardView(); return; }
   else if (menu === 'lineup'){ drawLineup(); return; }
   else if (menu === 'open'){ drawOpen(); return; }
+  else if (menu === 'trade'){ drawTrade(); return; }
   else if (menu === 'stand'){
-    textb('STANDINGS', W / 2, 6, '#ffd23f', 10, 'center');
+    R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff');
+    ptitle('STANDINGS', 10, 3, 9, '#ffffff', 'left');
     const list = G.teams.map((t, i) => ({ ...t, i })).sort((a, b) => (b.w - b.l) - (a.w - a.l));
-    list.slice(0, 15).forEach((t, i) => {
-      const y = 22 + i * 13, mine = t.i === G.team;
-      textb(`${t.ab}`, 20, y, mine ? '#ffd23f' : '#fff', 8);
-      textb(`${t.w}-${t.l}`, 60, y, '#9aa6bd', 8);
-      textb(t.nick, 100, y, mine ? '#ffd23f' : '#9aa6bd', 7);
+    const colW = Math.floor((W - 24) / 2);
+    const col = (items, x0) => items.forEach((t, i) => {
+      const y = 25 + i * 12.5, mine = t.i === G.team;
+      if (mine) R(x0 - 3, y - 2, colW, 12, UI.blueDD);
+      textb(t.ab, x0, y, mine ? UI.yellow : '#ffffff', 7);
+      textb(`${t.w}-${t.l}`, x0 + 34, y, mine ? UI.yellow : UI.ice, 7);
+      textb(t.nick, x0 + 70, y, mine ? UI.yellow : '#ffffff', 6, 'left', colW - 76);
     });
-    list.slice(15).forEach((t, i) => {
-      const y = 22 + i * 13, mine = t.i === G.team;
-      textb(`${t.ab}`, 230, y, mine ? '#ffd23f' : '#fff', 8);
-      textb(`${t.w}-${t.l}`, 270, y, '#9aa6bd', 8);
-      textb(t.nick, 310, y, mine ? '#ffd23f' : '#9aa6bd', 7);
-    });
-    button(W - 56, H - 20, 50, 16, 'BACK', () => menu = 'title');
+    col(list.slice(0, 15), 12); col(list.slice(15), 12 + colW + 6);
+    button(W - 58, H - 20, 50, 16, 'BACK', () => menu = 'title');
   }
 }
 function drawOver(){
@@ -3164,6 +3457,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   testPlay(res, angle, dist, la){ P = P || {}; P.ball = { angle, la, ev:100, dist, qual:.9 };
     P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
+  setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────
