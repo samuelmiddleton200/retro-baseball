@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-01g';
+const BUILD = '11-01i';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2131,31 +2131,57 @@ function gpHead(i){
   return GP_HEAD[i] = hx;
 }
 // stamp one painted figure: feet at (xL, yL), about hT target pixels tall; `flip` mirrors him about his own feet
+const GP_SCALED = new Map();
+// the tinted frame resampled ONCE to the size it is drawn at, so each frame is a plain 1:1 blit (the swing no longer rescales a big
+// image every frame)
+function gpScaled(img, key, c1, dw, dh){
+  const k = key + c1 + '|' + dw + 'x' + dh;
+  let c = GP_SCALED.get(k);
+  if (!c){
+    const src = gpTint(img, key, c1); c = document.createElement('canvas'); c.width = dw; c.height = dh;
+    const x = c.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(src, 0, 0, dw, dh);
+    GP_SCALED.set(k, c); if (GP_SCALED.size > 120) GP_SCALED.delete(GP_SCALED.keys().next().value);
+  }
+  return c;
+}
+// stamp one painted figure: feet at (xL, yL), about hT target pixels tall; `flip` mirrors him about his own feet
 function gpStamp(img, key, c1, xL, yL, hT, flip, figFrac, alpha, dxSrc){
-  const cv = gpTint(img, key, c1), s = (hT * TU) / (cv.height * (figFrac || .97)), dw = cv.width * s, dh = cv.height * s;
+  const sc = gpTint(img, key, c1), s = (hT * TU) / (sc.height * (figFrac || .97)), dw = Math.round(sc.width * s), dh = Math.round(sc.height * s);
+  const cv = gpScaled(img, key, c1, dw, dh);
   if (alpha == null || alpha >= 1){ g.fillStyle = 'rgba(20,14,6,.30)'; g.beginPath(); g.ellipse(Math.round(xL), Math.round(yL) - .5, Math.max(4, hT * TU * .20), Math.max(1.2, hT * TU * .04), 0, 0, 7); g.fill(); }
   g.save(); g.translate(Math.round(xL), Math.round(yL - dh)); if (flip) g.scale(-1, 1);
   if (alpha != null) g.globalAlpha = alpha;
-  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-  g.drawImage(cv, Math.round(-dw / 2 - (dxSrc || 0) * s), 0, Math.round(dw), Math.round(dh));
-  g.imageSmoothingEnabled = false; g.restore();
+  g.drawImage(cv, Math.round(-dw / 2 - (dxSrc || 0) * s), 0);
+  g.restore();
 }
 const phaseStep = (t, n) => Math.floor((t * 1.6) % 1 * n);
+// painted fielders (assets/gp/fielder0-7, from ChatGPT): 0-1 ready, 2-3 run, 4 reach, 5 catch, 6 scoop, 7 throw
+const GPF = { img: [], ready: false };
+for (let i = 0; i < 8; i++){ const im = new Image(); im.onload = () => { im._ok = true; GPF.ready = GPF.img.every(f => f._ok); }; im.onerror = () => {}; im.src = `assets/gp/fielder${i}.png`; GPF.img.push(im); }
 function drawFielderSprite(xL, yL, pos, grab, hOver){
   if (!plateOK()) return drawFielderSpriteOld(xL, yL, pos, grab);
+  if (GPF.ready){
+    const i = Math.max(0, FIELDERS.findIndex(f => f[2] === pos)), f = ((frame + i * 37) % 150) < 90 ? 0 : 1;      // he shifts his weight every couple of seconds
+    return gpStamp(GPF.img[f], 'FD' + f, fldTeam().c1, xL, yL, (hOver || figH(yL / TU)) * 1.55, pos === '1B' || pos === '2B' || pos === 'RF', .96);
+  }
   const ft = fldTeam(), i = Math.max(0, FIELDERS.findIndex(f => f[2] === pos)), man = ft.lineup[i] || ft.lineup[0], hT = hOver || figH(yL / TU);
   const st = phaseStep(frame / 60 + i * .37, 6), o = gxPerson('f' + i, 'field', man, ft, 0, 0, 0, null, { glove:1 });
   return bakeStamp('f', 'F' + i + lookKey(man.look) + ft.c1 + '|' + st, o, GL3D.poseReady(st / 6 * 4), 0, xL, yL, hT, pos === '1B' || pos === '2B' || pos === 'RF', 4.55);
 }
+const PWARM = { k:'', n:0 };
 function drawPitcherAt(xL, yL, u){
   if (!plateOK()) return drawPitcherAtOld(xL, yL, u);
   const ft = fldTeam(), p = curPitcher(), step = Math.round(clamp(u, 0, 1) * 16), o = gxPerson('pit', 'pitch', p, ft, 0, 0, 0, null, { glove:1, cap:'#2748b8', cap2:'#e8eef8', shirt:'#2f58d0', sleeve:'#f2f4f8', pants:'#f2f4f8' });   // the target's pitcher: royal blue and white
-  return bakeStamp('p', 'P' + lookKey(p.look) + '|' + step, o, GL3D.posePitcher(step / 16), -.2, tx(412), ty(232), 74, false, 5.9);
+  // the 17 windup poses are baked on first use (about 100 ms each): bake one extra per frame, unseen, so no pitch ever hitches
+  const wk = lookKey(p.look); PWARM.k !== wk && (PWARM.k = wk, PWARM.n = 0);
+  if (PWARM.n <= 16 && PWARM.n !== step){ const w = PWARM.n++; g.save(); g.globalAlpha = 0; bakeStamp('p', 'P' + wk + '|' + w, o, GL3D.posePitcher(w / 16), -.2, tx(412), ty(232), 74, false, 5.9); g.restore(); }
+  return bakeStamp('p', 'P' + wk + '|' + step, o, GL3D.posePitcher(step / 16), -.2, tx(412), ty(232), 74, false, 5.9);
 }
 function drawBatter(p, swingT, idle, rel){
   if (GP.ready){
     const bt = batTeam(), lefty = p.bats === 'L';
     const xL = lefty ? tx(478) : tx(300), yL = ty(449);
+    if (GP.warm !== bt.c1){ GP.warm = bt.c1; for (let i = 0; i < 8; i++){ gpHead(i); gpScaled(GP.batter[i], 'B' + i, bt.c1, Math.round(GP.batter[i].naturalWidth * (196 * TU) / (GP.batter[i].naturalHeight * .97)), Math.round(196 * TU / .97)); } }
     if (rel == null){ const f = batterFrame(rel, idle); return gpStamp(GP.batter[f], 'B' + f, bt.c1, xL, yL, 196, lefty, null, null, gpHead(f) - GP.batter[f].naturalWidth / 2 - (gpHead(0) - GP.batter[0].naturalWidth / 2)); }
     const pos = batterPos(rel), f0 = Math.floor(pos), f1 = Math.min(7, f0 + 1), u = pos - f0, ref = gpHead(0) - GP.batter[0].naturalWidth / 2;
     const dx = f => gpHead(f) - GP.batter[f].naturalWidth / 2 - ref;
