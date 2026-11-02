@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-01b';
+const BUILD = '11-01c';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1415,10 +1415,65 @@ function planFielders(){
   c.runLen = run;
   B.tf = c.need; B.pf = [c.tx, c.ty];
   planOutcome(B, c);
+  planCover(B, c);
 }
+// ── everybody moves: while one fielder chases the ball, the rest go where they would on a real field ──────────────────
+// Ground ball in the infield: 1B to the first-base bag (the throw may come there), 2B to the second-base bag in case the runner
+// runs on past first, SS (not fielding it) steps in ready for a short throw; if 2B or 1B fields it, SS covers second.
+// Ball in the air or to the outfield: the other outfielders run toward the ball to back it up, SS and 2B go out as the cut-off
+// men, 1B and 3B take their bags. Everyone leaves after his own reaction time and runs at his own speed.
+const STAND = { 1:[62.4, 62.4], 2:[125.9, 0], 3:[62.4, -62.4] };       // [depth, lat] where a fielder stands on a bag, glove up
+function planCover(B, c){
+  if (!FLD) return;
+  FLD.forEach(f => { f.go = null; });
+  if (B.hr || (B.foul && !B.isCatch)) return;
+  const land = B.pf ? { d:B.pf[0], lat:B.pf[1] } : (B.land || { d:c.tx, lat:c.ty });
+  const byPos = p => FLD.find(f => f.pos === p);
+  const send = (f, x, y, bag) => { if (f && f !== c && !f.go) f.go = { x, y, bag: bag || 0, dist: Math.hypot(x - f.d, y - f.lat) }; };
+  const infield = c.d < 150 && !B.isCatch;
+  const toward = (f, t, k) => [f.d + (t.d - f.d) * k, f.lat + (t.lat - f.lat) * k];
+  if (infield){
+    // 1) the throw is going to a bag: the nearest man who is not fielding it covers that bag
+    let covering = null;
+    if (B.thr){
+      const bags = [[63.64, 63.64], [127.28, 0], [63.64, -63.64]];
+      const bi = bags.findIndex(q => Math.abs(q[0] - B.thr.to[0]) < 1 && Math.abs(q[1] - B.thr.to[1]) < 1);
+      if (bi >= 0){
+        const cand = (bi === 0 ? ['1B', '2B'] : bi === 1 ? ['2B', 'SS'] : ['3B', 'SS']).map(byPos).filter(f => f && f !== c);
+        cand.sort((a, b) => Math.hypot(a.d - bags[bi][0], a.lat - bags[bi][1]) - Math.hypot(b.d - bags[bi][0], b.lat - bags[bi][1]));
+        if (cand[0]){ covering = cand[0]; send(covering, STAND[bi + 1][0], STAND[bi + 1][1], bi + 1); }
+      }
+    }
+    // 2) the standing assignments
+    const first = byPos('1B'), second = byPos('2B'), short = byPos('SS'), third = byPos('3B');
+    if (first !== c) send(first, STAND[1][0], STAND[1][1], 1);                                   // 1B to the bag
+    if (second !== c) send(second, STAND[2][0], STAND[2][1], 2);                                 // 2B to second, in case the runner goes past first
+    if (c === second || c === first) send(short, STAND[2][0] - 3, STAND[2][1] + 3, 2);           // SS covers second when the right side fields it
+    else if (short !== c){ const p = toward(short, { d:STAND[2][0], lat:0 }, .5); send(short, p[0], p[1], 0); }   // SS steps in, ready for a short throw
+    if (third !== c && third !== covering){ const p = toward(third, land, .25); send(third, p[0], p[1], 0); }
+    ['LF', 'CF', 'RF'].forEach(p => { const o = byPos(p); if (o){ const q = toward(o, { d:60, lat:o.lat * .6 }, .22); send(o, q[0], q[1], 0); } });   // outfielders step in to back up
+  } else {
+    // the ball is in the air or in the outfield
+    ['LF', 'CF', 'RF'].forEach(p => { const o = byPos(p); if (o && o !== c){ const q = toward(o, land, .45); send(o, q[0], q[1], 0); } });   // back it up
+    const len = Math.hypot(land.d, land.lat) || 1, dir = { d:land.d / len, lat:land.lat / len };
+    const cut = { d:Math.min(len * .5, 125) * dir.d, lat:Math.min(len * .5, 125) * dir.lat };
+    const second = byPos('2B'), short = byPos('SS');
+    const cutMan = land.lat <= 10 ? short : second, other = cutMan === short ? second : short;
+    send(cutMan, cut.d, cut.lat, 0);                                                              // the cut-off man lines up with the throw
+    send(other, STAND[2][0] - 2, STAND[2][1] + (other === short ? 3 : -2), 2);                    // the other covers second
+    send(byPos('1B'), STAND[1][0], STAND[1][1], 1);
+    send(byPos('3B'), STAND[3][0], STAND[3][1], 3);
+  }
+}
+
 // who is where right now
 function stepFielders(dt){
   if (!FLD || !BALL) return;
+  FLD.forEach(f => {
+    if (!f.go || f.chasing) return;
+    const tau = BALL.t - f.react - .12, s = Math.min(f.go.dist, fldDist(CFG.FIELDER_ACCEL_T, f.speed * .92, tau)), u = f.go.dist > 0 ? s / f.go.dist : 1;
+    f.x = lerp(f.d, f.go.x, u); f.y = lerp(f.lat, f.go.y, u); f.moving = u > 0 && u < 1;
+  });
   const c = BALL.chaser; if (!c) return;
   const tau = BALL.t - c.react, s = Math.min(c.runLen, fldDist(CFG.FIELDER_ACCEL_T, c.speed, tau) * CFG.ROUTE_EFF), f = c.runLen > 0 ? s / c.runLen : 1;
   c.x = lerp(c.d, c.tx, f); c.y = lerp(c.lat, c.ty, f);
@@ -1899,29 +1954,17 @@ function gxPlay(B){
   const face = (x, z) => Math.atan2(bx - x, bz - z);
   S.people.push(gxPerson('pit', 'pitch', pit, ft, 0, -60.5, face(0, -60.5), GL3D.poseReady(t), { y:.9, glove:1 }));
   S.people.push(gxPerson('cat', 'catch', ft.lineup[7] || ft.lineup[0], ft, 0, 3.4, Math.PI, GL3D.poseCatcher(0, 2.4, t), { glove:1, cap2:ft.c1 }));
-  // who covers the bag the throw is going to: the infielder who is closest to it (not the one with the ball)
-  const covers = {};
-  if (B.thr && !B.foul && !B.hr){
-    const BAGS = [[63.64, 63.64], [127.28, 0], [63.64, -63.64], [0, 0]];
-    const tgt = B.thr.to, bi = BAGS.findIndex(q => Math.abs(q[0] - tgt[0]) < 1 && Math.abs(q[1] - tgt[1]) < 1);
-    if (bi >= 0 && bi < 3){
-      let best = null;
-      (FLD || []).forEach(f => { if (f.chasing || !['1B', '2B', 'SS', '3B'].includes(f.pos)) return;
-        const bag = BAGS[bi], d = Math.hypot(f.x - bag[0], f.y - bag[1]); if (!best || d < best.d) best = { f, d }; });
-      if (best){ const bag = BAGS[bi], off = bi === 0 ? [-1.2, 1.5] : bi === 1 ? [0, -1.2] : [1.2, 1.5];
-        covers[best.f.i] = { d: bag[0] + (bi === 1 ? -1.4 : -1.2), x: bag[1] + off[0], dist: best.d }; }
-    }
-  }
   (FLD || []).forEach(f => {
     const X = f.y, Z = -f.x, key = 'f' + f.i;
     let pose, yaw = face(X, Z);
-    const cover = covers[f.i];
-    if (cover){                                                       // running to a bag to take the throw, then standing on it with the glove up
-      const u = clamp(fldDist(CFG.FIELDER_ACCEL_T, f.speed, B.t - f.react - .15) * CFG.ROUTE_EFF / Math.max(1, cover.dist), 0, 1);
-      const px = lerp(f.lat, cover.x, u), pz = lerp(-f.x, -cover.d, u);
-      const mv = gxMover(key, px, pz);
-      const tx = B.pf ? B.pf[1] : 0, tz = B.pf ? -B.pf[0] : -60, ry = mv.moved > .02 ? mv.yaw : Math.atan2(tx - px, tz - pz);
-      S.people.push(gxPerson(key, 'field', f.man, ft, px, pz, u < 1 ? ry : Math.atan2(tx - px, tz - pz), u < 1 ? GL3D.poseRun(mv.ph, f.speed) : GL3D.poseCatch(.55), { glove:1 }));
+    if (f.go && !f.chasing){
+      const mv = gxMover(key, X, Z), tx = B.pf ? B.pf[1] : 0, tz = B.pf ? -B.pf[0] : -60;
+      if (f.moving){ yaw = mv.moved > .02 ? mv.yaw : yaw; pose = GL3D.poseRun(mv.ph, f.speed); }
+      else {
+        yaw = Math.atan2(tx - X, tz - Z);                              // arrived: faces the ball
+        pose = f.go.bag && B.thr ? GL3D.poseCatch(.55) : GL3D.poseReady(t + f.i * .7);    // on the bag the glove goes up for the throw
+      }
+      S.people.push(gxPerson(key, 'field', f.man, ft, X, Z, yaw, pose, { glove:1 }));
       return;
     }
     if (f.chasing && !B.hr){
@@ -2063,13 +2106,38 @@ function batterFrame(rel, idle){
   if (rel < 100) return 6;
   return 7;
 }
+// one continuous motion: a fractional frame position along keyframes, so neighbouring painted frames cross-fade instead of popping
+const SW_KEYS = [[-190, 0], [-135, 2], [-80, 3], [-35, 4], [8, 5], [55, 6], [110, 7]];
+function batterPos(rel){
+  if (rel <= SW_KEYS[0][0]) return 0;
+  for (let i = 1; i < SW_KEYS.length; i++){
+    const [t1, f1] = SW_KEYS[i], [t0, f0] = SW_KEYS[i - 1];
+    if (rel < t1){ const u = (rel - t0) / (t1 - t0); return f0 + (f1 - f0) * (u * u * (3 - 2 * u)); }
+  }
+  return 7;
+}
+// the head's x in each frame (top of the figure), so the body stays put while the feet move through the stride
+const GP_HEAD = [];
+function gpHead(i){
+  if (GP_HEAD[i] != null) return GP_HEAD[i];
+  const im = GP.batter[i]; let hx = im.naturalWidth / 2;
+  try {
+    const cv = document.createElement('canvas'); cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+    const x = cv.getContext('2d'); x.drawImage(im, 0, 0); const d = x.getImageData(0, 0, cv.width, cv.height).data;
+    let top = -1; for (let y = 0; y < cv.height && top < 0; y++) for (let xx = 0; xx < cv.width; xx++) if (d[(y * cv.width + xx) * 4 + 3] > 60){ top = y; break; }
+    let sx = 0, n = 0; for (let y = top; y < top + cv.height * .16; y++) for (let xx = 0; xx < cv.width; xx++) if (d[(y * cv.width + xx) * 4 + 3] > 60){ sx += xx; n++; }
+    if (n) hx = sx / n;
+  } catch (e){}
+  return GP_HEAD[i] = hx;
+}
 // stamp one painted figure: feet at (xL, yL), about hT target pixels tall; `flip` mirrors him about his own feet
-function gpStamp(img, key, c1, xL, yL, hT, flip, figFrac){
+function gpStamp(img, key, c1, xL, yL, hT, flip, figFrac, alpha, dxSrc){
   const cv = gpTint(img, key, c1), s = (hT * TU) / (cv.height * (figFrac || .97)), dw = cv.width * s, dh = cv.height * s;
-  g.fillStyle = 'rgba(20,14,6,.30)'; g.beginPath(); g.ellipse(Math.round(xL), Math.round(yL) - .5, Math.max(4, hT * TU * .20), Math.max(1.2, hT * TU * .04), 0, 0, 7); g.fill();
+  if (alpha == null || alpha >= 1){ g.fillStyle = 'rgba(20,14,6,.30)'; g.beginPath(); g.ellipse(Math.round(xL), Math.round(yL) - .5, Math.max(4, hT * TU * .20), Math.max(1.2, hT * TU * .04), 0, 0, 7); g.fill(); }
   g.save(); g.translate(Math.round(xL), Math.round(yL - dh)); if (flip) g.scale(-1, 1);
+  if (alpha != null) g.globalAlpha = alpha;
   g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-  g.drawImage(cv, Math.round(-dw / 2), 0, Math.round(dw), Math.round(dh));
+  g.drawImage(cv, Math.round(-dw / 2 - (dxSrc || 0) * s), 0, Math.round(dw), Math.round(dh));
   g.imageSmoothingEnabled = false; g.restore();
 }
 const phaseStep = (t, n) => Math.floor((t * 1.6) % 1 * n);
@@ -2087,8 +2155,13 @@ function drawPitcherAt(xL, yL, u){
 function drawBatter(p, swingT, idle, rel){
   if (GP.ready){
     const bt = batTeam(), lefty = p.bats === 'L';
-    const f = batterFrame(rel, idle);
-    return gpStamp(GP.batter[f], 'B' + f, bt.c1, lefty ? tx(478) : tx(300), ty(449), 196, lefty);
+    const xL = lefty ? tx(478) : tx(300), yL = ty(449);
+    if (rel == null){ const f = batterFrame(rel, idle); return gpStamp(GP.batter[f], 'B' + f, bt.c1, xL, yL, 196, lefty, null, null, gpHead(f) - GP.batter[f].naturalWidth / 2 - (gpHead(0) - GP.batter[0].naturalWidth / 2)); }
+    const pos = batterPos(rel), f0 = Math.floor(pos), f1 = Math.min(7, f0 + 1), u = pos - f0, ref = gpHead(0) - GP.batter[0].naturalWidth / 2;
+    const dx = f => gpHead(f) - GP.batter[f].naturalWidth / 2 - ref;
+    gpStamp(GP.batter[f0], 'B' + f0, bt.c1, xL, yL, 196, lefty, null, null, dx(f0));
+    if (u > .02 && f1 !== f0) gpStamp(GP.batter[f1], 'B' + f1, bt.c1, xL, yL, 196, lefty, null, u, dx(f1));
+    return;
   }
   if (!plateOK()) return drawBatterOld(p, swingT, idle);
   const bt = batTeam(), lefty = p.bats === 'L', cxT = tx(300), cx = lefty ? tx(478) : cxT;
