@@ -1966,7 +1966,7 @@ function gxPlayHud(B){
 
 // ── people stamped onto the painted field: each one is a 3D player baked into a small canvas at the picture's own pixel size ──
 const PIXK = .5;                                                   // bake pixels per target pixel (so one art pixel = 2 target pixels)
-const PLATE = new Image(); PLATE.onload = () => imgReady++; PLATE.src = 'assets/fields/plate_raw.png';
+const PLATE = new Image(); PLATE.onload = () => imgReady++; PLATE.src = 'assets/fields/plate_clean.png';
 const IDLE = new Image(); IDLE.onload = () => imgReady++; IDLE.src = 'assets/fields/idle.png';        // the target picture itself, with the ball, its dotted path and the pill taken out
 const IDLE_BOX = { bat:[214,236,344,452], cat:[316,350,446,492], pit:[388,168,436,236] };
 const plateOK = () => ready(PLATE) && ready(IDLE) && !window.__noPlate && window.GL3D && GL3D.bakeInit && GL3D.bakeInit();
@@ -1979,7 +1979,7 @@ function drawPlateBG(){
     g.drawImage(PLATE, 0, 0, 5, 492, 0, 0, x0 + 1, H);
     g.drawImage(PLATE, 755, 0, 5, 492, x0 + pw - 1, 0, W - x0 - pw + 1, H);
   }
-  g.drawImage(IDLE, 2, 0, 756, 492, x0 + 2 * s, 0, 756 * s, H);
+  g.drawImage(PLATE, 2, 0, 756, 492, x0 + 2 * s, 0, 756 * s, H);   // the field with NO people in it: every figure is drawn live, so idle and moving look the same
 }
 // paint the clean field back over one character's box so he can be redrawn moving
 function patchBox(k){
@@ -1992,7 +1992,7 @@ function bakeStamp(kind, key, o, pose, yaw, xL, yL, hT, flip, refFt){
   const c = GL3D.bake(key + '|' + px, o, pose, yaw, px);
   if (!c) return false;
   const k = TU / PIXK, w = c.width * k, h = c.height * k, feetFromBottom = c._e.base * c._ppf * k;
-  g.save(); g.translate(Math.round(xL), Math.round(yL + feetFromBottom - h)); if (flip){ g.translate(w / 2, 0); g.scale(-1, 1); g.translate(-w / 2, 0); }
+  g.save(); g.translate(Math.round(xL), Math.round(yL + feetFromBottom - h)); if (flip) g.scale(-1, 1);       // mirror about his own centre line
   g.translate(-w / 2, 0);
   g.imageSmoothingEnabled = false; g.drawImage(c, 0, 0, w, h); g.restore();
   g.fillStyle = 'rgba(20,14,6,.28)'; g.beginPath(); g.ellipse(Math.round(xL), Math.round(yL) - .2, Math.max(2, hT * TU * .16), Math.max(.8, hT * TU * .035), 0, 0, 7); g.fill();
@@ -2075,17 +2075,17 @@ function drawBatterView(dt){
   if (plateOK()) drawPlateBG(); else drawFieldHD(park, frame);
   const ft = fldTeam();
   const PM = plateOK();
-  if (!PM) drawFielders(ft);
+  drawFielders(ft);
 
   // the pitcher on the mound: set, lift, then the target's own release
   const M0 = proj(60.5, 0);
   let u = 0;
   if (P && P.thrown) u = clamp(.70 + (P.t / P.dur) * .44, 0, 1);
   else if (P) u = clamp((P.windup || 0) * .70, 0, .70);
-  if (!PM || !(P && P.thrown && u < .84 && u > .66)){ if (PM) patchBox('pit'); drawPitcherAt(M0.x, M0.y - 14 * TU, u); }   // in the target the pitcher is mid-release, so that frame is the picture itself
+  drawPitcherAt(M0.x, M0.y - 14 * TU, u);
 
   // the batter waits, then swings; the catcher crouches with the umpire right in front of him
-  if (!PM || swing || M.batter.bats === 'L'){ if (PM) patchBox('bat'); const sT = swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null; if (!(PM && drawTargetBatter(sT, M.batter.bats === 'L'))) drawBatter(M.batter, sT, frame); }   // waiting at the plate he is the picture's own batter
+  { const sT = swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null; drawBatter(M.batter, sT, frame); }
 
   // the timing cue: a ring closes in on the strike zone; tap when it touches (green = best)
   if (P && P.thrown && P.state === 'flight' && !swing && userBats()){
@@ -2115,7 +2115,7 @@ function drawBatterView(dt){
       g.beginPath(); g.arc(end.x, end.y, 3 + pop * 7, 0, 7); g.stroke(); }
   }
 
-  if (!PM) drawBehindPlate();                                    // (in the picture the catcher and umpire are already painted in)
+  drawBehindPlate();
   // the strike zone, a faint box over the plate
   const live = P && (P.thrown || P.aim || phase === 'pitching');
   g.strokeStyle = live ? '#ffffff55' : '#ffffff26'; g.lineWidth = 1;
