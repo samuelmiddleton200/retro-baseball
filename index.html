@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-01k';
+const BUILD = '11-01l';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2193,7 +2193,7 @@ function drawBatter(p, swingT, idle, rel){
     const xL = lefty ? tx(478) : tx(300), yL = ty(449);
     if (GP.warm !== bt.c1){ GP.warm = bt.c1; for (let i = 0; i < 8; i++){ gpHead(i); gpScaled(GP.batter[i], 'B' + i, bt.c1, Math.round(GP.batter[i].naturalWidth * (196 * TU) / (GP.batter[i].naturalHeight * .97)), Math.round(196 * TU / .97)); } }
     if (rel == null){ const f = batterFrame(rel, idle); return gpStamp(GP.batter[f], 'B' + f, bt.c1, xL, yL, 196, lefty, null, null, gpHead(f) - GP.batter[f].naturalWidth / 2 - (gpHead(0) - GP.batter[0].naturalWidth / 2)); }
-    const pos = batterPos(rel), f0 = Math.floor(pos), f1 = Math.min(7, f0 + 1), u = pos - f0, ref = gpHead(0) - GP.batter[0].naturalWidth / 2;
+    const pos = batterPos(rel), snap = pos > 3.5, f0 = snap ? Math.min(7, Math.round(pos)) : Math.floor(pos), f1 = snap ? f0 : Math.min(7, f0 + 1), u = pos - f0, ref = gpHead(0) - GP.batter[0].naturalWidth / 2;
     const dx = f => gpHead(f) - GP.batter[f].naturalWidth / 2 - ref;
     gpStamp(GP.batter[f0], 'B' + f0, bt.c1, xL, yL, 196, lefty, null, null, dx(f0));
     if (u > .02 && f1 !== f0) gpStamp(GP.batter[f1], 'B' + f1, bt.c1, xL, yL, 196, lefty, null, u, dx(f1));
