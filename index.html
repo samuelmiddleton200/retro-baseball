@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-02z';
+const BUILD = '11-03a';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1243,26 +1243,38 @@ function runPosCtl(key, man, s0, s1){
     c = RUNCTL[key] = { te:0, last:BALL.t, cap: manual ? Math.min(360, s0 + (forced ? 90 : 0)) : s1, s0, s1, pos:s0, man, manual, forced, arr:{} };
   }
   const dt = BALL.t - c.last; c.last = BALL.t; c.s1 = s1;
+  if (c.back){                                                                  // turned round: he runs back toward the base he left
+    c.pos = Math.max(c.back.to, c.pos - sprintFps(man.speed) * Math.max(0, dt));
+    if (c.pos <= c.back.to + .01){ c.pos = c.back.to; c.cap = c.back.to; c.te = runTime(man.speed, c.pos - s0); c.back = null; }
+    return c.pos;
+  }
   if (dt > 0 && s0 + runDist(man.speed, c.te - CFG.RUN_START_DELAY) < c.cap - .01) c.te += dt;      // he only runs while he is short of the base he is held to
   c.pos = Math.min(c.cap, s0 + runDist(man.speed, c.te - CFG.RUN_START_DELAY));
   for (let k = 1; k <= 4; k++) if (c.arr[k] == null && 90 * k > s0 && c.pos >= 90 * k - .05) c.arr[k] = BALL.t;   // when he got to each base
   return c.pos;
 }
+function runBack(key){                                                         // double-tap: turn round and go back to the base behind him
+  const c = RUNCTL[key]; if (!c || !c.manual || c.out || c.back) return;
+  const to = Math.floor((c.pos - .5) / 90) * 90;
+  if (to < 90 || to < c.s0) return;                                              // nothing behind him but home plate
+  c.back = { to }; c.cap = to;
+}
 function runToggle(key){
   const c = RUNCTL[key]; if (!c || !c.manual) return;
+  if (c.back){ c.back = null; c.te = runTime(c.man.speed, c.pos - c.s0); c.cap = Math.min(360, Math.ceil((c.pos + .5) / 90) * 90); return; }     // changed his mind: forward again
   const ah = runAhead(c);
   if (c.cap > ah) c.cap = Math.max(ah, c.pos);            // green -> red: stop at the base ahead
   else c.cap = Math.min(360, ah + 90);                    // red -> green: go on through it and stop at the next
 }
-const runnersSettled = () => Object.values(RUNCTL).every(c => c.pos >= c.cap - .05);
+const runnersSettled = () => Object.values(RUNCTL).every(c => !c.back && c.pos >= c.cap - .05);
 // kept for the old code path: every runner gets what the play gave him
 function runnerGain(key, s0, n){ return n; }
 function drawRunDiamond(key, sx, sy){
   const c = RUNCTL[key]; if (!c) return;
-  const green = c.cap > runAhead(c), settled = c.pos >= c.cap - .05, rr = 2.6;
+  const green = c.cap > runAhead(c), settled = !c.back && c.pos >= c.cap - .05, rr = 2.6;
   g.save(); g.globalAlpha = settled ? .6 : 1; g.translate(sx, sy);
   g.beginPath(); g.moveTo(0, -rr); g.lineTo(rr, 0); g.lineTo(0, rr); g.lineTo(-rr, 0); g.closePath();
-  g.fillStyle = green ? '#3ddc6a' : '#ff4d4d'; g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = .9; g.stroke(); g.restore();
+  g.fillStyle = c.back ? '#4aa3ff' : green ? '#3ddc6a' : '#ff4d4d'; g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = .9; g.stroke(); g.restore();      // blue = going back
   RUNBTN.push({ key, x: sx - 14, y: sy - 14, w: 28, h: 28 });                 // the tap area stays comfortable even though the diamond is small
 }
 function launchBall(ev, la, sa, qual){
@@ -1315,7 +1327,7 @@ function manualThrow(B){
     if (B.t < P.t0) return;                                                     // the transfer: glove to hand
     let best = null;
     for (const key in RUNCTL){
-      const c = RUNCTL[key]; if (c.out || c.pos >= c.cap - .05) continue;
+      const c = RUNCTL[key]; if (c.out || (!c.back && c.pos >= c.cap - .05)) continue;
       const nb = c.cap, bi = Math.round(nb / 90) - 1; if (bi < 0 || bi > 3) continue;                // throw to the base he is running to
       if (!best || c.pos > best.c.pos) best = { key, c, nb, bi };
     }
@@ -1327,14 +1339,14 @@ function manualThrow(B){
   if (P.ph === 'wait'){                                                          // he holds the ball on the base until the runner arrives, then tags him
     B.d = P.x; B.lat = P.y; B.h = 4;
     const c = P.run.c;
-    if (c.pos >= P.run.nb - .05){ c.out = true; c.cap = c.pos; c.outT = B.t; say('TAGGED OUT!'); B.pass = { ph:'hold', x:P.x, y:P.y, t0:B.t + .5 }; }
+    if (c.back ? c.pos <= P.run.nb + .05 : c.pos >= P.run.nb - .05){ c.out = true; c.back = null; c.cap = c.pos; c.outT = B.t; say('TAGGED OUT!'); B.pass = { ph:'hold', x:P.x, y:P.y, t0:B.t + .5 }; }
     return;
   }
   const u = clamp((B.t - P.t0) / Math.max(.05, P.t1 - P.t0), 0, 1);
   B.d = lerp(P.fr[0], P.to[0], u); B.lat = lerp(P.fr[1], P.to[1], u); B.h = 4 + Math.sin(u * Math.PI) * Math.min(16, P.len * .09);
   if (B.t >= P.t1){
-    const c = P.run.c, extra = P.run.nb > c.s0 + (c.forced ? 90 : 0) + .5;           // only a base beyond the one he has to take can be lost
-    if (extra && !c.out && c.pos < P.run.nb - .05){ B.pass = { ph:'wait', x:P.to[0], y:P.to[1], run:P.run }; return; }
+    const c = P.run.c, extra = c.back || P.run.nb > c.s0 + (c.forced ? 90 : 0) + .5;   // only a base beyond the one he has to take can be lost; going back is always a tag play
+    if (extra && !c.out && (c.back ? c.pos > P.run.nb + .05 : c.pos < P.run.nb - .05)){ B.pass = { ph:'wait', x:P.to[0], y:P.to[1], run:P.run }; return; }
     B.pass = { ph:'hold', x:P.to[0], y:P.to[1], t0:B.t + .5 };
   }
 }
@@ -3843,7 +3855,12 @@ function down(e){
   if (M && M.inter && M.inter.t > 350 && phase !== 'menu'){ M.inter = null; return; }
   touch = { x0:p.x, y0:p.y, x:p.x, y:p.y, t:performance.now(), used:false };
   for (const b of btns) if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h){ b.fn(); touch.used = true; return; }
-  if (P && P.state === 'inplay') for (const b of RUNBTN) if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h){ runToggle(b.key); touch.used = true; return; }
+  if (P && P.state === 'inplay') for (const b of RUNBTN) if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h){
+    const c = RUNCTL[b.key], now = performance.now();
+    if (c && c.lastTap && now - c.lastTap < 330){ runToggle(b.key); runBack(b.key); c.lastTap = 0; }      // two quick taps: turn round (the first tap's flip is undone)
+    else { runToggle(b.key); if (c) c.lastTap = now; }
+    touch.used = true; return;
+  }
   if (phase === 'pitching'){
     // tap inside the zone area to aim and throw
     if (p.y > 40 && p.y < H - 4){
@@ -3874,7 +3891,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
     P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
-  runToggle, drawPlay, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
+  runToggle, runBack, drawPlay, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────
