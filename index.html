@@ -215,7 +215,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03x';
+const BUILD = '11-03y';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -2081,7 +2081,7 @@ function gxOK(){
 }
 function gxSize(){ const rows = clamp(Math.round(cv.height / 2.3), 300, 540); /* about 4x the pixels the first 3D version used */ if (GX.w !== W || GX.rows !== rows){ GL3D.rows = rows; GL3D.resize(W, H); GX.w = W; GX.rows = rows; } }
 
-const gxLook = m => ({ skin: (m.look && m.look.skin) || '#d9a577', hair: (m.look && m.look.hair) || '#2a1c14' });
+const gxLook = m => ({ skin: skinHex(m) || (m.look && m.look.skin) || '#d9a577', hair: (m.look && m.look.hair) || '#2a1c14' });
 function gxPerson(key, kind, man, team, x, z, yaw, pose, o = {}){
   const L = gxLook(man);
   const away = team === M.away, shirt = uni(team);                        // the club's colour for this match
@@ -2330,7 +2330,8 @@ function gxSprites(list, B){
   GX.sp = GX.sp || {};
   rows.forEach(({ p, q }) => {
     const prev = GX.sp[p.key]; GX.sp[p.key] = [p.x, p.z];
-    if (p.sp && GPF.ready && GP.ready){                        // the painted figures: the same sprites as the at-bat view, sized by perspective
+    if (p.sp && GPF.ready && GP.ready){
+      GPSK = p.skin || '';                        // the painted figures: the same sprites as the at-bat view, sized by perspective
       const head = GL3D.toScreen(p.x, 6.2, p.z, W, H), hPx = Math.max(12, Math.round((q.y - head.y) * 1.05 / 3) * 3);       // sizes in steps of 3, so the scaled-sprite cache is reused instead of rebuilt every frame
       (GX.pos = GX.pos || {})[p.key] = [q.x, q.y, hPx];
       const bob = (p.sp.bob || 0) * hPx * .07;
@@ -2442,16 +2443,25 @@ for (let i = 0; i < 8; i++){
 }
 const GP_CACHE = new Map();
 // every magenta pixel (helmet, jersey) takes the club's colour and keeps its shading
-function gpTint(img, key, c1){
-  const k = key + c1;
+let GPSK = '';                                       // the skin tone the next sprite is drawn with (set just before it is stamped)
+function gpTint(img, key, c1, skin = GPSK){
+  const k = key + c1 + skin;
   if (GP_CACHE.has(k)) return GP_CACHE.get(k);
   const cv = document.createElement('canvas'); cv.width = img.naturalWidth; cv.height = img.naturalHeight;
   const x = cv.getContext('2d'); x.drawImage(img, 0, 0);
   try {
-    const im = x.getImageData(0, 0, cv.width, cv.height), d = im.data, [br, bg, bb] = hexRgb(c1);
+    const im = x.getImageData(0, 0, cv.width, cv.height), d = im.data, [br, bg, bb] = hexRgb(c1), sk = skin ? hexRgb(skin) : null;
     for (let p = 0; p < d.length; p += 4){
       if (d[p + 3] < 8) continue;
       const r = d[p], gr = d[p + 1], b = d[p + 2];
+      if (sk && r > 77 && r > gr && gr > b){
+        const hu = (gr - b) / (r - b), sa = (r - b) / r;
+        if (hu > .083 && hu < .36 && sa > .2 && sa < .75){
+          const k = clamp((.3 * r + .59 * gr + .11 * b) / 172, .3, 1.3);
+          d[p] = clamp(sk[0] * k, 0, 255); d[p + 1] = clamp(sk[1] * k, 0, 255); d[p + 2] = clamp(sk[2] * k, 0, 255);
+          continue;
+        }
+      }
       if (r > 70 && b > 70 && gr < r * .66 && gr < b * .66 && Math.abs(r - b) < r * .42){
         const lum = .3 * r + .59 * gr + .11 * b, t = clamp((lum - 34) / 90, 0, 1), dk = (.3 * br + .59 * bg + .11 * bb) < 80;
         const f = (.34 + .95 * t) * (dk ? 1.3 : 1), hi = (t > .85 ? 30 : 0) + (dk ? 16 + 34 * t : 0);
@@ -2503,13 +2513,13 @@ function gpHead(i){
 const GP_SCALED = new Map();
 // the tinted frame resampled ONCE to the size it is drawn at, so each frame is a plain 1:1 blit (the swing no longer rescales a big
 // image every frame)
-function gpScaled(img, key, c1, dw, dh){
-  const k = key + c1 + '|' + dw + 'x' + dh;
+function gpScaled(img, key, c1, dw, dh, skin = GPSK){
+  const k = key + c1 + skin + '|' + dw + 'x' + dh;
   let c = GP_SCALED.get(k);
   if (!c){
-    const src = gpTint(img, key, c1); c = document.createElement('canvas'); c.width = dw; c.height = dh;
+    const src = gpTint(img, key, c1, skin); c = document.createElement('canvas'); c.width = dw; c.height = dh;
     const x = c.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(src, 0, 0, dw, dh);
-    GP_SCALED.set(k, c); if (GP_SCALED.size > 120) GP_SCALED.delete(GP_SCALED.keys().next().value);
+    GP_SCALED.set(k, c); if (GP_SCALED.size > 260) GP_SCALED.delete(GP_SCALED.keys().next().value);
   }
   return c;
 }
@@ -2531,6 +2541,7 @@ function drawFielderSprite(xL, yL, pos, grab, hOver){
   if (!plateOK()) return drawFielderSpriteOld(xL, yL, pos, grab);
   if (GPF.ready){
     const i = Math.max(0, FIELDERS.findIndex(f => f[2] === pos)), f = ((frame + i * 37) % 150) < 90 ? 0 : 1;      // he shifts his weight every couple of seconds
+    GPSK = skinHex(fldTeam().lineup[i]);
     return gpStamp(GPF.img[f], 'FD' + f, uni(fldTeam()), xL, yL, (hOver || figH(yL / TU)) * 1.55, pos === '1B' || pos === '2B' || pos === 'RF', .96);
   }
   const ft = fldTeam(), i = Math.max(0, FIELDERS.findIndex(f => f[2] === pos)), man = ft.lineup[i] || ft.lineup[0], hT = hOver || figH(yL / TU);
@@ -2545,7 +2556,7 @@ function drawPitcherAt(xL, yL, u){
   if (!plateOK()) return drawPitcherAtOld(xL, yL, u);
   if (GPP.ready){
     const pos = u < .70 ? (u / .70) * 5 : 5 + clamp((u - .70) / .16, 0, 1) * 2, f0 = Math.min(7, Math.floor(pos)), f1 = Math.min(7, f0 + 1), k = pos - f0, c1 = uni(fldTeam());
-    const X = tx(412), Y = ty(232);
+    const X = tx(412), Y = ty(232); GPSK = skinHex(curPitcher());
     gpStamp(GPP.img[f0], 'PT' + f0, c1, X, Y, 80, false, .96);
     if (k > .03 && f1 !== f0) gpStamp(GPP.img[f1], 'PT' + f1, c1, X, Y, 80, false, .96, k);
     return;
@@ -2559,7 +2570,7 @@ function drawPitcherAt(xL, yL, u){
 function drawBatter(p, swingT, idle, rel){
   if (GP.ready){
     const bt = batTeam(), lefty = p.bats === 'L';
-    const xL = lefty ? tx(478) : tx(300), yL = ty(449);
+    const xL = lefty ? tx(478) : tx(300), yL = ty(449); GPSK = skinHex(p);
     if (GP.warm !== uni(bt)){ GP.warm = uni(bt); for (let i = 0; i < 8; i++){ gpHead(i); gpScaled(GP.batter[i], 'B' + i, uni(bt), Math.round(GP.batter[i].naturalWidth * (196 * TU) / (GP.batter[i].naturalHeight * .97)), Math.round(196 * TU / .97)); } }
     if (rel == null){ const f = batterFrame(rel, idle); return gpStamp(GP.batter[f], 'B' + f, uni(bt), xL, yL, 196, lefty, null, null, gpHead(f) - GP.batter[f].naturalWidth / 2 - (gpHead(0) - GP.batter[0].naturalWidth / 2), true); }
     const pos = batterPos(rel), snap = pos > 3.5, f0 = snap ? Math.min(7, Math.round(pos)) : Math.floor(pos), f1 = snap ? f0 : Math.min(7, f0 + 1), u = pos - f0, ref = gpHead(0) - GP.batter[0].naturalWidth / 2;
@@ -3071,6 +3082,15 @@ function portSkin(i){                                   // the average skin colo
   try { const d = x.getImageData(0, 0, 24, 24).data; for (let k = 0; k < d.length; k += 4){ r += d[k]; gg += d[k + 1]; b += d[k + 2]; } r /= 576; gg /= 576; b /= 576; }
   catch (e){ r = 200; gg = 150; b = 110; }
   return p._skin = [r, gg, b];
+}
+// the skin colour of a player's card (the painted face he was given), as a hex string: this is what the sprites wear
+function skinHex(m){
+  if (!m) return '';
+  if (m._skinHex) return m._skinHex;
+  if (!m.name || !PORT.some(p => p._ok)) return (m.look && m.look.skin) || '';
+  const i = portraitFor(m); if (i < 0) return (m.look && m.look.skin) || '';
+  const [r, gg, b] = portSkin(i), h = v => Math.round(clamp(v, 0, 255)).toString(16).padStart(2, '0');
+  return m._skinHex = '#' + h(r) + h(gg) + h(b);
 }
 function nameHash(c){ let h = 7; for (const ch of c.name) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; }
 // Every player gets his own face where there are enough: the faces nearest his skin tone, the least-used first, and it is
@@ -4109,7 +4129,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
     P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
-  runToggle, runBack, drawPlay, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
+  runToggle, runBack, drawPlay, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────
