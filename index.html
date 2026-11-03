@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-02e';
+const BUILD = '11-02f';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1318,7 +1318,7 @@ function ballAt(f){
   const e = f * f;
   const rel = releasePt();
   const tx = ZONE.x + ZONE.w / 2 + P.tx * ZONE.w / 2, ty = ZONE.y + ZONE.h / 2 + P.ty * ZONE.h / 2;
-  return { x: lerp(rel.x, tx + P.br[0] * e, e), y: lerp(rel.y, ty + P.br[1] * e, e), r: lerp(1.6, 4.6, e) };
+  return { x: lerp(rel.x, tx + P.br[0] * e, e), y: lerp(rel.y, ty + P.br[1] * e, e), r: lerp(1.15, 3.5, e) };
 }
 function releasePt(){
   // the ball leaves the hand of the painted pitcher: sprite pixel (28, 59) of the release frame, so it never pops in somewhere else
@@ -2358,16 +2358,11 @@ function drawBatterView(dt){
     }
     drawBall(q.x, q.y, q.r);
   }
-  else if (P && P.thrown && P.t >= P.dur && !(P.caught > 0) && P.state !== 'inplay' && !P.result){ const e = ballAt(1); drawBall(e.x, e.y, e.r); }
-  else if (P && P.caught > 0 && P.state !== 'inplay'){            // into the catcher's mitt, with a little pop
-    // from where the pitch ended to the catcher's mitt: 0 = where it ended, 1 = in the mitt (it used to run the other way,
-    // snapping to the mitt and sliding back out, which on a ball looked like it flew off and returned somewhere random)
-    const k0 = clamp(P.caught / 260, 0, 1), k = k0 * k0 * (3 - 2 * k0), end = mittPt(), from = ballAt(1);
-    const x = lerp(from.x, end.x, k), y = lerp(from.y, end.y, k);
-    drawBall(x, y, 3.4);
-    if (k > .9){ const pop = (k - .9) * 10;
-      g.strokeStyle = `rgba(255,255,255,${(1 - pop) * .7})`; g.lineWidth = 1;
-      g.beginPath(); g.arc(end.x, end.y, 3 + pop * 7, 0, 7); g.stroke(); }
+  else if (P && P.thrown && P.t >= P.dur && P.state !== 'inplay' && P.state !== 'flight' && P.result && P.result !== 'hit' && P.result !== 'foul'){
+    // the pitch is over: the ball stops dead where it ended and stays for the whole call (about 1.4 s), so you can see where it landed
+    const e = ballAt(1), tn = P.state === 'catch' ? (P.caught || 0) : CATCH_TIME + (P.hold || 0);
+    if (tn < 700){ const k = tn / 700; g.strokeStyle = `rgba(255,255,255,${(1 - k) * .75})`; g.lineWidth = 1; g.beginPath(); g.arc(e.x, e.y, e.r + 2 + k * 9, 0, 7); g.stroke(); }
+    drawBall(e.x, e.y, e.r);
   }
 
   drawBehindPlate();
