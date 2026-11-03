@@ -43,5 +43,5 @@ for p0 in range(0, 30, per):
     pages.append(pg)
 out = r'C:\Users\samue\OneDrive\Desktop\MLB team colors.pdf'
 pages[0].save(out, 'PDF', resolution=150.0, save_all=True, append_images=pages[1:])
-pages[0].save(r'C:/Users/samue/AppData/Local/Temp/claude/C--Users-samue/edcf540e-0bc8-4ced-b2bb-81aee2de483c/scratchpad/colors_p1.png')
+[p.save(r'C:/Users/samue/AppData/Local/Temp/claude/C--Users-samue/edcf540e-0bc8-4ced-b2bb-81aee2de483c/scratchpad/colors_p%d.png' % (i + 1)) for i, p in enumerate(pages)]
 print('wrote', out, len(pages), 'pages')

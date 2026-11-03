@@ -139,9 +139,9 @@ const colOf = v => tierOf(v).col;
 // ── the 30 real teams (names only; every player is made up) ────────────────
 const TEAMS = [
   ['BAL','Baltimore','Orioles','#df4601','#000000','AL','E'], ['BOS','Boston','Red Sox','#bd3039','#0c2340','AL','E'],
-  ['NYY','New York','Yankees','#132448','#c4ced4','AL','E'],  ['TB','Tampa Bay','Rays','#092c5c','#8fbce6','AL','E'],
+  ['NYY','New York','Yankees','#0c2340','#c4ced3','AL','E'],  ['TB','Tampa Bay','Rays','#092c5c','#8fbce6','AL','E'],
   ['TOR','Toronto','Blue Jays','#134a8e','#e8291c','AL','E'], ['CWS','Chicago','White Sox','#27251f','#c4ced4','AL','C'],
-  ['CLE','Cleveland','Guardians','#0c2340','#e31937','AL','C'],['DET','Detroit','Tigers','#0c2340','#fa4616','AL','C'],
+  ['CLE','Cleveland','Guardians','#00385d','#e50022','AL','C'],['DET','Detroit','Tigers','#0c2340','#fa4616','AL','C'],
   ['KC','Kansas City','Royals','#004687','#bd9b60','AL','C'], ['MIN','Minnesota','Twins','#002b5c','#d31145','AL','C'],
   ['HOU','Houston','Astros','#002d62','#eb6e1f','AL','W'],    ['LAA','Los Angeles','Angels','#ba0021','#003263','AL','W'],
   ['ATH','Athletics','Athletics','#003831','#efb21e','AL','W'],['SEA','Seattle','Mariners','#0c2c56','#005c5c','AL','W'],
@@ -150,8 +150,8 @@ const TEAMS = [
   ['PHI','Philadelphia','Phillies','#e81828','#002d72','NL','E'],['WSH','Washington','Nationals','#ab0003','#14225a','NL','E'],
   ['CHC','Chicago','Cubs','#0e3386','#cc3433','NL','C'],      ['CIN','Cincinnati','Reds','#c6011f','#000000','NL','C'],
   ['MIL','Milwaukee','Brewers','#12284b','#ffc52f','NL','C'], ['PIT','Pittsburgh','Pirates','#27251f','#fdb827','NL','C'],
-  ['STL','St. Louis','Cardinals','#c41e3a','#0c2340','NL','C'],['ARI','Arizona','Diamondbacks','#a71930','#e3d4ad','NL','W'],
-  ['COL','Colorado','Rockies','#333366','#c4ced4','NL','W'],  ['LAD','Los Angeles','Dodgers','#005a9c','#ffffff','NL','W'],
+  ['STL','St. Louis','Cardinals','#c41e3a','#0c2340','NL','C'],['ARI','Arizona','Diamondbacks','#a71930','#000000','NL','W'],
+  ['COL','Colorado','Rockies','#333366','#c4ced4','NL','W'],  ['LAD','Los Angeles','Dodgers','#005a9c','#ef3e42','NL','W'],
   ['SD','San Diego','Padres','#2f241d','#ffc425','NL','W'],   ['SF','San Francisco','Giants','#fd5a1e','#27251f','NL','W'],
 ].map(t => ({ ab:t[0], city:t[1], nick:t[2], c1:t[3], c2:t[4], lg:t[5], div:t[6] }));
 
@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03g';
+const BUILD = '11-03h';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
