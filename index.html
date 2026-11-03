@@ -216,12 +216,13 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-04k';
+const BUILD = '11-04o';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
 
 function newGame(teamAb){
+  try { localStorage.removeItem('retrobaseball.match.v1'); } catch (e){}
   const lvl = () => 70 + bell() * 28;
   _cardId = 1;
   const teams = TEAMS.map(t => {
@@ -1575,7 +1576,7 @@ function foulBall(dErr, edge){
 
 // solid contact: this is where timing, location, the hitter and a little luck meet
 const HR_ANGLE = 27.5;                                       // the perfect home run launch angle, degrees
-const EVMAX = [81, 99, 104, 112, 119, 125, 138];                  // fastest ball (mph) at power 60, 70, ... 120
+const EVMAX = [81, 105, 111, 115, 120, 126, 139];                  // fastest ball (mph) at power 60, 70, ... 120
 const evMin = p => 40 + (p - 60) * .5;                          // mph: slowest ball a hitter of this power can hit
 const evMax = p => { const x = clamp((p - 60) / 10, 0, 6), i = Math.min(5, Math.floor(x)); return lerp(EVMAX[i], EVMAX[i + 1], x - i); };   // and the fastest
 function makeContact(qual, dErr){
@@ -1583,16 +1584,20 @@ function makeContact(qual, dErr){
   // early swings pull the ball, late swings go the other way
   const pull = clamp(-dErr / 140, -1, 1) * (b.bats === 'L' ? -1 : 1);
   const sa = clamp(pull * 28 + (bell() - .5) * 70, -62, 62);        // beyond 45 degrees it is a foul
-  // Launch angle. The perfect home run angle is 27.5 degrees. Good timing and good contact put the ball tightly around it. Worse timing or worse
-  // contact scatter it: too flat (a line-drive out) or far too high (a pop fly). Bad timing with GOOD contact tends to top it into the ground (a
-  // grounder, usually safe); bad timing with bad contact is the worst: pop flies and line outs, and the sweet angle almost never comes up.
+  // Launch angle, all dice. Every swing rolls one of three things:
+  //  - the sweet angle (25-30 degrees, the home run angle): better timing and better contact make it more likely,
+  //  - a grounder (0-8 degrees): better contact is also more likely to hit one, and mis-timed good contact tops it into the ground,
+  //  - otherwise a scattered angle, flat or high: the worse the hitter and the timing, the wider the scatter (line-drive outs and pop flies).
   const tq = clamp((qual - .26) / .74, 0, 1), cn = clamp((b.contact - 60) / 60, 0, 1);              // timing 0..1 (1 = perfect) and contact 0..1
   const skill = Math.pow(tq, 1.2) * (.55 + .45 * cn);
-  const sigma = lerp(76, 10, skill);                                                                // degrees of scatter round the mean
-  const mean = HR_ANGLE - (1 - tq) * cn * 24;                                                      // mis-timed but good contact: pushed down toward a grounder
-  let la = mean + gauss() * sigma;
-  if (Math.random() < (1 - tq) * (1 - cn) * .75) la = chance(.5) ? rnd(56, 76) : rnd(6, 17);      // a mis-timed swing with bad contact: a pop fly or a flat line drive
-  la = clamp(la, -25, 76);
+  const pSweet = lerp(.03, .30, Math.pow(skill, 1.1));
+  const pGround = clamp(.08 + .12 * cn + (1 - tq) * cn * .22, 0, .6);
+  const dice = Math.random();
+  let la;
+  if (dice < pSweet) la = rnd(30, 25);
+  else if (dice < pSweet + pGround) la = rnd(8, -6);
+  else la = 13 + gauss() * lerp(26, 13, skill);
+  la = clamp(la, -25, 62);
   const roll = bell() * .55 + Math.random() * .45;
   // Exit speed runs between the slowest and the fastest ball his power can make: 60 power = 40-81 mph, 70 = 45-90, ... 120 = 70-133.
   // Where in that range depends on the swing: how well it was timed and met (qual) plus a roll of the dice.
@@ -1841,6 +1846,7 @@ function applyCall(){
   P.outcome = r;
 }
 function afterPitch(){
+  snapMatch();
   const o = P.outcome;
   if (o === 'ball'){ M.balls++; if (M.balls >= 4) return endPA('bb'); }
   else if (o === 'called' || o === 'swingmiss'){ M.strikes++; if (M.strikes >= 3) return endPA('k'); }
@@ -1850,7 +1856,12 @@ function afterPitch(){
 }
 function endPA(res){
   applyPlay(res);                                           // updates the count-free stuff: outs, runners, runs
+  snapMatch();
 }
+function saveEverything(){ try { if (G) save(); snapMatch(); } catch (e){} }
+addEventListener('pagehide', saveEverything);
+addEventListener('beforeunload', saveEverything);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveEverything(); });
 
 // ── what happens to a ball in play ─────────────────────────────────────────
 // the stands behind the fence: lower deck 0-50 ft, upper deck 50-100 ft, then the back wall (the ball is out of the park). Heights in ft, same as gl3d.js
@@ -2000,7 +2011,33 @@ function endHalf(){
   M.inter = { t:0 };                                         // the scoreboard between every half inning
   setupAtBat();
 }
+// ── saving a game in progress. The season (G) saves as before; this writes down where the game stands so it can be picked up again. ──
+const MSAVE = 'retrobaseball.match.v1';
+function snapMatch(){
+  try {
+    if (!M || M.over || !G || phase === 'menu' || phase === 'over') return;
+    const bt = batTeam(), pitchers = t => t.rot.concat(t.pen);
+    localStorage.setItem(MSAVE, JSON.stringify({ v:1, day:G.day, opp:G.teams.indexOf(M.meHome ? M.away : M.home), meHome:M.meHome, mode:M.mode,
+      inning:M.inning, top:M.top, outs:M.outs, balls:M.balls, strikes:M.strikes, score:M.score, ls:M.ls, H:M.H, E:M.E, pcHome:M.pcHome, pcAway:M.pcAway,
+      lineHome:M.lineHome, lineAway:M.lineAway, bases:M.bases.map(p => p ? bt.lineup.indexOf(p) : null), bi:{ home:M.home._bi || 0, away:M.away._bi || 0 },
+      pH:pitchers(M.home).indexOf(M.pitcherHome), pA:pitchers(M.away).indexOf(M.pitcherAway), t:Date.now() }));
+  } catch (e){}
+}
+const matchSnap = () => { try { const d = JSON.parse(localStorage.getItem(MSAVE)); return d && d.v === 1 && G && d.day === G.day && G.day < G.seasonLen ? d : null; } catch (e){ return null; } };
+function clearMatchSnap(){ try { localStorage.removeItem(MSAVE); } catch (e){} }
+function resumeMatch(){
+  const d = matchSnap(); if (!d) return false;
+  startGame(d.opp, d.meHome, { mode:d.mode });
+  const pitchers = t => t.rot.concat(t.pen);
+  Object.assign(M, { inning:d.inning, top:d.top, outs:d.outs, score:d.score, ls:d.ls, H:d.H, E:d.E, pcHome:d.pcHome, pcAway:d.pcAway, lineHome:d.lineHome, lineAway:d.lineAway });
+  M.home._bi = d.bi.home; M.away._bi = d.bi.away;
+  if (d.pH >= 0) M.pitcherHome = pitchers(M.home)[d.pH]; if (d.pA >= 0) M.pitcherAway = pitchers(M.away)[d.pA];
+  const bt = batTeam(); M.bases = d.bases.map(i => i == null || i < 0 ? null : bt.lineup[i]);
+  setupAtBat(); M.balls = d.balls; M.strikes = d.strikes;
+  return true;
+}
 function gameOver(){
+  clearMatchSnap();
   M.over = true; phase = 'over';
   const me = myTeam(), myRuns = M.meHome ? M.score.home : M.score.away, oth = M.meHome ? M.score.away : M.score.home;
   const won = myRuns > oth;
@@ -4024,7 +4061,12 @@ function drawMenu(){
     const me = G && myTeam();
     if (me){
       ptitle(`${me.city} ${me.nick}   ${me.w}-${me.l}`, W / 2, 94, 8, '#ffffff');
-      button(W / 2 - 70, 116, 140, 22, G.day < G.seasonLen ? `PLAY GAME ${G.day + 1}/${G.seasonLen}` : 'SEASON DONE', () => {
+      const snap = matchSnap();
+      if (snap){
+        const nm = `${snap.top ? 'TOP' : 'BOT'} ${snap.inning}  ${snap.score.away}-${snap.score.home}`;
+        button(W / 2 - 108, 116, 150, 22, `RESUME ${nm}`, () => { if (!resumeMatch()) clearMatchSnap(); }, '#2f6fe0');
+        button(W / 2 + 48, 116, 60, 22, 'RESTART', () => { clearMatchSnap(); if (G.day < G.seasonLen){ const s = G.sched[G.day]; startGame(s.opp, s.home); } }, '#2a1a1a', '#fff', 7);
+      } else button(W / 2 - 70, 116, 140, 22, G.day < G.seasonLen ? `PLAY GAME ${G.day + 1}/${G.seasonLen}` : 'SEASON DONE', () => {
         if (G.day >= G.seasonLen) return;
         const s = G.sched[G.day]; startGame(s.opp, s.home);
       }, '#2f6fe0');
@@ -4221,7 +4263,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
     P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
-  runToggle, runBack, drawPlay, evMin, HR_ANGLE, EVMAX, evMax, reachIn, outsideIn, hitsBatter, throwRange, throwFps, spdOf, routeThrow, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
+  runToggle, runBack, drawPlay, snapMatch, resumeMatch, matchSnap, startGame2: startGame, evMin, HR_ANGLE, EVMAX, evMax, reachIn, outsideIn, hitsBatter, throwRange, throwFps, spdOf, routeThrow, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────
