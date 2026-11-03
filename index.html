@@ -215,7 +215,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03t';
+const BUILD = '11-03v';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -1543,7 +1543,7 @@ function planFielders(){
   });
   const land = ballPos(B, B.T); B.land = land;
   FLD.forEach(f => { f.gap = Math.hypot(land.d - f.d, land.lat - f.lat); });
-  if (B.hr){ B.chaser = null; B.play = 'hr'; B.tJudge = Math.min(B.T, 3.2); B.tEnd = B.tJudge + 2.0; B.runN = 4; return; }
+  if (B.hr){ B.chaser = null; B.play = 'hr'; B.tJudge = Math.min(B.T, 3.2); B.tEnd = B.tJudge + 3.6; B.runN = 4; return; }
   // the earliest moment each man can be within reach of the ball while it is low enough to catch
   FLD.forEach(f => {
     let hit = null;
@@ -1652,7 +1652,7 @@ function planOutcome(B, c){
   }
   const tr = Math.hypot(pf[0], pf[1]) < 150 && !B.hr ? CFG.TRANSFER_GROUND : CFG.TRANSFER_AIR;
   B.thrInfo = { tf, tr, pf, arm: c.armFps };                          // when and from where the throw can go: judges every extra-base try
-  if (B.hr){ B.play = 'hr'; B.tJudge = Math.min(B.T, 3.2); B.tEnd = B.tJudge + 2.0; B.runN = 4; return; }
+  if (B.hr){ B.play = 'hr'; B.tJudge = Math.min(B.T, 3.2); B.tEnd = B.tJudge + 3.6; B.runN = 4; return; }
   B.tJudge = tf;
   if (Math.hypot(pf[0], pf[1]) < 150){                              // fielded in the infield: a throw to first
     const a1 = throwArr(1, tr), t1 = runTime(spd, 90);
@@ -2205,7 +2205,7 @@ function gxPlay(B){
   GX.bv = !!S.ball;
   if (B.t < .05) GX.trail = [];
   GX.trail.push([B.lat, B.h * 1.0 + .4, -B.d]); if (GX.trail.length > 290) GX.trail.shift();
-  S.trail = GX.trail.slice(); S.trailMode = 'line';
+  S.trail = GX.trail.slice(); S.trailMode = 'line'; S.hr = !!B.hr;
   const crowd = S.people; S.people = [];                           // the people are the target's own sprites, drawn over the park
   gxParkBG(S);                                                      // the stadium and the camera never change: it is rendered ONCE, then only copied
   g.imageSmoothingEnabled = false; g.drawImage(GX.bg, 0, 0, GX.bg.width, GX.bg.height, 0, 0, W, H);
@@ -2225,9 +2225,24 @@ function gxOverlay(S){
   GL3D.setView('air'); GL3D.placeCamera(); GL3D.cam.updateMatrixWorld(true);
   const P = (x, y, z) => GL3D.toScreen(x, y, z, W, H);
   if (S.trail && S.trail.length > 1){                                // the ball's path: a thin white line
-    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = .9; g.beginPath();
+    g.strokeStyle = S.hr ? 'rgba(255,120,30,.35)' : 'rgba(255,255,255,.55)'; g.lineWidth = S.hr ? 1.2 : .9; g.beginPath();
     S.trail.forEach((t, i) => { const q = P(t[0], t[1], t[2]); i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y); });
     g.stroke();
+  }
+  if (S.hr && S.trail && S.trail.length > 3){
+    // fire: hottest at the ball, fading through yellow, orange and red to smoke, with embers floating up
+    const n = S.trail.length, L = Math.min(90, n - 1);
+    for (let k = L; k >= 0; k--){
+      const q = P(...S.trail[n - 1 - k]), a = k / L, sz = Math.max(1, Math.round(a < .12 ? 3 : 8 * Math.pow(1 - a, .8) + .6));
+      const col = a < .15 ? '#fffbd0' : a < .35 ? '#ffd23f' : a < .6 ? '#ff8a1c' : a < .82 ? '#d9341a' : '#5a2a28';
+      for (let j = 0; j < 3; j++){
+        const jx = (Math.random() - .5) * (2 + 9 * a), jy = (Math.random() - .5) * (2 + 4 * a) - a * 8 * Math.random();
+        g.globalAlpha = clamp(1 - a * .95, .08, 1) * (j ? .65 : 1);
+        R(Math.round(q.x + jx - sz / 2), Math.round(q.y + jy - sz / 2), sz, sz, col);
+      }
+      if (k % 7 === 0 && Math.random() < .6){ g.globalAlpha = clamp(1 - a, .15, 1); R(Math.round(q.x + (Math.random() - .5) * 9), Math.round(q.y - a * 14 - Math.random() * 4), 1, 1, '#ffd23f'); }
+    }
+    g.globalAlpha = 1;
   }
   if (S.ball){
     const b = S.ball, gq = P(b.x, .05, b.z), q = P(b.x, b.y, b.z), hh = clamp(b.y / 60, 0, 1);
@@ -2311,12 +2326,48 @@ function gxSprites(list, B){
     g.imageSmoothingEnabled = false; g.drawImage(r.c, 0, 0, r.w, r.h, q.x - ww / 2, q.y - hh + feet, ww, hh);
   });
 }
+// ── a home run: a flash as it clears the wall, fireworks over the stands, confetti, a big bouncing banner ──
+const FW_COLS = ['#ffd23f', '#ff4d4d', '#4aa3ff', '#54d67a', '#ff9330', '#ffffff', '#b26bff'];
+function homerShow(B){
+  const T = B.t - B.tJudge, now = performance.now();
+  if (GX.fxB !== B){ GX.fxB = B; GX.fx = []; GX.fxBursts = 0; GX.fxLast = now; GX.fxConf = 0; }
+  const dt = clamp((now - GX.fxLast) / 1000, 0, .05); GX.fxLast = now;
+  const fx = GX.fx;
+  while (T >= 0 && T < 2.4 && GX.fxBursts * .3 <= T){                                   // a new firework every 0.3 s
+    GX.fxBursts++;
+    const bx = W * (.12 + Math.random() * .76), by = H * (.12 + Math.random() * .32), col = FW_COLS[(Math.random() * FW_COLS.length) | 0], col2 = FW_COLS[(Math.random() * FW_COLS.length) | 0];
+    for (let i = 0; i < 34; i++){ const a = i / 34 * Math.PI * 2, v = 30 + Math.random() * 52; fx.push({ x:bx, y:by, vx:Math.cos(a) * v, vy:Math.sin(a) * v, life:1.1 + Math.random() * .5, age:0, c: i % 3 ? col : col2, s:2, g:55 }); }
+  }
+  GX.fxConf += dt * 60;                                                                  // confetti rains down the whole time
+  while (T >= 0 && T < 3.2 && GX.fxConf >= 1){ GX.fxConf--; fx.push({ x:Math.random() * W, y:-4, vx:(Math.random() - .5) * 18, vy:26 + Math.random() * 36, life:3.5, age:0, c:FW_COLS[(Math.random() * FW_COLS.length) | 0], s:1.5, w:true, g:0 }); }
+  for (let i = fx.length - 1; i >= 0; i--){
+    const p = fx[i]; p.age += dt; if (p.age > p.life){ fx.splice(i, 1); continue; }
+    p.vy += p.g * dt; p.x += p.vx * dt + (p.w ? Math.sin(p.age * 6 + p.x) * .3 : 0); p.y += p.vy * dt;
+    const a = clamp(1 - p.age / p.life, 0, 1); g.globalAlpha = p.w ? clamp(a * 2, 0, 1) : a;
+    R(Math.round(p.x), Math.round(p.y), p.s, p.w ? 1 : p.s, p.c);
+  }
+  g.globalAlpha = 1;
+  if (T >= 0 && T < .3){ g.fillStyle = `rgba(255,255,255,${.7 * (1 - T / .3)})`; g.fillRect(0, 0, W, H); }      // the flash
+  if (T >= 0){
+    const e = clamp(T / .4, 0, 1), over = 1 + 2.2 * Math.pow(e - 1, 3) + 1.2 * Math.pow(e - 1, 2), sz = (22 + 30 * over * e) * (1 + .04 * Math.sin(T * 9)), flick = T < 1.4 && Math.floor(T / .11) % 2;
+    g.fillStyle = `rgba(255,200,40,${.18 * clamp(1 - Math.max(0, T - 2.4) / .8, 0, 1) * e})`; g.fillRect(0, ty(102), W, ty(78) - ty(0));
+    tt('HOME RUN!', W / 2, ty(108), sz, flick ? '#ffffff' : '#ffd23f', 'center');
+    if (T > .35){
+      g.globalAlpha = clamp((T - .35) / .3, 0, 1);
+      tt(`${Math.round(B.carry || ballDist())} FT   ${Math.round(B.ev)} MPH`, W / 2, ty(172), 22, '#ffffff', 'center');
+      if (M.msg && /SLAM/.test(M.msg)) tt('GRAND SLAM!', W / 2, ty(206), 20, '#ff9330', 'center');
+      g.globalAlpha = 1;
+    }
+  }
+}
 function gxPlayHud(B){
   RUNBTN = []; (GX.runMarks || []).forEach(m => drawRunDiamond(m[0], m[1], m[2]));
-  tt(`${Math.round(B.ev)} MPH   ${Math.round(ballDist())} FT`, W / 2, ty(150), 20, '#ffffff', 'center');
+  const hrShow = B.hr && B.judged;
+  if (!hrShow) tt(`${Math.round(B.ev)} MPH   ${Math.round(ballDist())} FT`, W / 2, ty(150), 20, '#ffffff', 'center');
+  if (hrShow) homerShow(B);
   if (CFG.DEBUG) tt(`EV ${B.ev.toFixed(1)} mph  LA ${B.la.toFixed(1)}  HANG ${B.T.toFixed(2)} s  ${B.play || ''}`, W / 2, ty(52), 11, '#ff9a8a', 'center');
   if (B.judged){
-    if (B.play === 'hr') tt('GONE!', W / 2, ty(150), 48, '#ffd23f', 'center');
+    if (B.play === 'hr'){ /* the show is drawn above */ }
     else if (M.msg) tt(M.msg, W / 2, ty(150), 34, '#ffd23f', 'center');
   }
   drawHUD();
