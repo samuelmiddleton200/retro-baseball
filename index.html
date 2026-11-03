@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03j';
+const BUILD = '11-03l';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2230,7 +2230,7 @@ function gxOverlay(S){
     const b = S.ball, gq = P(b.x, .05, b.z), q = P(b.x, b.y, b.z), hh = clamp(b.y / 60, 0, 1);
     const sw = hh > .5 ? 5 : 4;
     R(Math.round(gq.x - sw / 2), Math.round(gq.y), sw, 1, 'rgba(20,14,6,.38)');                              // its shadow on the grass, a flat pixel bar
-    if (ballPx(q.x, q.y, 8)) return;                                  // the supplied pixel baseball
+    if (ballPx(q.x, q.y, 6)) return;                                  // the supplied pixel baseball
     // fallback while it loads: a 5 x 5 pixel ball
     const x0 = Math.round(q.x) - 2, y0 = Math.round(q.y) - 2, spin = Math.floor((S.time || 0) * 8) % 2;
     const D = '#262b40', W = '#f6f3ea', G = '#b9b7bd', Rd = '#d6372c';
@@ -2613,16 +2613,16 @@ function drawBatterView(dt){
 }
 
 // a pixel-art baseball: dark rim, lit top-left, shaded bottom-right, two red seams
-// the pixel baseball (assets/ball/ballN.png, cut down from the supplied pixel-art ball): the size nearest the one wanted, never scaled
-const BALL_SIZES = [4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 24], BALLPX = {};
-BALL_SIZES.forEach(n => { const im = new Image(); im.onload = () => { im._ok = true; }; im.onerror = () => {}; im.src = `assets/ball/ball${n}.png?b=1`; BALLPX[n] = im; });
+// our own spinning pixel baseball (tools/make_ball.py): 8 frames per size in assets/ball/spinN.png, the nearest size is chosen and never scaled
+const BALL_SIZES = [5, 6, 7, 8, 10, 12, 16, 20, 24], BALLPX = {};
+BALL_SIZES.forEach(n => { const im = new Image(); im.onload = () => { im._ok = true; }; im.onerror = () => {}; im.src = `assets/ball/spin${n}.png?b=2`; BALLPX[n] = im; });
 function ballPx(x, y, dia){
   const n = BALL_SIZES.find(v => v >= dia) || 24, im = BALLPX[n];
   if (!im || !im._ok) return false;
-  g.imageSmoothingEnabled = false; g.drawImage(im, Math.round(x - n / 2), Math.round(y - n / 2)); return true;
+  g.imageSmoothingEnabled = false; g.drawImage(im, (Math.floor(frame / 2) % 8) * n, 0, n, n, Math.round(x - n / 2), Math.round(y - n / 2), n, n); return true;
 }
 function drawBall(x, y, r){
-  if (ballPx(x, y, Math.max(6, r * 2))) return;
+  if (ballPx(x, y, Math.max(5, r * 1.8))) return;
   const cx = Math.round(x), cy = Math.round(y), Rr = Math.max(1, Math.round(r));
   if (Rr < 2){ R(cx - 1, cy - 1, 2, 2, '#f4f1e8'); R(cx - 1, cy, 2, 1, '#2a2f45'); return; }
   for (let dy = -Rr; dy <= Rr; dy++) for (let dx = -Rr; dx <= Rr; dx++){
@@ -2716,8 +2716,10 @@ function drawHUD(){
   drawPitchInfo();
 }
 const PILL = new Image(); PILL.onload = () => imgReady++; PILL.src = 'assets/ui/pill_base.png';
-const teamChip = (t, r) => { const n = parseInt(t.c1.slice(1), 16), lum = ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000;
-  return lum > 150 ? mix(t.c1, '#0a1a4a', .6) : lum < 70 ? mix(t.c1, r ? '#a3203f' : '#1f4aa8', .62) : t.c1; };
+// the scoreboard chip shows the colour the club is WEARING this game (never a different hue): very light ones are darkened and very dark ones lifted, same hue
+const chipOf = c => { const n = parseInt(c.slice(1), 16), lum = ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000;
+  return lum > 150 ? mix(c, '#000000', .5) : lum < 60 ? mix(c, '#ffffff', .28) : c; };
+const teamChip = (t, r) => chipOf(uni(t));
 // the scoreboard over the picture: its frame is the picture's own pixels, only the writing is ours
 function drawScoreboardPlate(){
   const a = M.away, h = M.home, X = x => tx(x), Y = y => ty(y);
@@ -2750,8 +2752,7 @@ function drawScoreboard(between){
   g.fillStyle = '#334d75';                                                        // the target's lighter blue dividers
   g.fillRect(UL(141), Y0 + 1, 1.1, Ht - 2); g.fillRect(X0 + 1, ty(66), Wd - 2, 1.1);
   [[a, M.score.away, 10, 36], [h, M.score.home, 39, 65]].forEach(([t, sc, y0, y1]) => {
-    const lum = (c => { const n = parseInt(c.slice(1), 16); return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000; })(t.c1);
-    const chip = lum > 120 ? mix(t.c1, '#0a1a4a', .72) : lum < 70 ? mix(t.c1, t === a ? '#1f4aa8' : '#a3203f', .62) : t.c1, cg = g.createLinearGradient(0, ty(y0), 0, ty(y1));        // the team's own colour, as in the target
+    const chip = chipOf(uni(t)), cg = g.createLinearGradient(0, ty(y0), 0, ty(y1));        // the team's own colour, as in the target
     cg.addColorStop(0, mix(chip, '#ffffff', .12)); cg.addColorStop(.5, chip); cg.addColorStop(1, mix(chip, '#000000', .2));
     g.fillStyle = cg; g.fillRect(UL(18), ty(y0), 60 * TU, (y1 - y0) * TU);
     g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(UL(18), ty(y0), 60 * TU, .8);
