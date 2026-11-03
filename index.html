@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-02r';
+const BUILD = '11-02s';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2092,7 +2092,7 @@ function gxPlay(B){
   (FLD || []).forEach(f => {
     const X = f.y, Z = -f.x, key = 'f' + f.i;
     let pose, yaw = face(X, Z), sp = { f: ((frame + f.i * 41) % 170) < 100 ? 0 : 1 };
-    const runSp = (mv) => runCycle(mv.yaw, mv.ph);
+    const runSp = (mv) => runCycle(mv.yaw, mv.ph, key);
     if (f.go && !f.chasing){
       const mv = gxMover(key, X, Z), tx = B.pf ? B.pf[1] : 0, tz = B.pf ? -B.pf[0] : -60;
       if (f.moving){ yaw = mv.moved > .02 ? mv.yaw : yaw; pose = GL3D.poseRun(mv.ph, f.speed); sp = runSp(mv); }
@@ -2132,7 +2132,7 @@ function gxPlay(B){
       if (RUNCTL[key] && RUNCTL[key].out && B.t > RUNCTL[key].outT + .9) return;       // thrown out: he walks off
       const dirYaw = Math.atan2(a2.lat - a.lat, -(a2.d - a.d));
       const cc = RUNCTL[key], held = cc && s >= cc.cap - .05;
-      S.people.push(gxPerson(key, 'run', man, bt, X, Z, dirYaw, B.t < dly ? GL3D.poseBatter(1, t) : (held ? GL3D.poseReady(t) : GL3D.poseRun(mv.ph, man.speed)), { sp: B.t < dly || held ? { f:0 } : runCycle(dirYaw, mv.ph) }));
+      S.people.push(gxPerson(key, 'run', man, bt, X, Z, dirYaw, B.t < dly ? GL3D.poseBatter(1, t) : (held ? GL3D.poseReady(t) : GL3D.poseRun(mv.ph, man.speed)), { sp: B.t < dly || held ? { f:0 } : runCycle(dirYaw, mv.ph, key) }));
       if (isManualPlay(B) && !(cc && cc.out)){ const q = GL3D.toScreen(X, 9.6, Z, W, H); runMarks.push([key, q.x, q.y]); }
     };
     const manual = isManualPlay(B);
@@ -2172,17 +2172,24 @@ function gpRunHead(dir, i){                              // x of the cap in each
   } catch (e){}
   return GPR.hx[key] = hx;
 }
-// yaw: the way he is heading (atan2 of sideways, depth); the camera looks out from behind home, so negative depth = running away from us
-function runCycle(yaw, ph){
-  const sn = Math.sin(yaw), cs = Math.cos(yaw), right = sn > 0;
+// yaw: the way he is heading (atan2 of sideways, depth); the camera looks out from behind home, so negative depth = running away from us.
+// A runner's path bends, so the raw direction wobbles from frame to frame: he only changes sheet after the new direction has held for 10 frames,
+// and the stride advances with distance run (one 8-frame cycle every 15 ft, about 15 frames a second at full speed).
+const RUNDIR = {};
+function runCycle(yaw, ph, key){
+  const sn = Math.sin(yaw), cs = Math.cos(yaw);
   if (GPR.ready){
-    const dir = Math.abs(sn) >= .62 ? 'side' : cs < 0 ? 'back' : 'front';
-    return { run:1, dir, i: Math.floor(ph * 8) % 8, flip: dir === 'side' && !right };
+    const cand = Math.abs(sn) >= .62 ? (sn > 0 ? 'right' : 'left') : cs < 0 ? 'back' : 'front';
+    let st = RUNDIR[key]; if (!st) st = RUNDIR[key] = { cur:cand, cand, n:0 };
+    if (cand === st.cur) st.n = 0; else if (cand === st.cand){ if (++st.n >= 10){ st.cur = cand; st.n = 0; } } else { st.cand = cand; st.n = 1; }
+    const side = st.cur === 'left' || st.cur === 'right';
+    return { run:1, dir: side ? 'side' : st.cur, i: Math.floor(ph * 4) % 8, flip: st.cur === 'left' };
   }
-  const a = Math.floor(ph * 2) % 2 === 0, hop = Math.abs(Math.sin(ph * Math.PI * 2));
+  const right = sn > 0, a = Math.floor(ph * 2) % 2 === 0, hop = Math.abs(Math.sin(ph * Math.PI * 2));
   return right ? { f: a ? 2 : 3, flip: !a, bob: hop, lean: .07 } : { f: a ? 3 : 2, flip: !a, bob: hop, lean: -.07 };
 }
 function gxSprites(list, B){
+  GX.dbg = list.filter(p => p.sp).map(p => p.key + ':' + (p.sp.dir || '') + (p.sp.i != null ? p.sp.i : '') + (p.sp.f != null ? 'f' + p.sp.f : '') + (p.sp.flip ? 'F' : ''));
   const rows = list.map(p => ({ p, q: GL3D.toScreen(p.x, 0, p.z, W, H) })).sort((a, b) => a.q.y - b.q.y);
   GX.sp = GX.sp || {};
   rows.forEach(({ p, q }) => {
@@ -3820,7 +3827,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
     P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
-  runToggle, drawPlay, get RUNCTL(){ return RUNCTL; },
+  runToggle, drawPlay, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────
