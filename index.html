@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03h';
+const BUILD = '11-03j';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2190,7 +2190,7 @@ function gxPlay(B){
       const dirYaw = Math.atan2(a2.lat - a.lat, -(a2.d - a.d));
       const cc = RUNCTL[key], held = cc && s >= cc.cap - .05 && over < .3;
       S.people.push(gxPerson(key, 'run', man, bt, X, Z, dirYaw, B.t < dly ? GL3D.poseBatter(1, t) : (held ? GL3D.poseReady(t) : GL3D.poseRun(mv.ph, man.speed)), { sp: B.t < dly || held ? { f:0 } : runCycle(dirYaw, mv.ph, key) }));
-      if (isManualPlay(B) && !(cc && cc.out)){ const q = GL3D.toScreen(X, 9.6, Z, W, H); runMarks.push([key, q.x, q.y]); }
+      if (isManualPlay(B) && !(cc && cc.out)){ const q = GL3D.toScreen(X, 26, Z, W, H); runMarks.push([key, q.x, q.y]); }
     };
     const manual = isManualPlay(B);
     run('runB', b, 0, manual ? 360 : 90 * (B.runN || 1));
@@ -2230,7 +2230,8 @@ function gxOverlay(S){
     const b = S.ball, gq = P(b.x, .05, b.z), q = P(b.x, b.y, b.z), hh = clamp(b.y / 60, 0, 1);
     const sw = hh > .5 ? 5 : 4;
     R(Math.round(gq.x - sw / 2), Math.round(gq.y), sw, 1, 'rgba(20,14,6,.38)');                              // its shadow on the grass, a flat pixel bar
-    // a pixel-art baseball, 5 x 5: dark rim, white leather, grey shade bottom right, two red seam pixels (they swap sides as it spins)
+    if (ballPx(q.x, q.y, 8)) return;                                  // the supplied pixel baseball
+    // fallback while it loads: a 5 x 5 pixel ball
     const x0 = Math.round(q.x) - 2, y0 = Math.round(q.y) - 2, spin = Math.floor((S.time || 0) * 8) % 2;
     const D = '#262b40', W = '#f6f3ea', G = '#b9b7bd', Rd = '#d6372c';
     const px = [
@@ -2612,7 +2613,16 @@ function drawBatterView(dt){
 }
 
 // a pixel-art baseball: dark rim, lit top-left, shaded bottom-right, two red seams
+// the pixel baseball (assets/ball/ballN.png, cut down from the supplied pixel-art ball): the size nearest the one wanted, never scaled
+const BALL_SIZES = [4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 24], BALLPX = {};
+BALL_SIZES.forEach(n => { const im = new Image(); im.onload = () => { im._ok = true; }; im.onerror = () => {}; im.src = `assets/ball/ball${n}.png?b=1`; BALLPX[n] = im; });
+function ballPx(x, y, dia){
+  const n = BALL_SIZES.find(v => v >= dia) || 24, im = BALLPX[n];
+  if (!im || !im._ok) return false;
+  g.imageSmoothingEnabled = false; g.drawImage(im, Math.round(x - n / 2), Math.round(y - n / 2)); return true;
+}
 function drawBall(x, y, r){
+  if (ballPx(x, y, Math.max(6, r * 2))) return;
   const cx = Math.round(x), cy = Math.round(y), Rr = Math.max(1, Math.round(r));
   if (Rr < 2){ R(cx - 1, cy - 1, 2, 2, '#f4f1e8'); R(cx - 1, cy, 2, 1, '#2a2f45'); return; }
   for (let dy = -Rr; dy <= Rr; dy++) for (let dx = -Rr; dx <= Rr; dx++){
