@@ -215,7 +215,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03q';
+const BUILD = '11-03t';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -3299,10 +3299,14 @@ function drawOpen(){
     const by = Math.min(H - 28, y0 + rows * (ch + gap) + 6);
     const again = OPEN.kind !== 'trade' && OPEN.n ? Math.round(PACKS[OPEN.kind].price * BULK.find(b => b[0] === OPEN.n)[1] * OPEN.n) : 0;
     const can = again > 0 && G.coins >= again;
-    if (OPEN.kind === 'trade') button(cx - 52, by, 104, 20, 'TRADE MORE', () => { const fb = OPEN.from === 'bench'; OPEN = null; menu = fb ? 'cards' : 'trade'; if (fb) colFilter = 'bench'; }, '#2f6fe0', '#fff', 8);
-    else button(cx - 118, by, 112, 20, can ? `OPEN ANOTHER · ${fmt(again)}` : 'NOT ENOUGH COINS', () => { if (can){ const k = OPEN.kind, n = OPEN.n; buyPack(k, n); } }, can ? '#2f6fe0' : '#161b26', '#fff', 7);
-    button(cx - 2 + 6, by, 56, 20, 'SHOP', () => { OPEN = null; menu = 'shop'; }, '#1a2030', '#fff', 8);
-    button(cx + 66, by, 64, 20, 'MY CARDS', () => { OPEN = null; menu = 'cards'; }, '#1a2030', '#fff', 7);
+    if (OPEN.kind === 'trade'){                                       // after a trade-in: just the two ways out, centred
+      button(cx - 68, by, 64, 20, 'MY CARDS', () => { const fb = OPEN.from === 'bench'; OPEN = null; menu = 'cards'; if (fb) colFilter = 'bench'; }, '#1a2030', '#fff', 8);
+      button(cx + 4, by, 64, 20, 'SHOP', () => { OPEN = null; menu = 'shop'; }, '#1a2030', '#fff', 8);
+    } else {
+      button(cx - 118, by, 112, 20, can ? `OPEN ANOTHER · ${fmt(again)}` : 'NOT ENOUGH COINS', () => { if (can){ const k = OPEN.kind, n = OPEN.n; buyPack(k, n); } }, can ? '#2f6fe0' : '#161b26', '#fff', 7);
+      button(cx - 2 + 6, by, 56, 20, 'SHOP', () => { OPEN = null; menu = 'shop'; }, '#1a2030', '#fff', 8);
+      button(cx + 66, by, 64, 20, 'MY CARDS', () => { OPEN = null; menu = 'cards'; }, '#1a2030', '#fff', 7);
+    }
     return;
   }
 
@@ -3311,7 +3315,7 @@ function drawOpen(){
   shown.forEach((c, i) => { const w = 26, x = cx - (shown.length * 29) / 2 + i * 29; drawCard(x, H - 46, c, w, 36, OPEN.t); });
 
   if (OPEN.per > 1){
-    const cnt = Math.min(OPEN.per, OPEN.cards.length - OPEN.i), bw = OPEN.per === 3 ? 62 : 46, bh = Math.round(bw * 1.4), gp = OPEN.per === 3 ? 10 : 6;
+    const cnt = Math.min(OPEN.per, OPEN.cards.length - OPEN.i), bw = OPEN.per <= 3 ? 62 : 46, bh = Math.round(bw * 1.4), gp = OPEN.per <= 3 ? 10 : 6;
     const x0 = cx - (cnt * bw + (cnt - 1) * gp) / 2, y0 = cy - bh / 2, bs = OPEN.bspin;
     if (!bs){
       // face-down cards (the pack itself for the first batch), tap to turn them all over
@@ -3333,7 +3337,7 @@ function drawOpen(){
       if (b.landed){
         drawCard(x, y0, b.c, bw, bh, OPEN.t);
         const fl = clamp(b.flash / 420, 0, 1); if (fl > 0) R(x - 3, y0 - 3, bw + 6, bh + 6, `rgba(255,255,255,${fl * .55})`);
-        if (b.ti >= 2) ptitle(OPEN.per === 5 ? ({ LEGENDARY:'LEGEND', UNCOMMON:'UNCOM' }[TIER_LABEL[b.ti]] || TIER_LABEL[b.ti]) : TIER_LABEL[b.ti], mx, y0 - 14, OPEN.per === 5 ? 6 : b.ti >= 4 ? 8 : 7, tcol);
+        if (b.ti >= 2) ptitle(OPEN.per >= 4 ? ({ LEGENDARY:'LEGEND', UNCOMMON:'UNCOM' }[TIER_LABEL[b.ti]] || TIER_LABEL[b.ti]) : TIER_LABEL[b.ti], mx, y0 - 14, OPEN.per >= 4 ? 6 : b.ti >= 4 ? 8 : 7, tcol);
       } else {
         const face = Math.cos(ang) > 0, cw2 = Math.max(2, Math.round(bw * sx));
         if (face){ g.save(); g.translate(mx, 0); g.scale(sx, 1); g.translate(-mx, 0); drawCard(x, y0, b.c, bw, bh, OPEN.t); g.restore(); }
@@ -3522,16 +3526,16 @@ function benchToggle(c){
   if (benchSel.includes(c.id)){ benchSel = benchSel.filter(id => id !== c.id); return; }
   const first = benchSel.length ? cardById(benchSel[0]) : null;
   if (first && tierIdx(first) !== t) benchSel = [];                         // a different colour: start a new selection with this card
-  if (benchSel.length < TRADE_N) benchSel.push(c.id);
+  if (benchSel.length < TRADE_N * 5) benchSel.push(c.id);                   // up to 25: 5 for 1, 10 for 2, 15 for 3, 20 for 4, 25 for 5
 }
 function benchTrade(){
   const give = benchSel.map(cardById).filter(Boolean);
-  if (give.length !== TRADE_N || give.some(c => inUse(c.id))) { benchSel = []; return; }
-  const ti = tierIdx(give[0]);
+  if (give.length < TRADE_N || give.length % TRADE_N || give.some(c => inUse(c.id))) { benchSel = []; return; }
+  const ti = tierIdx(give[0]), count = give.length / TRADE_N;
   if (give.some(c => tierIdx(c) !== ti) || ti >= 5){ benchSel = []; return; }
   G.cards = G.cards.filter(c => !benchSel.includes(c.id));
-  const c = rollCard('bronze', ti + 1);
-  OPEN = { kind:'trade', cards:[c], i:0, t:0, spin:null, revealed:[], from:'bench', per:1, bspin:null };
+  const cards = []; for (let k = 0; k < count; k++) cards.push(rollCard('bronze', ti + 1));
+  OPEN = { kind:'trade', cards, i:0, t:0, spin:null, revealed:[], from:'bench', per: count > 1 ? count : 1, bspin:null };
   benchSel = []; menu = 'open'; save();
 }
 function myCards(){
@@ -3566,8 +3570,12 @@ function drawCards(){
     if (colFilter === 'bench'){
       const sel = benchSel.includes(c.id);
       if (sel){ R(x, y + ch - 3, cw, 3, '#54d67a'); g.strokeStyle = '#54d67a'; g.lineWidth = 1.5; g.strokeRect(x - .5, y - .5, cw + 1, ch + 1); textb('✓', x + cw / 2, y + 12, '#54d67a', 14, 'center'); }
-      btns.push({ x, y, w:cw, h:ch, fn: () => benchToggle(c) });
-    } else btns.push({ x, y, w:cw, h:ch, fn: () => { colSel = c.id; cardFlip = false; menu = 'card'; } });
+      const vy = Math.max(y, 38), vh = Math.min(y + ch, H - 26) - vy;                 // only the part of the card that is really on screen can be tapped
+      if (vh > 6) btns.push({ x, y:vy, w:cw, h:vh, fn: () => benchToggle(c) });
+    } else {
+      const vy = Math.max(y, 38), vh = Math.min(y + ch, H - 26) - vy;
+      if (vh > 6) btns.push({ x, y:vy, w:cw, h:vh, fn: () => { colSel = c.id; cardFlip = false; menu = 'card'; } });
+    }
   });
   g.restore();
   if (maxScroll > 0){
@@ -3576,11 +3584,11 @@ function drawCards(){
   }
   button(10, H - 22, 70, 18, 'BACK', () => menu = 'title');
   if (colFilter === 'bench'){
-    const first = benchSel.length ? cardById(benchSel[0]) : null, ti = first ? tierIdx(first) : -1, ready = benchSel.length === TRADE_N && ti < 5;
-    const label = ready ? `TRADE IN FOR 1 ${TIER_LABEL[ti + 1]} CARD` : ti === 5 ? 'RED IS THE TOP COLOUR' : first ? `PICK ${TRADE_N - benchSel.length} MORE ${TIER_LABEL[ti]}` : `PICK ${TRADE_N} OF ONE COLOUR`;
-    button(W / 2 - 84, H - 22, 168, 18, label, ready ? benchTrade : () => {}, ready ? '#2a6a3a' : '#161b26', ready ? '#fff' : '#8896b3', 8);
+    const first = benchSel.length ? cardById(benchSel[0]) : null, ti = first ? tierIdx(first) : -1, nSel = benchSel.length, cnt = Math.floor(nSel / TRADE_N), ready = nSel >= TRADE_N && nSel % TRADE_N === 0 && ti < 5;
+    const label = ready ? `TRADE IN ${nSel} FOR ${cnt} ${TIER_LABEL[ti + 1]} CARD${cnt > 1 ? 'S' : ''}` : ti === 5 ? 'RED IS THE TOP COLOUR' : first ? `${TRADE_N - nSel % TRADE_N} MORE ${TIER_LABEL[ti]} FOR ${cnt + 1} ${TIER_LABEL[ti + 1]}` : `PICK ${TRADE_N} OF ONE COLOUR`;
+    button(W / 2 - 96, H - 22, 192, 18, label, ready ? benchTrade : () => {}, ready ? '#2a6a3a' : '#161b26', ready ? '#fff' : '#8896b3', 8);
     if (!list.length) textb('No bench cards: everybody is in your lineup.', W / 2, 90, '#ffffff', 8, 'center', W - 20);
-    else text(`Tap ${TRADE_N} bench cards of one colour to trade them up  (${benchSel.length}/${TRADE_N})`, W / 2, H - 36, UI.ice, 6, 'center', W - 20);
+    else { text(`5=1  10=2  15=3  20=4  25=5`, W - 10, 24, UI.ice, 6, 'right'); text(`${benchSel.length} picked`, W - 10, 31, UI.yellow, 6, 'right'); }
   } else button(W / 2 - 50, H - 22, 100, 18, 'TRADE IN 5→1', () => { menu = 'trade'; tradeSel = []; }, '#6a3aa8', '#fff', 8);
   button(W - 86, H - 22, 76, 18, 'LINEUP', () => menu = 'lineup', '#2f6fe0');
 }
