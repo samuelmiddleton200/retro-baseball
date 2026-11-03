@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-04c';
+const BUILD = '11-04d';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -231,7 +231,7 @@ function newGame(teamAb){
     [...lineup, ...rot, ...pen].forEach(p => { p.num = ri(1, 72); });
     return { ...t, lineup, rot, pen, w:0, l:0, rs:0, ra:0 };
   });
-  G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:1002500, gift1m:true, seasonLen:25,
+  G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:27500, gift25k:true, seasonLen:25,
         sched:[], rotIdx:0, cards:[], slots:{ lineup:[], rot:[], pen:[] }, freeAt:0 };
   // your own nine, five starters and five relievers all become cards you own
   const me = G.teams[G.team];
@@ -278,7 +278,11 @@ const load = () => {
       _cardId = Math.max(1, ...G.cards.map(c => c.id || 0)) + 1;
       G.cards.forEach(c => { c.st = c.st || newStat(); if (c.fielding != null) c.speed = c.fielding; });
       rebuildTeam();
-      if (!G.gift1m){ G.gift1m = true; G.coins += 1000000; save(); }        // a one-time gift of 1,000,000 coins to this save
+      if (!G.gift25k){                                                       // the 1,000,000 gift is taken back and replaced by a one-time 25,000
+        G.gift25k = true;
+        if (G.gift1m) G.coins = Math.max(25000, G.coins - 975000); else G.coins += 25000;
+        save();
+      }
     }
   } catch(e){}
 };
