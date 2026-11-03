@@ -3,7 +3,7 @@ Writes assets/ball/spin<N>.png, an atlas of 8 NxN frames side by side, with hard
 import numpy as np
 from PIL import Image
 
-SIZES = [5, 6, 7, 8, 10, 12, 16, 20, 24]
+SIZES = [3, 4, 5, 6, 7, 8, 10, 12, 16, 20, 24]
 FRAMES = 8
 SS = 8                                                     # supersampling per pixel
 PAL = {                                                    # rim, white, light grey, grey, seam red, dark seam

@@ -215,7 +215,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03o';
+const BUILD = '11-03q';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -2233,7 +2233,7 @@ function gxOverlay(S){
     const b = S.ball, gq = P(b.x, .05, b.z), q = P(b.x, b.y, b.z), hh = clamp(b.y / 60, 0, 1);
     const sw = hh > .5 ? 5 : 4;
     R(Math.round(gq.x - sw / 2), Math.round(gq.y), sw, 1, 'rgba(20,14,6,.38)');                              // its shadow on the grass, a flat pixel bar
-    if (ballPx(q.x, q.y, 6)) return;                                  // the supplied pixel baseball
+    if (ballPx(q.x, q.y, 3)) return;                                  // the supplied pixel baseball
     // fallback while it loads: a 5 x 5 pixel ball
     const x0 = Math.round(q.x) - 2, y0 = Math.round(q.y) - 2, spin = Math.floor((S.time || 0) * 8) % 2;
     const D = '#262b40', W = '#f6f3ea', G = '#b9b7bd', Rd = '#d6372c';
@@ -2617,8 +2617,8 @@ function drawBatterView(dt){
 
 // a pixel-art baseball: dark rim, lit top-left, shaded bottom-right, two red seams
 // our own spinning pixel baseball (tools/make_ball.py): 8 frames per size in assets/ball/spinN.png, the nearest size is chosen and never scaled
-const BALL_SIZES = [5, 6, 7, 8, 10, 12, 16, 20, 24], BALLPX = {};
-BALL_SIZES.forEach(n => { const im = new Image(); im.onload = () => { im._ok = true; }; im.onerror = () => {}; im.src = `assets/ball/spin${n}.png?b=2`; BALLPX[n] = im; });
+const BALL_SIZES = [3, 4, 5, 6, 7, 8, 10, 12, 16, 20, 24], BALLPX = {};
+BALL_SIZES.forEach(n => { const im = new Image(); im.onload = () => { im._ok = true; }; im.onerror = () => {}; im.src = `assets/ball/spin${n}.png?b=3`; BALLPX[n] = im; });
 function ballPx(x, y, dia){
   const n = BALL_SIZES.find(v => v >= dia) || 24, im = BALLPX[n];
   if (!im || !im._ok) return false;
@@ -3299,7 +3299,7 @@ function drawOpen(){
     const by = Math.min(H - 28, y0 + rows * (ch + gap) + 6);
     const again = OPEN.kind !== 'trade' && OPEN.n ? Math.round(PACKS[OPEN.kind].price * BULK.find(b => b[0] === OPEN.n)[1] * OPEN.n) : 0;
     const can = again > 0 && G.coins >= again;
-    if (OPEN.kind === 'trade') button(cx - 52, by, 104, 20, 'TRADE MORE', () => { OPEN = null; menu = 'trade'; }, '#2f6fe0', '#fff', 8);
+    if (OPEN.kind === 'trade') button(cx - 52, by, 104, 20, 'TRADE MORE', () => { const fb = OPEN.from === 'bench'; OPEN = null; menu = fb ? 'cards' : 'trade'; if (fb) colFilter = 'bench'; }, '#2f6fe0', '#fff', 8);
     else button(cx - 118, by, 112, 20, can ? `OPEN ANOTHER · ${fmt(again)}` : 'NOT ENOUGH COINS', () => { if (can){ const k = OPEN.kind, n = OPEN.n; buyPack(k, n); } }, can ? '#2f6fe0' : '#161b26', '#fff', 7);
     button(cx - 2 + 6, by, 56, 20, 'SHOP', () => { OPEN = null; menu = 'shop'; }, '#1a2030', '#fff', 8);
     button(cx + 66, by, 64, 20, 'MY CARDS', () => { OPEN = null; menu = 'cards'; }, '#1a2030', '#fff', 7);
@@ -3515,6 +3515,25 @@ function drawShop(){
 
 // ── the collection ─────────────────────────────────────────────────────────
 let colSort = 'ovr', colFilter = 'all', colSel = null, colScroll = 0, cardFlip = false;
+// the Bench view: tap bench cards to select them (all of one colour); with 5 selected the button trades them for 1 random card of the next colour up
+let benchSel = [];
+function benchToggle(c){
+  const t = tierIdx(c);
+  if (benchSel.includes(c.id)){ benchSel = benchSel.filter(id => id !== c.id); return; }
+  const first = benchSel.length ? cardById(benchSel[0]) : null;
+  if (first && tierIdx(first) !== t) benchSel = [];                         // a different colour: start a new selection with this card
+  if (benchSel.length < TRADE_N) benchSel.push(c.id);
+}
+function benchTrade(){
+  const give = benchSel.map(cardById).filter(Boolean);
+  if (give.length !== TRADE_N || give.some(c => inUse(c.id))) { benchSel = []; return; }
+  const ti = tierIdx(give[0]);
+  if (give.some(c => tierIdx(c) !== ti) || ti >= 5){ benchSel = []; return; }
+  G.cards = G.cards.filter(c => !benchSel.includes(c.id));
+  const c = rollCard('bronze', ti + 1);
+  OPEN = { kind:'trade', cards:[c], i:0, t:0, spin:null, revealed:[], from:'bench', per:1, bspin:null };
+  benchSel = []; menu = 'open'; save();
+}
 function myCards(){
   let list = G.cards.slice();
   if (colFilter === 'hit') list = list.filter(c => !isPitcher(c));
@@ -3533,7 +3552,7 @@ function drawCards(){
     const x = 10 + i * 62, on = colFilter === k;
     if (on) R(x, 22, 58, 14, UI.yellow); else uiBox(x, 22, 58, 14);
     text(l, x + 29, 25, on ? '#241a00' : '#ffffff', 7, 'center');
-    btns.push({ x, y:22, w:58, h:14, fn: () => { colFilter = k; colScroll = 0; } });
+    btns.push({ x, y:22, w:58, h:14, fn: () => { colFilter = k; colScroll = 0; benchSel = []; } });
   });
   const list = myCards(), cw = 44, ch = 62, per = Math.floor((W - 16) / (cw + 4));
   const rows = Math.ceil(list.length / per), maxScroll = Math.max(0, rows * (ch + 6) - (H - 70));
@@ -3544,7 +3563,11 @@ function drawCards(){
     if (y > H || y < 10) return;
     drawCard(x, y, c, cw, ch, frame, { });
     if (inUse(c.id)){ R(x, y + ch + 1, cw, 2, '#54d67a'); }                              // a green bar under the card: he is in your lineup
-    btns.push({ x, y, w:cw, h:ch, fn: () => { colSel = c.id; cardFlip = false; menu = 'card'; } });
+    if (colFilter === 'bench'){
+      const sel = benchSel.includes(c.id);
+      if (sel){ R(x, y + ch - 3, cw, 3, '#54d67a'); g.strokeStyle = '#54d67a'; g.lineWidth = 1.5; g.strokeRect(x - .5, y - .5, cw + 1, ch + 1); textb('✓', x + cw / 2, y + 12, '#54d67a', 14, 'center'); }
+      btns.push({ x, y, w:cw, h:ch, fn: () => benchToggle(c) });
+    } else btns.push({ x, y, w:cw, h:ch, fn: () => { colSel = c.id; cardFlip = false; menu = 'card'; } });
   });
   g.restore();
   if (maxScroll > 0){
@@ -3552,7 +3575,13 @@ function drawCards(){
     button(W - 26, H - 48, 20, 20, '▼', () => colScroll = Math.min(maxScroll, colScroll + 60));
   }
   button(10, H - 22, 70, 18, 'BACK', () => menu = 'title');
-  button(W / 2 - 50, H - 22, 100, 18, 'TRADE IN 5→1', () => { menu = 'trade'; tradeSel = []; }, '#6a3aa8', '#fff', 8);
+  if (colFilter === 'bench'){
+    const first = benchSel.length ? cardById(benchSel[0]) : null, ti = first ? tierIdx(first) : -1, ready = benchSel.length === TRADE_N && ti < 5;
+    const label = ready ? `TRADE IN FOR 1 ${TIER_LABEL[ti + 1]} CARD` : ti === 5 ? 'RED IS THE TOP COLOUR' : first ? `PICK ${TRADE_N - benchSel.length} MORE ${TIER_LABEL[ti]}` : `PICK ${TRADE_N} OF ONE COLOUR`;
+    button(W / 2 - 84, H - 22, 168, 18, label, ready ? benchTrade : () => {}, ready ? '#2a6a3a' : '#161b26', ready ? '#fff' : '#8896b3', 8);
+    if (!list.length) textb('No bench cards: everybody is in your lineup.', W / 2, 90, '#ffffff', 8, 'center', W - 20);
+    else text(`Tap ${TRADE_N} bench cards of one colour to trade them up  (${benchSel.length}/${TRADE_N})`, W / 2, H - 36, UI.ice, 6, 'center', W - 20);
+  } else button(W / 2 - 50, H - 22, 100, 18, 'TRADE IN 5→1', () => { menu = 'trade'; tradeSel = []; }, '#6a3aa8', '#fff', 8);
   button(W - 86, H - 22, 76, 18, 'LINEUP', () => menu = 'lineup', '#2f6fe0');
 }
 
@@ -3996,7 +4025,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
     P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
-  runToggle, runBack, drawPlay, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
+  runToggle, runBack, drawPlay, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────
