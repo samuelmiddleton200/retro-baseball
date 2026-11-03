@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-02u';
+const BUILD = '11-02w';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1286,8 +1286,10 @@ function stepBall(dt){
   B.t += dt / 1000;
   const p = ballPos(B, B.t); B.d = p.d; B.lat = p.lat; B.h = p.h;
   if (B.t >= B.T) B.landed = true;
-  if (isManualPlay(B)) manualThrow(B);
-  else if (B.thr && B.t >= B.thr.t0 && !B.hr){                     // the planned throw (a ground out, a single): the ball flies to the base and stays there
+  B.heldAfter = false; B.inFlightThrow = false;                      // is the ball in somebody's hand after the catch, or flying on a throw?
+  if (isManualPlay(B)){ manualThrow(B); if (B.pass){ if (B.pass.ph === 'fly') B.inFlightThrow = true; else B.heldAfter = true; } }
+  else if (B.thr && B.t >= B.thr.t0 && !B.hr){
+    if (B.t < B.thr.t1) B.inFlightThrow = true; else B.heldAfter = true;                     // the planned throw (a ground out, a single): the ball flies to the base and stays there
     const u = clamp((B.t - B.thr.t0) / Math.max(.05, B.thr.t1 - B.thr.t0), 0, 1);
     B.d = lerp(B.thr.from[0], B.thr.to[0], u); B.lat = lerp(B.thr.from[1], B.thr.to[1], u); B.h = 4 + Math.sin(u * Math.PI) * Math.min(16, B.thr.len * .09);
   }
@@ -1688,7 +1690,7 @@ function stepAtBat(dt){
       B.judged = true;
       if (B.foul){ B.play = 'foul'; say('FOUL BALL'); }
     }
-    if ((B.judged && B.t > B.tEnd && (B.t > B.tEnd + 9 || runnersSettled())) || P.playT > 24000){
+    if ((B.judged && B.t > B.tEnd && (B.t > B.tEnd + 9 || (runnersSettled() && !B.inFlightThrow))) || P.playT > 24000){
       P.state = 'result'; P.hold = 0; applyCall();
     }
     return;
@@ -2140,7 +2142,9 @@ function gxPlay(B){
     M.bases.forEach((p2, i) => { if (!p2) return; const adv = B.isCatch || B.play === 'groundout' ? 0 : (B.runN || 1); run('run' + i, p2, 90 * (i + 1), manual ? 360 : 90 * (i + 1) + adv * 90); });
   } else S.people.push(gxPerson('runB', 'bat', b, bt, b.bats === 'L' ? 3.0 : -3.0, -.7, b.bats === 'L' ? -BAT_YAW : BAT_YAW, GL3D.poseBatter(1, t)));
   // the ball and its white path
+  ballHeld = (ballHeld && !B.inFlightThrow) || !!B.heldAfter;      // seen while it flies, rolls or is thrown; gone while it is in a hand
   S.ball = ballHeld && !B.hr ? null : { x:B.lat, y:B.h + .4, z:-B.d, r:.95 };
+  GX.bv = !!S.ball;
   if (B.t < .05) GX.trail = [];
   GX.trail.push([B.lat, B.h * 1.0 + .4, -B.d]); if (GX.trail.length > 290) GX.trail.shift();
   S.trail = GX.trail.slice(); S.trailMode = 'line';
@@ -3827,7 +3831,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
     P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
-  runToggle, drawPlay, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; },
+  runToggle, drawPlay, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────
