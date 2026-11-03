@@ -77,7 +77,8 @@ GL.frame = function(S){
   const dm = S.trailMode === 'dots';
   dots.forEach((m, i) => { const t = S.trail && dm ? S.trail[i] : null; if (!t){ m.visible = false; return; } m.visible = true; m.position.set(t[0], t[1], t[2]); const r = S.dotR || .07; m.scale.set(r, r, r); m.material.opacity = .85 * (1 - i / 16); });
   if (S.trail && S.trailMode === 'line' && S.trail.length > 1){
-    trailLine.visible = true; trailPts.visible = true; const a = trailLine.geometry.attributes.position, n = Math.min(300, S.trail.length);
+    trailLine.visible = true; trailPts.visible = !!S.ball;       // no ball (it is in a glove) = no dots either: the dots pile up at the head of the trail and looked like a ball sitting on the fielder
+    const a = trailLine.geometry.attributes.position, n = Math.min(300, S.trail.length);
     for (let i = 0; i < 300; i++){ const t = S.trail[Math.min(i, n - 1)]; a.setXYZ(i, t[0], t[1], t[2]); }
     a.needsUpdate = true;
   } else { trailLine.visible = false; trailPts.visible = false; }
