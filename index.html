@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03b';
+const BUILD = '11-03c';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2286,7 +2286,7 @@ function gxPlayHud(B){
 
 // ── people stamped onto the painted field: each one is a 3D player baked into a small canvas at the picture's own pixel size ──
 const PIXK = .5;                                                   // bake pixels per target pixel (so one art pixel = 2 target pixels)
-const PLATE = new Image(); PLATE.onload = () => imgReady++; PLATE.src = 'assets/fields/plate_clean.png?b=11-03b';
+const PLATE = new Image(); PLATE.onload = () => imgReady++; PLATE.src = 'assets/fields/plate_clean.png?b=11-03c';
 const IDLE = new Image(); IDLE.onload = () => imgReady++; IDLE.src = 'assets/fields/idle.png';        // the target picture itself, with the ball, its dotted path and the pill taken out
 const IDLE_BOX = { bat:[214,236,344,452], cat:[316,350,446,492], pit:[388,168,436,236] };
 const plateOK = () => ready(PLATE) && ready(IDLE) && !window.__noPlate && window.GL3D && GL3D.bakeInit && GL3D.bakeInit();

@@ -50,11 +50,43 @@ for y in range(262, 300):
         if a[y, x, 0] > 200 and a[y, x, 1] > 190 and a[y, x, 2] > 160 and (x < 42 or y < 285):
             a[y, x] = a[y, x] * 0 + np.array([174., 110., 62.])
 
-# 3) the edge columns: the game stretches the outer few columns across wide screens, so they must be clean
+# 3) the edge columns: the game stretches the outer few columns across wide screens, so they must be clean.
+#    Stands and sky: clone / mirror (nothing diagonal there). The field: CONTINUE the foul line and lawn edge in the same direction off the screen
+#    (mirroring them made a corner), by sliding the dirt below the foul line along its own slope.
 a[49:150, 0:14] = a[49:150, 232:246]                                  # left: clone clean stands and wall from beside the scoreboard
-for k in range(14): a[150:, 13 - k] = a[150:, 14 + k]                 # left, field: mirror
-for k in range(24): a[54:, 736 + k] = a[54:, 735 - k]                 # right: mirror the clean columns beside the stands and the field
-for k in range(14): a[:54, 746 + k] = a[:54, 745]                      # (up in the sky beside the pause button: just repeat the clean sky)
+for k in range(24): a[54:150, 736 + k] = a[54:150, 735 - k]           # right stands: mirror
+for k in range(14): a[:54, 746 + k] = a[:54, 745]                      # (sky beside the pause button: repeat the clean sky)
+
+def lawn_bottom(x):                                                    # first dirt row below the lawn, scanning down from the lawn, for column x
+    for y in range(262, 440):
+        if a[y, x, 0] > a[y, x, 1] + 25 and a[y + 3, x, 0] > a[y + 3, x, 1] + 25: return y
+    return None
+def slope(xs):
+    pts = [(x, lawn_bottom(x)) for x in xs if lawn_bottom(x) is not None]
+    return np.polyfit([p[0] for p in pts], [p[1] for p in pts], 1)[0]
+mR = slope(range(690, 733)); mL = slope(range(30, 90))                 # about -0.47 on the right, +0.5 on the left
+src = a.copy()
+for k in range(1, 25):                                                 # right edge, columns 735+k
+    x = 735 + k; yb = lawn_bottom(735) + mR * k
+    for y in range(150, H):
+        sy = y if y <= yb else y - mR * k                              # below the foul line: slide along its slope
+        sy = int(round(min(H - 1, max(0, sy)))); a[y, x] = src[sy, 735]
+for k in range(1, 15):                                                 # left edge, columns 14-k
+    x = 14 - k; yb = lawn_bottom(14) - mL * k
+    for y in range(150, H):
+        sy = y if y <= yb else y + mL * k
+        sy = int(round(min(H - 1, max(0, sy)))); a[y, x] = src[sy, 14]
+# the chalk of the left foul line: it began part-way across the screen as a few dots. Draw it from the very edge, same direction, thinning to a point.
+ch = [(x, y) for y in range(262, 330) for x in range(52, 140) if a[y, x, 0] > 215 and a[y, x, 1] > 205 and a[y, x, 2] > 175]
+fm, fc = np.polyfit([p[0] for p in ch], [p[1] for p in ch], 1)
+for x in range(0, 70):
+    w = 0.6 + (x / 70.0) * 1.6                                         # a hair at the edge, filling out to the line's own width
+    yc = fm * x + fc
+    for y in range(int(yc - 3), int(yc + 4)):
+        d = abs(y + .5 - yc)
+        if d <= w / 2 + .2:
+            t = max(0.0, min(1.0, (w / 2 + .5 - d)))
+            a[y, x] = a[y, x] * (1 - t) + np.array([242., 236., 222.]) * t
 
 # 4) the picture's own scoreboard panel carried a red/blue team stripe at its left edge; the game draws its own, so wipe it out
 for y in range(26, 70):
