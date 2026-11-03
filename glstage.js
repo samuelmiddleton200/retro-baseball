@@ -32,8 +32,8 @@ function lightsInit(){
     new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .22 }));
   zg.add(gl); zoneBox = zg; GL.scene.add(zg);
   const tp = []; for (let i = 0; i < 300; i++) tp.push(new THREE.Vector3());
-  trailLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(tp), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .9 })); trailLine.frustumCulled = false; GL.scene.add(trailLine);
-  trailPts = new THREE.Points(trailLine.geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 3, sizeAttenuation: false })); trailPts.frustumCulled = false; GL.scene.add(trailPts);
+  trailLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(tp), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .55 })); trailLine.frustumCulled = false; GL.scene.add(trailLine);
+  trailPts = new THREE.Points(trailLine.geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 1.5, sizeAttenuation: false })); trailPts.frustumCulled = false; GL.scene.add(trailPts);
 }
 
 function sig(o){ return [o.kind, o.skin, o.hair, o.cap, o.cap2, o.pants, o.shirt, o.sleeve, o.helm, o.ab, o.glove ? 1 : 0].join('|'); }
