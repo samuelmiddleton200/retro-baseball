@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03e';
+const BUILD = '11-03g';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1047,6 +1047,7 @@ function startGame(oppIdx, home, opts = {}){
     pcHome:0, pcAway:0, line:[], mode: opts.mode || 'full',       // full | offense | defense
     park: makePark(home ? me : opp), msg:null, msgT:0, over:false, exc:0,
   };
+  M.uni = pickUniforms(M.home, M.away);                          // who wears what, once, for the whole game
   M.pitcherHome.st.ip = M.pitcherHome.st.ip || 0;
   phase = 'atbat'; setupAtBat();
   setTimeout(warmHitView, 400);                                // build the 3D park while the first pitch is still coming, not at the first hit
@@ -1061,7 +1062,7 @@ function warmHitView(){
     WARMED = S.parkKey + S.parkCols.join();
     gxSize(); gxParkBG(S);
     // colouring a sheet (reading its pixels) takes a few ms each; do all of them now, a few at a time, not in the middle of the first hit
-    const tasks = [], cols = [fldTeam().c1, batTeam().c1];
+    const tasks = [], cols = [uni(fldTeam()), uni(batTeam())];
     for (const c of cols){
       for (let i = 0; i < 8; i++){
         if (GPR.ready) for (const d of ['side', 'front', 'back']) tasks.push(() => { gpTint(GPR[d][i], 'RN' + d + i, c); gpRunHead(d, i); });
@@ -1085,6 +1086,31 @@ function makePark(team){
   return { ...k, night: (team.ab.charCodeAt(0) % 2) === 0, excite:0 };
 }
 
+// What a colour "is" for this rule: blue, navy and royal blue are all BLUE; red and maroon are RED, and so on. Two clubs may never wear the same family.
+function colorFamily(hex){
+  const [r, g, b] = hexRgb(hex).map(v => v / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (d < .1) return l > .78 ? 'white' : l < .3 ? 'black' : 'grey';                       // white and silver are one family, black and charcoal another
+  let h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h = (h * 60 + 360) % 360;
+  if (h < 14 || h >= 334) return 'red';
+  if (h < 42) return l < .24 ? 'brown' : 'orange';
+  if (h < 70) return 'yellow';
+  if (h < 170) return 'green';
+  if (h < 200) return 'teal';
+  if (h < 268) return 'blue';
+  if (h < 330) return 'purple';
+  return 'pink';
+}
+// home: main colour, always. away: main colour if it is a different kind of colour, else its second, else plain white or grey road colours.
+function pickUniforms(home, away){
+  const hf = colorFamily(home.c1);
+  const opts = [[away.c1, away.c2], [away.c2, away.c1], ['#ffffff', away.c1], ['#c4ced4', away.c1], ['#27251f', away.c1]];
+  const pick = opts.find(o => colorFamily(o[0]) !== hf) || opts[2];
+  // the trim colour (cap brim, sleeves): home's second colour, kept different from its main one
+  const trim = t => colorFamily(t.c2) !== colorFamily(t.c1) ? t.c2 : '#ffffff';
+  return { home: home.c1, away: pick[0], homeTrim: trim(home), awayTrim: pick[0] === away.c1 ? trim(away) : away.c1 };
+}
+const uni = t => (M && M.uni) ? (t === M.home ? M.uni.home : M.uni.away) : t.c1;
+const uni2 = t => (M && M.uni) ? (t === M.home ? M.uni.homeTrim : M.uni.awayTrim) : t.c2;
 const batTeam = () => M.top ? M.away : M.home;
 const fldTeam = () => M.top ? M.home : M.away;
 const curPitcher = () => M.top ? M.pitcherHome : M.pitcherAway;
@@ -2032,8 +2058,8 @@ function gxSize(){ const rows = clamp(Math.round(cv.height / 2.3), 300, 540); /*
 const gxLook = m => ({ skin: (m.look && m.look.skin) || '#d9a577', hair: (m.look && m.look.hair) || '#2a1c14' });
 function gxPerson(key, kind, man, team, x, z, yaw, pose, o = {}){
   const L = gxLook(man);
-  const away = team === M.away, shirt = away ? '#cfd3dc' : team.c1;      // road grey, or the home team's own colour
-  return Object.assign({ key, kind, skin:L.skin, hair:L.hair, ab:team.ab, cap:team.c1, cap2:team.c2, shirt, sleeve:team.c1, pants:away ? '#c4c8d2' : '#eceef3', x, z, y:0, yaw, pose }, o);
+  const away = team === M.away, shirt = uni(team);                        // the club's colour for this match
+  return Object.assign({ key, kind, skin:L.skin, hair:L.hair, ab:team.ab, cap:uni(team), cap2:uni2(team), shirt, sleeve:uni(team), pants:away ? '#c4c8d2' : '#eceef3', x, z, y:0, yaw, pose }, o);
 }
 // where on the screen the strike zone is, so the aim circle and the timing ring sit on it
 function gxZone(){
@@ -2044,7 +2070,7 @@ function gxZone(){
 }
 function gxBase(){                                              // everything that is the same in both views
   const ft = fldTeam(), bt = batTeam();
-  return { park: M.park, parkKey: 'p' + (M.park.wall || '') + M.park.cf, parkCols: [ft.c1, bt.c1], time: frame / 60, people: [] };
+  return { park: M.park, parkKey: 'p' + (M.park.wall || '') + M.park.cf, parkCols: [uni(ft), uni(bt)], time: frame / 60, people: [] };
 }
 // the pitch ball's path from the hand to the plate, in feet
 function gxPitchBall(f){
@@ -2202,18 +2228,18 @@ function gxOverlay(S){
   }
   if (S.ball){
     const b = S.ball, gq = P(b.x, .05, b.z), q = P(b.x, b.y, b.z), hh = clamp(b.y / 60, 0, 1);
-    g.fillStyle = 'rgba(20,14,6,.32)'; g.beginPath(); g.ellipse(gq.x, gq.y, 1.8 + hh * 1.2, .8 + hh * .4, 0, 0, 7); g.fill();    // its shadow on the grass
-    // a baseball: dark rim, white leather lit from the top left, two red curved seams, spinning as it flies
-    const R0 = 2.3;
-    g.save(); g.translate(q.x, q.y);
-    g.fillStyle = '#262b40'; g.beginPath(); g.arc(0, 0, R0, 0, 7); g.fill();
-    g.fillStyle = '#f4f1e8'; g.beginPath(); g.arc(0, 0, R0 - .5, 0, 7); g.fill();
-    g.fillStyle = 'rgba(150,150,170,.45)'; g.beginPath(); g.arc(.45, .45, R0 - .5, -.4, 2.7); g.lineTo(.45, .45); g.fill();         // shade, bottom right
-    g.rotate((S.time || 0) * 9);
-    g.strokeStyle = '#d6372c'; g.lineWidth = .5; g.lineCap = 'round';
-    g.beginPath(); g.arc(-R0 * .95, 0, R0 * .85, -.95, .95); g.stroke();                                                            // the two seams
-    g.beginPath(); g.arc(R0 * .95, 0, R0 * .85, Math.PI - .95, Math.PI + .95); g.stroke();
-    g.restore();
+    const sw = hh > .5 ? 5 : 4;
+    R(Math.round(gq.x - sw / 2), Math.round(gq.y), sw, 1, 'rgba(20,14,6,.38)');                              // its shadow on the grass, a flat pixel bar
+    // a pixel-art baseball, 5 x 5: dark rim, white leather, grey shade bottom right, two red seam pixels (they swap sides as it spins)
+    const x0 = Math.round(q.x) - 2, y0 = Math.round(q.y) - 2, spin = Math.floor((S.time || 0) * 8) % 2;
+    const D = '#262b40', W = '#f6f3ea', G = '#b9b7bd', Rd = '#d6372c';
+    const px = [
+      ['', D, D, D, ''],
+      [D, W, W, spin ? W : Rd, D],
+      [D, W, W, W, D],
+      [D, spin ? W : Rd, W, G, D],
+      ['', D, D, D, '']];
+    for (let y = 0; y < 5; y++) for (let x = 0; x < 5; x++) if (px[y][x]) R(x0 + x, y0 + y, 1, 1, px[y][x]);
   }
 }
 // the target's sprites in the park: they bob, lean into a run and face the way they go
@@ -2425,7 +2451,7 @@ function drawFielderSprite(xL, yL, pos, grab, hOver){
   if (!plateOK()) return drawFielderSpriteOld(xL, yL, pos, grab);
   if (GPF.ready){
     const i = Math.max(0, FIELDERS.findIndex(f => f[2] === pos)), f = ((frame + i * 37) % 150) < 90 ? 0 : 1;      // he shifts his weight every couple of seconds
-    return gpStamp(GPF.img[f], 'FD' + f, fldTeam().c1, xL, yL, (hOver || figH(yL / TU)) * 1.55, pos === '1B' || pos === '2B' || pos === 'RF', .96);
+    return gpStamp(GPF.img[f], 'FD' + f, uni(fldTeam()), xL, yL, (hOver || figH(yL / TU)) * 1.55, pos === '1B' || pos === '2B' || pos === 'RF', .96);
   }
   const ft = fldTeam(), i = Math.max(0, FIELDERS.findIndex(f => f[2] === pos)), man = ft.lineup[i] || ft.lineup[0], hT = hOver || figH(yL / TU);
   const st = phaseStep(frame / 60 + i * .37, 6), o = gxPerson('f' + i, 'field', man, ft, 0, 0, 0, null, { glove:1 });
@@ -2438,7 +2464,7 @@ for (let i = 0; i < 8; i++){ const im = new Image(); im.onload = () => { im._ok 
 function drawPitcherAt(xL, yL, u){
   if (!plateOK()) return drawPitcherAtOld(xL, yL, u);
   if (GPP.ready){
-    const pos = u < .70 ? (u / .70) * 5 : 5 + clamp((u - .70) / .16, 0, 1) * 2, f0 = Math.min(7, Math.floor(pos)), f1 = Math.min(7, f0 + 1), k = pos - f0, c1 = fldTeam().c1;
+    const pos = u < .70 ? (u / .70) * 5 : 5 + clamp((u - .70) / .16, 0, 1) * 2, f0 = Math.min(7, Math.floor(pos)), f1 = Math.min(7, f0 + 1), k = pos - f0, c1 = uni(fldTeam());
     const X = tx(412), Y = ty(232);
     gpStamp(GPP.img[f0], 'PT' + f0, c1, X, Y, 80, false, .96);
     if (k > .03 && f1 !== f0) gpStamp(GPP.img[f1], 'PT' + f1, c1, X, Y, 80, false, .96, k);
@@ -2454,12 +2480,12 @@ function drawBatter(p, swingT, idle, rel){
   if (GP.ready){
     const bt = batTeam(), lefty = p.bats === 'L';
     const xL = lefty ? tx(478) : tx(300), yL = ty(449);
-    if (GP.warm !== bt.c1){ GP.warm = bt.c1; for (let i = 0; i < 8; i++){ gpHead(i); gpScaled(GP.batter[i], 'B' + i, bt.c1, Math.round(GP.batter[i].naturalWidth * (196 * TU) / (GP.batter[i].naturalHeight * .97)), Math.round(196 * TU / .97)); } }
-    if (rel == null){ const f = batterFrame(rel, idle); return gpStamp(GP.batter[f], 'B' + f, bt.c1, xL, yL, 196, lefty, null, null, gpHead(f) - GP.batter[f].naturalWidth / 2 - (gpHead(0) - GP.batter[0].naturalWidth / 2), true); }
+    if (GP.warm !== uni(bt)){ GP.warm = uni(bt); for (let i = 0; i < 8; i++){ gpHead(i); gpScaled(GP.batter[i], 'B' + i, uni(bt), Math.round(GP.batter[i].naturalWidth * (196 * TU) / (GP.batter[i].naturalHeight * .97)), Math.round(196 * TU / .97)); } }
+    if (rel == null){ const f = batterFrame(rel, idle); return gpStamp(GP.batter[f], 'B' + f, uni(bt), xL, yL, 196, lefty, null, null, gpHead(f) - GP.batter[f].naturalWidth / 2 - (gpHead(0) - GP.batter[0].naturalWidth / 2), true); }
     const pos = batterPos(rel), snap = pos > 3.5, f0 = snap ? Math.min(7, Math.round(pos)) : Math.floor(pos), f1 = snap ? f0 : Math.min(7, f0 + 1), u = pos - f0, ref = gpHead(0) - GP.batter[0].naturalWidth / 2;
     const dx = f => gpHead(f) - GP.batter[f].naturalWidth / 2 - ref;
-    gpStamp(GP.batter[f0], 'B' + f0, bt.c1, xL, yL, 196, lefty, null, null, dx(f0), true);
-    if (u > .02 && f1 !== f0) gpStamp(GP.batter[f1], 'B' + f1, bt.c1, xL, yL, 196, lefty, null, u, dx(f1), true);
+    gpStamp(GP.batter[f0], 'B' + f0, uni(bt), xL, yL, 196, lefty, null, null, dx(f0), true);
+    if (u > .02 && f1 !== f0) gpStamp(GP.batter[f1], 'B' + f1, uni(bt), xL, yL, 196, lefty, null, u, dx(f1), true);
     return;
   }
   if (!plateOK()) return drawBatterOld(p, swingT, idle);
@@ -2467,13 +2493,13 @@ function drawBatter(p, swingT, idle, rel){
   const st = swingT == null ? 'w' + phaseStep(idle / 60, 8) : Math.round(clamp(swingT, 0, 1) * 24);
   const o = gxPerson('bat', 'bat', p, bt, 0, 0, 0, null, { cap:'#0e1424', shirt:'#161d36', sleeve:'#161d36', pants:'#b4b8c4', skin:'#c9936a', hair:'#14100c' });   // the target's batter: black helmet, navy top, grey pants
   const pose = swingT == null ? GL3D.poseBatter(null, phaseStep(idle / 60, 8) / 8 * 3) : GL3D.poseBatter(Math.round(clamp(swingT, 0, 1) * 24) / 24, 0);
-  return bakeStamp('b', 'B' + lookKey(p.look) + bt.c1 + '|' + st, o, pose, .5, cx, ty(449), 196, lefty);
+  return bakeStamp('b', 'B' + lookKey(p.look) + uni(bt) + '|' + st, o, pose, .5, cx, ty(449), 196, lefty);
 }
 function drawBehindPlate(){
   if (!plateOK()) return drawBehindPlateOld();
   const ft = fldTeam(), cm = ft.lineup[7] || ft.lineup[0];
-  const oc = gxPerson('cat', 'catch', cm, ft, 0, 0, 0, null, { glove:1, cap2:ft.c2, helm:ft.c1 });
-  bakeStamp('c', 'C' + lookKey(cm.look) + ft.c1 + ft.c2, oc, GL3D.poseCatcher(0, 2.4, 0), Math.PI, tx(386), ty(520), 225, false);
+  const oc = gxPerson('cat', 'catch', cm, ft, 0, 0, 0, null, { glove:1, cap2:uni2(ft), helm:uni(ft) });
+  bakeStamp('c', 'C' + lookKey(cm.look) + uni(ft) + uni2(ft), oc, GL3D.poseCatcher(0, 2.4, 0), Math.PI, tx(386), ty(520), 225, false);
   const ou = gxPerson('ump', 'ump', { look:{ skin:'#c88e5e', hair:'#1d1510' } }, { c1:'#16191f', c2:'#16191f', ab:'U' }, 0, 0, 0, null, { pants:'#3a3f4c' });
   bakeStamp('u', 'U', ou, GL3D.poseUmp(0), Math.PI, tx(386), ty(640), 300, false);
 }
