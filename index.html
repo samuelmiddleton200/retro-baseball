@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-02n';
+const BUILD = '11-02r';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1221,12 +1221,17 @@ let RUNBTN = [];                                   // on-screen hit areas of thi
 const isManualPlay = B => !!B && userBats() && !B.hr && !B.foul && !B.isCatch && ['single', 'double', 'triple', 'error'].includes(B.play);
 // the base he is heading for (feet along the path): the first one ahead of him, or the one he stands on once he has stopped there
 const runAhead = c => {
-  if (c.pos <= c.s0 + .5) return c.s0 + 90;
+  if (c.pos <= c.s0 + .5) return c.forced ? c.s0 + 90 : c.s0;      // a forced runner is running to the next base; a free one is standing on his
   const q = c.pos / 90; return Math.abs(q - Math.round(q)) < .012 ? c.pos : Math.ceil(q) * 90;
 };
 function runPosCtl(key, man, s0, s1){
   const manual = isManualPlay(BALL);
-  const c = RUNCTL[key] || (RUNCTL[key] = { te:0, last:BALL.t, cap: manual ? Math.min(360, s0 + 90) : s1, s0, s1, pos:s0, man, manual, arr:{} });
+  let c = RUNCTL[key];
+  if (!c){
+    // forced = he has to run because the runner behind him pushes him: the batter always; first base's runner always; second's if first is taken; third's if first and second are
+    const bs = M.bases, forced = key === 'runB' || key === 'run0' || (key === 'run1' && !!bs[0]) || (key === 'run2' && !!(bs[0] && bs[1]));
+    c = RUNCTL[key] = { te:0, last:BALL.t, cap: manual ? Math.min(360, s0 + (forced ? 90 : 0)) : s1, s0, s1, pos:s0, man, manual, forced, arr:{} };
+  }
   const dt = BALL.t - c.last; c.last = BALL.t; c.s1 = s1;
   if (dt > 0 && s0 + runDist(man.speed, c.te - CFG.RUN_START_DELAY) < c.cap - .01) c.te += dt;      // he only runs while he is short of the base he is held to
   c.pos = Math.min(c.cap, s0 + runDist(man.speed, c.te - CFG.RUN_START_DELAY));
@@ -1275,11 +1280,51 @@ function ballPos(B, t){
   return { d: lerp(a[1], b[1], u), lat: lerp(a[0], b[0], u), h: lerp(a[2], b[2], u) };
 }
 // move the ball on by dt milliseconds (the caller applies TIME_SCALE)
+const BASE_XY = [[63.64, 63.64], [127.28, 0], [63.64, -63.64], [0, 0]];       // [depth, lat] of 1B, 2B, 3B, home
 function stepBall(dt){
   const B = BALL; if (!B || B.done) return;
   B.t += dt / 1000;
   const p = ballPos(B, B.t); B.d = p.d; B.lat = p.lat; B.h = p.h;
   if (B.t >= B.T) B.landed = true;
+  if (isManualPlay(B)) manualThrow(B);
+  else if (B.thr && B.t >= B.thr.t0 && !B.hr){                     // the planned throw (a ground out, a single): the ball flies to the base and stays there
+    const u = clamp((B.t - B.thr.t0) / Math.max(.05, B.thr.t1 - B.thr.t0), 0, 1);
+    B.d = lerp(B.thr.from[0], B.thr.to[0], u); B.lat = lerp(B.thr.from[1], B.thr.to[1], u); B.h = 4 + Math.sin(u * Math.PI) * Math.min(16, B.thr.len * .09);
+  }
+}
+// You run the bases, so the defence has to decide where to throw: at the lead runner who is still running, at the base he is heading for.
+// If the throw gets there before he does and that base was an extra one (past the base the hit gave him), he is thrown out.
+function manualThrow(B){
+  const T = B.thrInfo; if (!T || B.hr) return;
+  if (!B.pass){ if (B.t < T.tf + T.tr) return; B.pass = { ph:'hold', x:T.pf[0], y:T.pf[1], t0:B.t }; }
+  const P = B.pass;
+  if (P.ph === 'hold'){
+    B.d = P.x; B.lat = P.y; B.h = 4;
+    if (B.t < P.t0) return;                                                     // the transfer: glove to hand
+    let best = null;
+    for (const key in RUNCTL){
+      const c = RUNCTL[key]; if (c.out || c.pos >= c.cap - .05) continue;
+      const nb = c.cap, bi = Math.round(nb / 90) - 1; if (bi < 0 || bi > 3) continue;                // throw to the base he is running to
+      if (!best || c.pos > best.c.pos) best = { key, c, nb, bi };
+    }
+    if (!best) return;
+    const to = BASE_XY[best.bi], len = Math.hypot(to[0] - P.x, to[1] - P.y);
+    B.pass = { ph:'fly', fr:[P.x, P.y], to, len, t0:B.t, t1:B.t + len / T.arm, run:best };
+    return;
+  }
+  if (P.ph === 'wait'){                                                          // he holds the ball on the base until the runner arrives, then tags him
+    B.d = P.x; B.lat = P.y; B.h = 4;
+    const c = P.run.c;
+    if (c.pos >= P.run.nb - .05){ c.out = true; c.cap = c.pos; c.outT = B.t; say('TAGGED OUT!'); B.pass = { ph:'hold', x:P.x, y:P.y, t0:B.t + .5 }; }
+    return;
+  }
+  const u = clamp((B.t - P.t0) / Math.max(.05, P.t1 - P.t0), 0, 1);
+  B.d = lerp(P.fr[0], P.to[0], u); B.lat = lerp(P.fr[1], P.to[1], u); B.h = 4 + Math.sin(u * Math.PI) * Math.min(16, P.len * .09);
+  if (B.t >= P.t1){
+    const c = P.run.c, extra = P.run.nb > c.s0 + (c.forced ? 90 : 0) + .5;           // only a base beyond the one he has to take can be lost
+    if (extra && !c.out && c.pos < P.run.nb - .05){ B.pass = { ph:'wait', x:P.to[0], y:P.to[1], run:P.run }; return; }
+    B.pass = { ph:'hold', x:P.to[0], y:P.to[1], t0:B.t + .5 };
+  }
 }
 const ballDist = () => BALL.landed ? BALL.carry : Math.hypot(BALL.d, BALL.lat);
 
@@ -1710,14 +1755,8 @@ function manualHit(res){
   M.bases.forEach((p2, i) => { if (p2) entries.push({ key:'run' + i, man:p2, s0:90 * (i + 1) }); });
   let outs = 0, runs = 0, batterBase = 1, thrownOut = false;
   const res2 = entries.map(e => {
-    const c = RUNCTL[e.key]; let K = c ? c.cap : e.s0 + 90, out = false;
-    for (let kk = e.s0 + 180; kk <= K; kk += 90){                        // every base past the free one
-      const arr = c && c.arr[kk / 90];
-      if (arr == null || !T) continue;
-      const bd = Math.hypot(T.pf[0] - bases[kk / 90 - 1][0], T.pf[1] - bases[kk / 90 - 1][1]);
-      if (arr + CFG.EXTRA_BASE_MARGIN >= T.tf + T.tr + bd / T.arm){ out = true; K = kk; break; }
-    }
-    return { e, K, out };
+    const c = RUNCTL[e.key];
+    return { e, K: c ? c.cap : e.s0 + 90, out: !!(c && c.out) };
   });
   const nb = [null, null, null];
   res2.sort((a, b) => b.K - a.K).forEach(r => {                           // lead runner first, so a held runner blocks the one behind him
@@ -2090,10 +2129,11 @@ function gxPlay(B){
     const run = (key, man, s0, s1) => {
       const s = runPosCtl(key, man, s0, s1), a = basePathPos(s), a2 = basePathPos(Math.min(360, s + 1.5));
       const X = a.lat, Z = -a.d, mv = gxMover(key, X, Z);
+      if (RUNCTL[key] && RUNCTL[key].out && B.t > RUNCTL[key].outT + .9) return;       // thrown out: he walks off
       const dirYaw = Math.atan2(a2.lat - a.lat, -(a2.d - a.d));
       const cc = RUNCTL[key], held = cc && s >= cc.cap - .05;
       S.people.push(gxPerson(key, 'run', man, bt, X, Z, dirYaw, B.t < dly ? GL3D.poseBatter(1, t) : (held ? GL3D.poseReady(t) : GL3D.poseRun(mv.ph, man.speed)), { sp: B.t < dly || held ? { f:0 } : runCycle(dirYaw, mv.ph) }));
-      if (isManualPlay(B)){ const q = GL3D.toScreen(X, 9.6, Z, W, H); runMarks.push([key, q.x, q.y]); }
+      if (isManualPlay(B) && !(cc && cc.out)){ const q = GL3D.toScreen(X, 9.6, Z, W, H); runMarks.push([key, q.x, q.y]); }
     };
     const manual = isManualPlay(B);
     run('runB', b, 0, manual ? 360 : 90 * (B.runN || 1));
@@ -3780,6 +3820,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
     P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
+  runToggle, drawPlay, get RUNCTL(){ return RUNCTL; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────

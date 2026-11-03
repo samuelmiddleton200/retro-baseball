@@ -250,8 +250,8 @@ function buildPark(park, teamCols){
   // bases, plate, rubber, mound
   const white = new THREE.MeshBasicMaterial({ color: 0xf6f3ea });
   const sideM = new THREE.MeshBasicMaterial({ color: 0xb9b5aa }), sideD = new THREE.MeshBasicMaterial({ color: 0x8f8c84 });
-  const base = (x, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(1.5, .42, 1.5), [sideM, sideD, white, sideD, sideM, sideD]); b.position.set(x, .21, z); b.rotation.y = Math.PI / 4; G.add(b);
-    const sh = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 2.3), new THREE.MeshBasicMaterial({ color: 0x3a2410, transparent: true, opacity: .28, depthWrite: false })); sh.rotation.x = -Math.PI / 2; sh.rotation.z = Math.PI / 4; sh.position.set(x + .35, .04, z + .35); G.add(sh); };
+  const base = (x, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(2, .5, 2), [sideM, sideD, white, sideD, sideM, sideD]); b.position.set(x, .25, z); b.rotation.y = Math.PI / 4; G.add(b);
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 3.0), new THREE.MeshBasicMaterial({ color: 0x3a2410, transparent: true, opacity: .34, depthWrite: false })); sh.rotation.x = -Math.PI / 2; sh.rotation.z = Math.PI / 4; sh.position.set(x + .35, .04, z + .35); G.add(sh); };
   base(63.64, -63.64); base(0, -127.28); base(-63.64, -63.64);
   const plate = new THREE.Shape(); plate.moveTo(-.708, 0); plate.lineTo(.708, 0); plate.lineTo(.708, 0.708); plate.lineTo(0, 1.417); plate.lineTo(-.708, .708); plate.closePath();
   const pm = new THREE.Mesh(new THREE.ExtrudeGeometry(plate, { depth: .12, bevelEnabled: false }), white);
