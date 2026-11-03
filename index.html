@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03c';
+const BUILD = '11-03d';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2736,10 +2736,7 @@ function drawPitchInfo(){
   if (PLATE_ON && !(P && P.thrown) && phase !== 'pitching') { l1 = PITCH_LABEL[pitchSel] || '4-SEAM FASTBALL'; l2 = 'READY'; }
   if (P && P.thrown){ l1 = PITCH_LABEL[P.type] || P.type; l2 = P.mph + ' MPH'; }
   else if (phase === 'pitching'){ l1 = PITCH_LABEL[pitchSel] || ''; l2 = 'TAP THE ZONE'; }
-  if (l1 && PLATE_ON && ready(PILL)){
-    g.imageSmoothingEnabled = false; g.drawImage(PILL, tx(6), ty(386), 210 * TU, 82 * TU);
-    tt(l1, UL(75), ty(411), 17, '#ffffff', 'left', 126); tt(l2, UL(75), ty(439), 24, '#ffffff', 'left', 126);
-  } else if (l1){
+  if (l1){
     hudPanel(UL(12), ty(392), 198 * TU, 68 * TU);
     ballIcon(UL(44), ty(426), 15.5 * TU);
     tt(l1, UL(75), ty(411), 17, '#ffffff', 'left', 126); tt(l2, UL(75), ty(439), 24, '#ffffff', 'left', 126);
