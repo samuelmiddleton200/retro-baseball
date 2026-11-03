@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03a';
+const BUILD = '11-03b';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1007,7 +1007,7 @@ function drawField(park, t){
 
 // the seven fielders standing out there, in perspective
 // where the target picture stands each fielder, in its own pixels (x, feet y, height)
-const PLATE_SPOT = { '1B':[724, 212, 41], '2B':[630, 186, 30], 'SS':[235, 186, 30], '3B':[65, 212, 41], 'LF':[112, 187, 28], 'CF':[413, 156, 17], 'RF':[494, 181, 27] };
+const PLATE_SPOT = { '1B':[724, 212, 41], '2B':[630, 186, 30], 'SS':[235, 186, 30], '3B':[65, 212, 41], 'LF':[92, 163, 20], 'CF':[413, 156, 17], 'RF':[668, 163, 20] };   // four infielders on the dirt; the outfielders stand back on the grass
 function drawFielders(team){
   if (plateOK()){
     FIELDERS.forEach(([d, lat, pos], i) => { const q = PLATE_SPOT[pos]; drawFielderSprite(tx(q[0]), ty(q[1]), pos, false, q[2]); });
@@ -2286,7 +2286,7 @@ function gxPlayHud(B){
 
 // ── people stamped onto the painted field: each one is a 3D player baked into a small canvas at the picture's own pixel size ──
 const PIXK = .5;                                                   // bake pixels per target pixel (so one art pixel = 2 target pixels)
-const PLATE = new Image(); PLATE.onload = () => imgReady++; PLATE.src = 'assets/fields/plate_clean.png?b=11-02i';
+const PLATE = new Image(); PLATE.onload = () => imgReady++; PLATE.src = 'assets/fields/plate_clean.png?b=11-03b';
 const IDLE = new Image(); IDLE.onload = () => imgReady++; IDLE.src = 'assets/fields/idle.png';        // the target picture itself, with the ball, its dotted path and the pill taken out
 const IDLE_BOX = { bat:[214,236,344,452], cat:[316,350,446,492], pit:[388,168,436,236] };
 const plateOK = () => ready(PLATE) && ready(IDLE) && !window.__noPlate && window.GL3D && GL3D.bakeInit && GL3D.bakeInit();
