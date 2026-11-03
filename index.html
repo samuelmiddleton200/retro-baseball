@@ -28,6 +28,7 @@
   #game{height:var(--app-h,100%);bottom:auto !important}
   /* the stats list is the only screen allowed to scroll, and only up and down */
 </style>
+<script>if (location.protocol === 'file:') document.write('<script src="embed.js"><\/script>');</script>
 <script>
   // Launch guard for the shifted screen: measure the real screen, pin the page to it, put the page back at 0,0,
   // and if the iPhone is still reporting a stale size make it measure again. Runs at launch, a few more times in
@@ -214,8 +215,9 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03l';
+const BUILD = '11-03n';
 const SAVE = 'retrobaseball.v1';
+const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
 
 function newGame(teamAb){
@@ -228,7 +230,7 @@ function newGame(teamAb){
     [...lineup, ...rot, ...pen].forEach(p => { p.num = ri(1, 72); });
     return { ...t, lineup, rot, pen, w:0, l:0, rs:0, ra:0 };
   });
-  G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:2500, seasonLen:25,
+  G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:1002500, gift1m:true, seasonLen:25,
         sched:[], rotIdx:0, cards:[], slots:{ lineup:[], rot:[], pen:[] }, freeAt:0 };
   // your own nine, five starters and five relievers all become cards you own
   const me = G.teams[G.team];
@@ -275,6 +277,7 @@ const load = () => {
       _cardId = Math.max(1, ...G.cards.map(c => c.id || 0)) + 1;
       G.cards.forEach(c => { c.st = c.st || newStat(); });
       rebuildTeam();
+      if (!G.gift1m){ G.gift1m = true; G.coins += 1000000; save(); }        // a one-time gift of 1,000,000 coins to this save
     }
   } catch(e){}
 };
@@ -2253,7 +2256,7 @@ const RUN_SETS = { side:'run', front:'runf', back:'runb' };
 RUN_SETS.front = 'runf'; RUN_SETS.back = 'runb';
 for (const k of ['side', 'front', 'back']) for (let i = 0; i < 8; i++){
   const im = new Image(); im.onload = () => { im._ok = true; GPR.ready = ['side', 'front', 'back'].every(d => GPR[d].length === 8 && GPR[d].every(f => f._ok)); }; im.onerror = () => {};
-  im.src = `assets/gp/${RUN_SETS[k]}${i}.png?b=2`; GPR[k].push(im);
+  im.src = SRC(`assets/gp/${RUN_SETS[k]}${i}.png`); GPR[k].push(im);
 }
 function gpRunHead(dir, i){                              // x of the cap in each frame, so the body stays still while the legs swing
   const key = dir + i; if (GPR.hx[key] != null) return GPR.hx[key];
@@ -2359,7 +2362,7 @@ function bakeStamp(kind, key, o, pose, yaw, xL, yL, hT, flip, refFt){
 const GP = { batter: [], ready: false };
 for (let i = 0; i < 8; i++){
   const im = new Image(); im.onload = () => { im._ok = true; GP.ready = GP.batter.every(f => f._ok); }; im.onerror = () => {};
-  im.src = `assets/gp/batter${i}.png`; GP.batter.push(im);
+  im.src = SRC(`assets/gp/batter${i}.png`); GP.batter.push(im);
 }
 const GP_CACHE = new Map();
 // every magenta pixel (helmet, jersey) takes the club's colour and keeps its shading
@@ -2447,7 +2450,7 @@ function gpStamp(img, key, c1, xL, yL, hT, flip, figFrac, alpha, dxSrc, noShadow
 const phaseStep = (t, n) => Math.floor((t * 1.6) % 1 * n);
 // painted fielders (assets/gp/fielder0-7, from ChatGPT): 0-1 ready, 2-3 run, 4 reach, 5 catch, 6 scoop, 7 throw
 const GPF = { img: [], ready: false };
-for (let i = 0; i < 8; i++){ const im = new Image(); im.onload = () => { im._ok = true; GPF.ready = GPF.img.every(f => f._ok); }; im.onerror = () => {}; im.src = `assets/gp/fielder${i}.png`; GPF.img.push(im); }
+for (let i = 0; i < 8; i++){ const im = new Image(); im.onload = () => { im._ok = true; GPF.ready = GPF.img.every(f => f._ok); }; im.onerror = () => {}; im.src = SRC(`assets/gp/fielder${i}.png`); GPF.img.push(im); }
 function drawFielderSprite(xL, yL, pos, grab, hOver){
   if (!plateOK()) return drawFielderSpriteOld(xL, yL, pos, grab);
   if (GPF.ready){
@@ -2461,7 +2464,7 @@ function drawFielderSprite(xL, yL, pos, grab, hOver){
 const PWARM = { k:'', n:0 };
 // painted pitcher (assets/gp/pitcher0-7): 0-1 set, 2 leg lift, 3-4 arm cocked, 5 release, 6 follow-through, 7 finish; same club colour as the fielders
 const GPP = { img: [], ready: false };
-for (let i = 0; i < 8; i++){ const im = new Image(); im.onload = () => { im._ok = true; GPP.ready = GPP.img.every(f => f._ok); }; im.onerror = () => {}; im.src = `assets/gp/pitcher${i}.png`; GPP.img.push(im); }
+for (let i = 0; i < 8; i++){ const im = new Image(); im.onload = () => { im._ok = true; GPP.ready = GPP.img.every(f => f._ok); }; im.onerror = () => {}; im.src = SRC(`assets/gp/pitcher${i}.png`); GPP.img.push(im); }
 function drawPitcherAt(xL, yL, u){
   if (!plateOK()) return drawPitcherAtOld(xL, yL, u);
   if (GPP.ready){
@@ -2981,7 +2984,7 @@ function cardBustRig(c, team){
 const PORT_N = 32, PORT = [], PORT_CACHE = new Map();
 for (let i = 0; i < PORT_N; i++){
   const im = new Image(); im.onload = () => { im._ok = true; }; im.onerror = () => {};
-  im.src = `assets/portraits/p${String(i).padStart(2, '0')}.png`; PORT.push(im);
+  im.src = SRC(`assets/portraits/p${String(i).padStart(2, '0')}.png`); PORT.push(im);
 }
 const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
 function portSkin(i){                                   // the average skin colour in the middle of the face
