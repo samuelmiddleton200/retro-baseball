@@ -207,7 +207,7 @@ function makePitcher(level, role){
   p.st = newStat();
   return p;
 }
-const newStat = () => ({ ab:0, h:0, hr:0, rbi:0, r:0, bb:0, k:0, ip:0, er:0, ko:0, w:0, l:0, sb:0, pa:0 });
+const newStat = () => ({ ab:0, h:0, d:0, t:0, hr:0, rbi:0, r:0, bb:0, hbp:0, sf:0, k:0, ip:0, po:0, er:0, ko:0, ha:0, bba:0, fbn:0, fbs:0, w:0, l:0, sb:0, pa:0 });
 // a face/body recipe so every player looks different
 function look(){
   return { skin: pick(['#f2c9a0','#e0ad7e','#c88e5e','#9c6336','#6f4324','#4b2d18']),
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-04q';
+const BUILD = '11-04r';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -1058,6 +1058,7 @@ function startGame(oppIdx, home, opts = {}){
   };
   M.uni = pickUniforms(M.home, M.away);                          // who wears what, once, for the whole game
   M.pitcherHome.st.ip = M.pitcherHome.st.ip || 0;
+  M.sp = { home: M.pitcherHome, away: M.pitcherAway };
   phase = 'atbat'; setupAtBat();
   setTimeout(warmHitView, 400);                                // build the 3D park while the first pitch is still coming, not at the first hit
 }
@@ -1469,6 +1470,7 @@ function throwPitch(type, ax, ay){
   P.ty = ay + (bell() - .5) * 2 * miss;
   const fb = fastballMph(p.velocity);                    // the fastball from the rating; off-speed pitches are 10-15 mph slower
   P.mph = Math.round((type === 'FB' ? fb : fb - (CFG.OFFSPEED_SLOW[type] || 12)) - fatigue() * 3);
+  if (type === 'FB'){ const ps = curPitcher().st; ps.fbn = (ps.fbn || 0) + 1; ps.fbs = (ps.fbs || 0) + P.mph; }      // for his average fastball
   P.dur = CFG.MOUND_FT / (P.mph * CFG.MPH_TO_FPS) * 1000 / CFG.PITCH_TIME_SCALE;   // 60.5 ft at its real speed, slowed by PITCH_TIME_SCALE
   P.br = [info.br[0] * lerp(.6, 1.3, (q - 60) / 60), info.br[1] * lerp(.6, 1.3, (q - 60) / 60)];
   P.quality = q;
@@ -1971,18 +1973,18 @@ function applyPlay(res){
   if (res === 'error') M.E[M.top ? 'home' : 'away']++;
   if (manual){
     res = manual.res; st.ab++; runs = manual.runs; out = manual.outs;
-    if (res !== 'error'){ st.h++; if (res === 'hr') st.hr++; st.rbi += runs; }
+    if (res !== 'error'){ st.h++; if (res === 'hr') st.hr++; if (res === 'double') st.d = (st.d || 0) + 1; if (res === 'triple') st.t = (st.t || 0) + 1; p.st.ha = (p.st.ha || 0) + 1; st.rbi += runs; }
     txt = manual.txt || ({ single:'BASE HIT', double:'DOUBLE!', triple:'TRIPLE!', hr:'INSIDE-THE-PARK HOME RUN!', error:'ERROR!' })[res]; M.exc = .8;
   } else switch(res){
-    case 'hr': { st.ab++; st.h++; st.hr++; const before = M.bases.filter(Boolean).length;
+    case 'hr': { st.ab++; st.h++; st.hr++; p.st.ha = (p.st.ha || 0) + 1; const before = M.bases.filter(Boolean).length;
       runs = advance(4); st.rbi += before + 1; txt = before === 3 ? 'GRAND SLAM!' : 'GONE!'; M.exc = 1.4; break; }
-    case 'triple': st.ab++; st.h++; runs = advance(3); st.rbi += runs; txt = 'TRIPLE!'; M.exc = 1; break;
-    case 'double': { st.ab++; st.h++;
+    case 'triple': st.ab++; st.h++; st.t = (st.t || 0) + 1; p.st.ha = (p.st.ha || 0) + 1; runs = advance(3); st.rbi += runs; txt = 'TRIPLE!'; M.exc = 1; break;
+    case 'double': { st.ab++; st.h++; st.d = (st.d || 0) + 1; p.st.ha = (p.st.ha || 0) + 1;
       // a runner on first usually scores on a double, more often if he can run
       const r1 = M.bases[0];
       if (r1 && chance(.45 + clamp((spdOf(r1) - 85) / 300, -.1, .12))){ score(r1); M.bases[0] = null; runs++; }
       runs += advance(2); st.rbi += runs; txt = 'DOUBLE!'; M.exc = .8; break; }
-    case 'single': { st.ab++; st.h++;
+    case 'single': { st.ab++; st.h++; p.st.ha = (p.st.ha || 0) + 1;
       // a runner on second often scores on a single, and sometimes first to third
       const r2 = M.bases[1];
       if (r2 && chance(.55 + clamp((spdOf(r2) - 85) / 300, -.12, .15))){ score(r2); M.bases[1] = null; runs++; }
@@ -1993,17 +1995,17 @@ function applyPlay(res){
     case 'fc':     st.ab++; out = 1; M.bases[0] = M.batter; txt = "FIELDER'S CHOICE"; break;                  // the runner is forced out at second, the batter is on first
     case 'groundout': case 'flyout': case 'lineout':
       st.ab++; out = 1;
-      if (res === 'flyout' && M.bases[2] && M.outs < 2 && chance(.55)){ runs += advance(1, false); st.rbi += runs; txt = 'SAC FLY'; }
+      if (res === 'flyout' && M.bases[2] && M.outs < 2 && chance(.55)){ runs += advance(1, false); st.rbi += runs; st.ab--; st.sf = (st.sf || 0) + 1; txt = 'SAC FLY'; }      // a sacrifice fly is not an at-bat
       else txt = res === 'groundout' ? 'GROUND OUT' : res === 'flyout' ? 'FLY OUT' : 'LINE OUT';
       if (res === 'groundout' && M.outs + out < 3){ runs += forcedAdvance(); if (runs){ st.rbi += runs; } }      // the batter is out, but the runners he forced move up
       break;
     case 'k':   st.ab++; st.k++; p.st.ko++; out = 1; txt = 'STRIKE THREE!'; break;
-    case 'bb':  st.bb++; { const forced = M.bases[0] && (!M.bases[1] || M.bases[2] !== null);
+    case 'bb':  st.bb++; p.st.bba = (p.st.bba || 0) + 1; { const forced = M.bases[0] && (!M.bases[1] || M.bases[2] !== null);
       runs = walkAdvance(); } txt = 'WALK'; break;
-    case 'hbp': runs = walkAdvance(); txt = 'HIT BY PITCH'; break;
+    case 'hbp': st.hbp = (st.hbp || 0) + 1; runs = walkAdvance(); txt = 'HIT BY PITCH'; break;
   }
   if (runs) p.st.er += runs;
-  M.outs += out;
+  M.outs += out; p.st.po = (p.st.po || 0) + out;                       // the outs he got: his innings pitched
   say(txt);
   if (weBat()) G.coins += ({ single:25, double:40, triple:75, hr:200 })[res] || 0;
   if (!weBat() && res === 'k') G.coins += 30;
@@ -2065,6 +2067,10 @@ function resumeMatch(){
 function gameOver(){
   clearMatchSnap();
   M.over = true; phase = 'over';
+  if (M.sp && M.score.home !== M.score.away){                              // the starters get the decision
+    const hw = M.score.home > M.score.away, wp = (hw ? M.sp.home : M.sp.away).st, lp = (hw ? M.sp.away : M.sp.home).st;
+    wp.w = (wp.w || 0) + 1; lp.l = (lp.l || 0) + 1;
+  }
   const me = myTeam(), myRuns = M.meHome ? M.score.home : M.score.away, oth = M.meHome ? M.score.away : M.score.home;
   const won = myRuns > oth;
   me[won ? 'w' : 'l']++; me.rs += myRuns; me.ra += oth;
@@ -4101,7 +4107,7 @@ function drawMenu(){
       button(W / 2 + 40, 142, 68, 18, 'LINEUP', () => menu = 'lineup');
       button(W / 2 - 108, 164, 68, 18, 'STANDINGS', () => menu = 'stand');
       button(W / 2 - 34, 164, 68, 18, 'ROSTER', () => menu = 'roster');
-      button(W / 2 + 40, 164, 68, 18, 'NEW TEAM', () => menu = 'pick', '#2a1a1a');
+      button(W / 2 + 40, 164, 68, 18, 'LEADERS', () => { menu = 'stats'; statsScroll = 0; }, '#2f6fe0', '#fff', 7);
       coinText(G.coins, W / 2, 192, 9, UI.yellow, 'center');
     } else button(W / 2 - 70, 120, 140, 24, 'START', () => menu = 'pick', '#2f6fe0');
   }
@@ -4144,6 +4150,7 @@ function drawMenu(){
   else if (menu === 'lineup'){ drawLineup(); return; }
   else if (menu === 'open'){ drawOpen(); return; }
   else if (menu === 'trade'){ drawTrade(); return; }
+  else if (menu === 'stats'){ drawStats(); return; }
   else if (menu === 'stand'){
     R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff');
     ptitle('STANDINGS', 10, 3, 9, '#ffffff', 'left');
@@ -4159,6 +4166,102 @@ function drawMenu(){
     col(list.slice(0, 15), 12); col(list.slice(15), 12 + colW + 6);
     button(W - 58, H - 20, 50, 16, 'BACK', () => menu = 'title');
   }
+}
+// ── league leaders: batters or pitchers, every player or each team's average; tap a column to rank by it (tap again to flip) ──
+let statsView = 'bat', statsTeam = -1, statsScroll = 0, statsBy = 'player';
+const statsSort = { bat:{ k:'avg', asc:false }, pit:{ k:'era', asc:true } };
+const n3 = v => v >= 1 ? v.toFixed(3) : v.toFixed(3).replace('0.', '.');
+const poOf = st => st.po > 0 ? st.po : (st.ip || 0) * 3;
+const ipText = st => { const o = poOf(st); return Math.floor(o / 3) + '.' + (o % 3); };
+// cnt: a counting stat (a team row shows the average per player); the rest are rates, worked out from the team's totals
+const STAT_COLS = {
+  bat: [
+    { k:'avg', h:'AVG', v:t => t.ab ? t.h / t.ab : null, f:n3 },
+    { k:'obp', h:'OBP', v:t => { const d = t.ab + t.bb + (t.hbp || 0) + (t.sf || 0); return d ? (t.h + t.bb + (t.hbp || 0)) / d : null; }, f:n3 },
+    { k:'r', h:'R', cnt:1, v:t => t.r || 0, f:v => v },
+    { k:'hr', h:'HR', cnt:1, v:t => t.hr || 0, f:v => v },
+    { k:'slg', h:'SLG', v:t => t.ab ? (t.h + (t.d || 0) + 2 * (t.t || 0) + 3 * (t.hr || 0)) / t.ab : null, f:n3 },
+    { k:'rbi', h:'RBI', cnt:1, v:t => t.rbi || 0, f:v => v },
+  ],
+  pit: [
+    { k:'era', h:'ERA', v:t => poOf(t) ? (t.er || 0) * 27 / poOf(t) : null, f:v => v.toFixed(2) },
+    { k:'ko', h:'K', cnt:1, v:t => t.ko || 0, f:v => v },
+    { k:'fb', h:'FB', v:t => t.fbn ? t.fbs / t.fbn : null, f:v => v.toFixed(1) },
+    { k:'whip', h:'WHIP', v:t => poOf(t) ? ((t.ha || 0) + (t.bba || 0)) * 3 / poOf(t) : null, f:v => v.toFixed(2) },
+    { k:'ip', h:'IP', cnt:1, v:t => poOf(t), f:(v, t) => ipText(t), fa:v => (v / 3).toFixed(1) },
+    { k:'w', h:'W', cnt:1, v:t => t.w || 0, f:v => v },
+    { k:'l', h:'L', cnt:1, v:t => t.l || 0, f:v => v },
+  ],
+};
+function statRows(){
+  const rows = [], bat = statsView === 'bat';
+  G.teams.forEach((t, ti) => {
+    if (statsBy === 'player' && statsTeam >= 0 && ti !== statsTeam) return;
+    const mine = ti === G.team;
+    const list = bat ? (mine ? G.cards.filter(c => !isPitcher(c)) : t.lineup) : (mine ? G.cards.filter(isPitcher) : t.rot.concat(t.pen));
+    const used = list.filter(p => { const st = p.st || {}; return bat ? (st.pa || 0) > 0 : (poOf(st) > 0 || (st.fbn || 0) > 0); });
+    if (statsBy === 'player') used.forEach(p => rows.push({ p, t, ti, st:p.st }));
+    else if (used.length){
+      const agg = {}; Object.keys(newStat()).forEach(k => agg[k] = 0);
+      used.forEach(p => { Object.keys(agg).forEach(k => agg[k] += (p.st[k] || 0)); agg.po += poOf(p.st) - (p.st.po || 0); });
+      rows.push({ p:{ name:t.city + ' ' + t.nick }, t, ti, st:agg, n:used.length });
+    }
+  });
+  const cols = STAT_COLS[statsView], so = statsSort[statsView], col = cols.find(c => c.k === so.k) || cols[0];
+  rows.forEach(r => { let v = col.v(r.st); if (v !== null && r.n && col.cnt) v /= r.n; r.v = v; });
+  rows.sort((a, b) => (a.v === null) - (b.v === null) || (so.asc ? a.v - b.v : b.v - a.v));
+  return { rows, cols, col };
+}
+function drawStats(){
+  btns = [];
+  uiBg();
+  R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff');
+  ptitle('LEAGUE LEADERS', 10, 3, 9, '#ffffff', 'left');
+  const pill = (x, w, l, on, fn) => {
+    if (on) R(x, 22, w, 14, UI.yellow); else uiBox(x, 22, w, 14);
+    (on ? text : textb)(l, x + w / 2, 25, on ? '#241a00' : '#ffffff', 6, 'center');
+    btns.push({ x, y:22, w, h:14, fn });
+  };
+  pill(8, 56, 'BATTERS', statsView === 'bat', () => { statsView = 'bat'; statsScroll = 0; });
+  pill(68, 56, 'PITCHERS', statsView === 'pit', () => { statsView = 'pit'; statsScroll = 0; });
+  pill(128, 54, statsBy === 'team' ? 'BY TEAM' : 'PLAYERS', false, () => { statsBy = statsBy === 'team' ? 'player' : 'team'; statsScroll = 0; });
+  if (statsBy === 'player'){
+    const tn = statsTeam < 0 ? 'ALL TEAMS' : G.teams[statsTeam].ab + ' ' + G.teams[statsTeam].nick;
+    button(W - 126, 22, 14, 14, '<', () => { statsTeam = statsTeam <= -1 ? G.teams.length - 1 : statsTeam - 1; statsScroll = 0; }, '#1a2030', '#fff', 8);
+    uiBox(W - 110, 22, 84, 14); textb(tn, W - 68, 25, '#ffffff', 6, 'center', 80);
+    button(W - 24, 22, 14, 14, '>', () => { statsTeam = statsTeam >= G.teams.length - 1 ? -1 : statsTeam + 1; statsScroll = 0; }, '#1a2030', '#fff', 8);
+  }
+  const { rows, cols, col } = statRows(), so = statsSort[statsView];
+  const nameW = Math.max(70, Math.round(W * .27)), x0 = 8, cx0 = x0 + 12 + nameW + 22, cw = Math.floor((W - 30 - cx0) / cols.length);
+  const hy = 41; R(0, hy - 2, W, 11, UI.blueDD);
+  textb('#', x0, hy, UI.ice, 6); textb(statsBy === 'team' ? 'TEAM (PER-PLAYER AVG FOR COUNTS)' : statsView === 'bat' ? 'PLAYER' : 'PITCHER', x0 + 12, hy, UI.ice, 5, 'left', nameW + 20);
+  if (statsBy === 'player') textb('TM', x0 + 12 + nameW, hy, UI.ice, 6);
+  cols.forEach((c, i) => {
+    const x = cx0 + i * cw, on = c.k === col.k;
+    textb(c.h + (on ? (so.asc ? '^' : 'v') : ''), x + cw - 2, hy, on ? UI.yellow : UI.ice, 6, 'right');
+    btns.push({ x:x - 2, y:hy - 3, w:cw, h:13, fn: () => { if (statsSort[statsView].k === c.k) statsSort[statsView].asc = !statsSort[statsView].asc; else statsSort[statsView] = { k:c.k, asc:c.k === 'era' || c.k === 'whip' || c.k === 'l' }; statsScroll = 0; } });
+  });
+  const rh = 11, top = 54, vis = Math.floor((H - top - 24) / rh), maxScroll = Math.max(0, rows.length - vis);
+  statsScroll = clamp(statsScroll, 0, maxScroll);
+  if (!rows.length) textb('No stats yet: play a game and they show up here.', W / 2, 100, '#ffffff', 7, 'center', W - 20);
+  rows.slice(statsScroll, statsScroll + vis).forEach((r, i) => {
+    const y = top + i * rh, mine = r.ti === G.team, tc = mine ? UI.yellow : '#ffffff';
+    if (mine) R(0, y - 2, W, rh, 'rgba(255,210,63,.18)'); else if (i % 2) R(0, y - 2, W, rh, 'rgba(255,255,255,.06)');
+    textb(String(statsScroll + i + 1), x0, y, UI.ice, 6);
+    textb(r.p.name, x0 + 12, y, tc, 6, 'left', (statsBy === 'team' ? nameW + 20 : nameW) - 4);
+    if (statsBy === 'player') textb(r.t.ab, x0 + 12 + nameW, y, mine ? UI.yellow : UI.ice, 6);
+    cols.forEach((c, j) => {
+      let v = c.v(r.st);
+      const txt = v === null ? '-' : r.n && c.cnt ? (c.fa ? c.fa(v / r.n) : (v / r.n).toFixed(1)) : c.f(v, r.st);
+      textb(txt, cx0 + j * cw + cw - 2, y, c === col ? (mine ? '#fff29a' : UI.yellow) : tc, 6, 'right');
+    });
+  });
+  if (maxScroll > 0){
+    button(W - 26, top - 2, 20, 18, '^', () => statsScroll = Math.max(0, statsScroll - 5), '#1a2030', '#fff', 8);
+    button(W - 26, H - 44, 20, 18, 'v', () => statsScroll = Math.min(maxScroll, statsScroll + 5), '#1a2030', '#fff', 8);
+  }
+  textb('tap a column to rank by it', W / 2, H - 12, UI.ice, 6, 'center');
+  button(8, H - 22, 50, 16, 'BACK', () => menu = 'title');
 }
 function drawOver(){
   btns = [];
@@ -4289,7 +4392,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
     P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
-  runToggle, runBack, drawPlay, snapMatch, resumeMatch, matchSnap, startGame2: startGame, evMin, HR_ANGLE, EVMAX, evMax, reachIn, outsideIn, hitsBatter, throwRange, throwFps, spdOf, routeThrow, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
+  runToggle, runBack, drawPlay, get menu(){ return menu; }, set menu(v){ menu = v; }, get G(){ return G; }, statRows, STAT_COLS, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, get statsView(){ return statsView; }, set statsView(v){ statsView = v; }, snapMatch, resumeMatch, matchSnap, startGame2: startGame, evMin, HR_ANGLE, EVMAX, evMax, reachIn, outsideIn, hitsBatter, throwRange, throwFps, spdOf, routeThrow, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────
