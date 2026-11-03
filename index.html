@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03d';
+const BUILD = '11-03e';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -2203,8 +2203,17 @@ function gxOverlay(S){
   if (S.ball){
     const b = S.ball, gq = P(b.x, .05, b.z), q = P(b.x, b.y, b.z), hh = clamp(b.y / 60, 0, 1);
     g.fillStyle = 'rgba(20,14,6,.32)'; g.beginPath(); g.ellipse(gq.x, gq.y, 1.8 + hh * 1.2, .8 + hh * .4, 0, 0, 7); g.fill();    // its shadow on the grass
-    g.fillStyle = '#262b40'; g.beginPath(); g.arc(q.x, q.y, 1.5, 0, 7); g.fill();                                                    // dark rim
-    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(q.x, q.y, 1.05, 0, 7); g.fill();
+    // a baseball: dark rim, white leather lit from the top left, two red curved seams, spinning as it flies
+    const R0 = 2.3;
+    g.save(); g.translate(q.x, q.y);
+    g.fillStyle = '#262b40'; g.beginPath(); g.arc(0, 0, R0, 0, 7); g.fill();
+    g.fillStyle = '#f4f1e8'; g.beginPath(); g.arc(0, 0, R0 - .5, 0, 7); g.fill();
+    g.fillStyle = 'rgba(150,150,170,.45)'; g.beginPath(); g.arc(.45, .45, R0 - .5, -.4, 2.7); g.lineTo(.45, .45); g.fill();         // shade, bottom right
+    g.rotate((S.time || 0) * 9);
+    g.strokeStyle = '#d6372c'; g.lineWidth = .5; g.lineCap = 'round';
+    g.beginPath(); g.arc(-R0 * .95, 0, R0 * .85, -.95, .95); g.stroke();                                                            // the two seams
+    g.beginPath(); g.arc(R0 * .95, 0, R0 * .85, Math.PI - .95, Math.PI + .95); g.stroke();
+    g.restore();
   }
 }
 // the target's sprites in the park: they bob, lean into a run and face the way they go
