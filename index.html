@@ -214,7 +214,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-02s';
+const BUILD = '11-02t';
 const SAVE = 'retrobaseball.v1';
 let G = null;
 
@@ -1152,12 +1152,12 @@ const CFG = {
   REACT_SLOW: 0.4, REACT_FAST: 0.2,      // reaction delay, worst to best fielding
   FIELDER_ACCEL_T: 1.0,         // seconds to reach top speed
   RUNNER_ACCEL_T: 1.2, RUN_START_DELAY: 0.2,   // 90 ft: ~3.8 s a 120, ~4.05 s a 90, ~4.4 s a 60 (MLB: 3.7 to 4.2 s)
-  CATCH_RADIUS: 2, CATCH_H: 8,   // a fly ball is caught only when the fielder is right under it: within 2 ft, and the ball under 8 ft high
+  CATCH_RADIUS: 1, CATCH_H: 7,   // the ball has to come to him: within 1 ft to his left or right when it reaches him, and no higher than 7 ft
   CATCH_MIN_H: 1,               // a ball under a foot off the ground when it gets to him is a ground ball, not a catch
-  INFIELD_DIVE: 6,              // an infielder can stab a low liner this far from him (a lunge, not a dive)
+  INFIELD_DIVE: 1,              // no free lunges: a low liner is also only caught within 1 ft of him
   ROUTE_EFF: 0.92,              // a fielder never runs the perfect straight line: 0.92 means about 9% more ground than the crow flies
   BACK_PENALTY: 0.4,            // extra seconds to read and turn on a ball hit over his head
-  DIVE_REACH: 11,               // ...and a ball rolling along the ground can be stopped with a dive this far away
+  DIVE_REACH: 1,                // ...and a ball rolling along the ground has to reach him too: within 1 ft, so it never looks like it rolled past
   TRANSFER_GROUND: 0.65, TRANSFER_AIR: 0.40,   // glove to release
   THROW_EFFICIENCY: 0.93,       // average speed of a throw vs its release speed (drag)
   EXTRA_BASE_MARGIN: 0.30,      // a runner only takes the extra base if he beats the throw by this much
