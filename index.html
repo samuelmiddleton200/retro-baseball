@@ -215,7 +215,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-03v';
+const BUILD = '11-03x';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -1543,7 +1543,7 @@ function planFielders(){
   });
   const land = ballPos(B, B.T); B.land = land;
   FLD.forEach(f => { f.gap = Math.hypot(land.d - f.d, land.lat - f.lat); });
-  if (B.hr){ B.chaser = null; B.play = 'hr'; B.tJudge = Math.min(B.T, 3.2); B.tEnd = B.tJudge + 3.6; B.runN = 4; return; }
+  if (B.hr){ B.chaser = null; B.play = 'hr'; B.tJudge = Math.min(B.T, hrGoneTime(B) + .05); B.tEnd = B.tJudge + 3.6; B.runN = 4; return; }
   // the earliest moment each man can be within reach of the ball while it is low enough to catch
   FLD.forEach(f => {
     let hit = null;
@@ -1652,7 +1652,7 @@ function planOutcome(B, c){
   }
   const tr = Math.hypot(pf[0], pf[1]) < 150 && !B.hr ? CFG.TRANSFER_GROUND : CFG.TRANSFER_AIR;
   B.thrInfo = { tf, tr, pf, arm: c.armFps };                          // when and from where the throw can go: judges every extra-base try
-  if (B.hr){ B.play = 'hr'; B.tJudge = Math.min(B.T, 3.2); B.tEnd = B.tJudge + 3.6; B.runN = 4; return; }
+  if (B.hr){ B.play = 'hr'; B.tJudge = Math.min(B.T, hrGoneTime(B) + .05); B.tEnd = B.tJudge + 3.6; B.runN = 4; return; }
   B.tJudge = tf;
   if (Math.hypot(pf[0], pf[1]) < 150){                              // fielded in the infield: a throw to first
     const a1 = throwArr(1, tr), t1 = runTime(spd, 90);
@@ -1774,6 +1774,29 @@ function endPA(res){
 }
 
 // ── what happens to a ball in play ─────────────────────────────────────────
+// the stands behind the fence: lower deck 0-50 ft, upper deck 50-100 ft, then the back wall (the ball is out of the park). Heights in ft, same as gl3d.js
+const standH = b => b <= 0 ? 8.5 : b <= 50 ? 8.7 + 25.8 * b / 50 : b <= 100 ? 38.5 + 30 * (b - 50) / 50 : 74.5;
+// when a home run reaches the seats (or sails past the back wall), found from the flight itself: the moment the show starts
+function hrGoneTime(B){
+  const p = B.path;
+  for (let k = 0; k < p.length; k++){
+    const r = Math.hypot(p[k][0], p[k][1]), now = r - wallDist(Math.atan2(p[k][0], p[k][1]) * 180 / Math.PI);
+    if (now > 0 && (p[k][2] <= standH(now) || now >= 100)) return k / 120;
+  }
+  return B.T;
+}
+function hrState(B){
+  if (!B.hr) return null;
+  if (!B.hrInfo){
+    const w = wallDist(B.sa), beyond = (B.carry || 0) - w;
+    B.hrInfo = { w, beyond, deck: beyond <= 50 ? 1 : beyond <= 100 ? 2 : 3, out: beyond > 100 };
+  }
+  if (!B.gone){                                                         // once it hits the seats or leaves the park it is not drawn any more
+    const r = Math.hypot(B.d, B.lat), now = r - wallDist(Math.atan2(B.lat, B.d) * 180 / Math.PI);
+    if (now > 0 && (B.h <= standH(now) || now >= 100)) B.gone = true;
+  }
+  return B.hrInfo;
+}
 function wallDist(angle){
   const p = M.park, a = clamp(angle, -45, 45);
   return a < 0 ? lerp(p.lf, p.cf, (a + 45) / 45) : lerp(p.cf, p.rf, a / 45);
@@ -2201,11 +2224,12 @@ function gxPlay(B){
   } else S.people.push(gxPerson('runB', 'bat', b, bt, b.bats === 'L' ? 3.0 : -3.0, -.7, b.bats === 'L' ? -BAT_YAW : BAT_YAW, GL3D.poseBatter(1, t)));
   // the ball and its white path
   ballHeld = (ballHeld && !B.inFlightThrow) || !!B.heldAfter;      // seen while it flies, rolls or is thrown; gone while it is in a hand
-  S.ball = ballHeld && !B.hr ? null : { x:B.lat, y:B.h + .4, z:-B.d, r:.95 };
+  const hi = hrState(B);
+  S.ball = (ballHeld && !B.hr) || B.gone ? null : { x:B.lat, y:B.h + .4, z:-B.d, r:.95 };
   GX.bv = !!S.ball;
   if (B.t < .05) GX.trail = [];
   GX.trail.push([B.lat, B.h * 1.0 + .4, -B.d]); if (GX.trail.length > 290) GX.trail.shift();
-  S.trail = GX.trail.slice(); S.trailMode = 'line'; S.hr = !!B.hr;
+  S.trail = B.gone ? [] : GX.trail.slice(); S.trailMode = 'line'; S.hr = !!B.hr; S.hrOut = !!(hi && hi.out);
   const crowd = S.people; S.people = [];                           // the people are the target's own sprites, drawn over the park
   gxParkBG(S);                                                      // the stadium and the camera never change: it is rendered ONCE, then only copied
   g.imageSmoothingEnabled = false; g.drawImage(GX.bg, 0, 0, GX.bg.width, GX.bg.height, 0, 0, W, H);
@@ -2225,7 +2249,7 @@ function gxOverlay(S){
   GL3D.setView('air'); GL3D.placeCamera(); GL3D.cam.updateMatrixWorld(true);
   const P = (x, y, z) => GL3D.toScreen(x, y, z, W, H);
   if (S.trail && S.trail.length > 1){                                // the ball's path: a thin white line
-    g.strokeStyle = S.hr ? 'rgba(255,120,30,.35)' : 'rgba(255,255,255,.55)'; g.lineWidth = S.hr ? 1.2 : .9; g.beginPath();
+    g.strokeStyle = S.hr ? (S.hrOut ? 'rgba(80,170,255,.4)' : 'rgba(255,120,30,.35)') : 'rgba(255,255,255,.55)'; g.lineWidth = S.hr ? 1.2 : .9; g.beginPath();
     S.trail.forEach((t, i) => { const q = P(t[0], t[1], t[2]); i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y); });
     g.stroke();
   }
@@ -2234,13 +2258,13 @@ function gxOverlay(S){
     const n = S.trail.length, L = Math.min(90, n - 1);
     for (let k = L; k >= 0; k--){
       const q = P(...S.trail[n - 1 - k]), a = k / L, sz = Math.max(1, Math.round(a < .12 ? 3 : 8 * Math.pow(1 - a, .8) + .6));
-      const col = a < .15 ? '#fffbd0' : a < .35 ? '#ffd23f' : a < .6 ? '#ff8a1c' : a < .82 ? '#d9341a' : '#5a2a28';
+      const col = S.hrOut ? (a < .15 ? '#f0ffff' : a < .35 ? '#9be9ff' : a < .6 ? '#2f9bff' : a < .82 ? '#1d4fd0' : '#1c2a5a') : (a < .15 ? '#fffbd0' : a < .35 ? '#ffd23f' : a < .6 ? '#ff8a1c' : a < .82 ? '#d9341a' : '#5a2a28');
       for (let j = 0; j < 3; j++){
         const jx = (Math.random() - .5) * (2 + 9 * a), jy = (Math.random() - .5) * (2 + 4 * a) - a * 8 * Math.random();
         g.globalAlpha = clamp(1 - a * .95, .08, 1) * (j ? .65 : 1);
         R(Math.round(q.x + jx - sz / 2), Math.round(q.y + jy - sz / 2), sz, sz, col);
       }
-      if (k % 7 === 0 && Math.random() < .6){ g.globalAlpha = clamp(1 - a, .15, 1); R(Math.round(q.x + (Math.random() - .5) * 9), Math.round(q.y - a * 14 - Math.random() * 4), 1, 1, '#ffd23f'); }
+      if (k % 7 === 0 && Math.random() < .6){ g.globalAlpha = clamp(1 - a, .15, 1); R(Math.round(q.x + (Math.random() - .5) * 9), Math.round(q.y - a * 14 - Math.random() * 4), 1, 1, S.hrOut ? '#9be9ff' : '#ffd23f'); }
     }
     g.globalAlpha = 1;
   }
@@ -2350,8 +2374,9 @@ function homerShow(B){
   if (T >= 0 && T < .3){ g.fillStyle = `rgba(255,255,255,${.7 * (1 - T / .3)})`; g.fillRect(0, 0, W, H); }      // the flash
   if (T >= 0){
     const e = clamp(T / .4, 0, 1), over = 1 + 2.2 * Math.pow(e - 1, 3) + 1.2 * Math.pow(e - 1, 2), sz = (22 + 30 * over * e) * (1 + .04 * Math.sin(T * 9)), flick = T < 1.4 && Math.floor(T / .11) % 2;
-    g.fillStyle = `rgba(255,200,40,${.18 * clamp(1 - Math.max(0, T - 2.4) / .8, 0, 1) * e})`; g.fillRect(0, ty(102), W, ty(78) - ty(0));
-    tt('HOME RUN!', W / 2, ty(108), sz, flick ? '#ffffff' : '#ffd23f', 'center');
+    g.fillStyle = `rgba(${B.hrInfo && B.hrInfo.out ? '60,150,255' : '255,200,40'},${.18 * clamp(1 - Math.max(0, T - 2.4) / .8, 0, 1) * e})`; g.fillRect(0, ty(102), W, ty(78) - ty(0));
+    const outP = B.hrInfo && B.hrInfo.out;
+    tt(outP ? 'OUT OF THE PARK!' : 'HOME RUN!', W / 2, ty(108), outP ? sz * .78 : sz, flick ? '#ffffff' : outP ? '#7fd0ff' : '#ffd23f', 'center');
     if (T > .35){
       g.globalAlpha = clamp((T - .35) / .3, 0, 1);
       tt(`${Math.round(B.carry || ballDist())} FT   ${Math.round(B.ev)} MPH`, W / 2, ty(172), 22, '#ffffff', 'center');

@@ -199,11 +199,11 @@ function buildPark(park, teamCols){
   strip([[0, wallH - 1], [0, wallH]], basic(0xf0c53a), 1, 1);
   // the seating: two tiers of crowd with a dark aisle band between them, then the back wall
   const crowdMat = new THREE.MeshBasicMaterial({ map: crowd, side: THREE.DoubleSide });
-  strip([[1.5, wallH + .2], [40, wallH + 9]], crowdMat, 96, 12);                        // the seats rising away from the wall
-  strip([[40, wallH + 9], [40, wallH + 13]], basic(0x203a40), 1, 1);                    // the rail
-  strip([[40, wallH + 13], [84, wallH + 30]], crowdMat, 96, 12);                        // a second, higher section
-  strip([[84, wallH + 30], [84, wallH + 36]], basic(0x1f3a3a), 1, 1);                   // back wall
-  strip([[84, wallH + 36], [88, wallH + 37]], basic(0x2f5a52), 1, 1);                   // its cap
+  strip([[1.5, wallH + .2], [50, wallH + 26]], crowdMat, 96, 12);                       // the lower deck: 50 ft deep behind the fence
+  strip([[50, wallH + 26], [50, wallH + 30]], basic(0x203a40), 1, 1);                   // the rail between the decks
+  strip([[50, wallH + 30], [100, wallH + 60]], crowdMat, 96, 12);                       // the upper deck: another 50 ft
+  strip([[100, wallH + 60], [100, wallH + 66]], basic(0x1f3a3a), 1, 1);                 // back wall: past it is out of the park
+  strip([[100, wallH + 66], [104, wallH + 67]], basic(0x2f5a52), 1, 1);                 // its cap
   // the batter's eye behind centre field: a plain green wall in front of the lower deck
   const eye = new THREE.Mesh(new THREE.PlaneGeometry(64, 17), new THREE.MeshBasicMaterial({ map: wallTexture('#2f6a48'), side: THREE.DoubleSide }));
   eye.position.set(0, wallH + 8.5, -(fenceR(park, 0) + 1.2)); G.add(eye);
