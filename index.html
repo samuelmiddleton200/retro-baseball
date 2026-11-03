@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-04i';
+const BUILD = '11-04k';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -1313,7 +1313,7 @@ function drawRunDiamond(key, sx, sy){
   g.save(); g.globalAlpha = settled ? .6 : 1; g.translate(sx, sy);
   g.beginPath(); g.moveTo(0, -rr); g.lineTo(rr, 0); g.lineTo(0, rr); g.lineTo(-rr, 0); g.closePath();
   g.fillStyle = c.back ? '#4aa3ff' : green ? '#3ddc6a' : '#ff4d4d'; g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = .9; g.stroke(); g.restore();      // blue = going back
-  RUNBTN.push({ key, x: sx - 14, y: sy - 14, w: 28, h: 28 });                 // the tap area stays comfortable even though the diamond is small
+  RUNBTN.push({ key, x: sx - 28, y: sy - 28, w: 56, h: 56, cx: sx, cy: sy });                 // the tap area stays comfortable even though the diamond is small
 }
 function launchBall(ev, la, sa, qual){
   RUNCTL = {};
@@ -1410,7 +1410,7 @@ function manualThrow(B){
     for (const key in RUNCTL){
       const c = RUNCTL[key]; if (c.out || (!c.back && c.pos >= c.cap - .05)) continue;
       const nb = c.cap, bi = Math.round(nb / 90) - 1; if (bi < 0 || bi > 3) continue;                // throw to the base he is running to
-      if (!best || c.pos > best.c.pos) best = { key, c, nb, bi };
+      if (!best || c.pos > best.c.pos) best = { key, c, nb, bi, back:!!c.back };
     }
     if (!best) return;
     const to = BASE_XY[best.bi];
@@ -1422,6 +1422,8 @@ function manualThrow(B){
   if (P.ph === 'wait'){                                                          // he holds the ball on the base until the runner arrives, then tags him
     B.d = P.x; B.lat = P.y; B.h = 4;
     const c = P.run.c;
+    // the runner changed his mind (turned back, or turned forward again): the ball is no use waiting at that base, it goes after the base he is heading for now
+    if (!!c.back !== !!P.run.back || (!c.back && c.cap !== P.run.nb)){ B.pass = { ph:'hold', x:P.x, y:P.y, t0:B.t + .35 }; return; }
     if (c.back ? c.pos <= P.run.nb + .05 : c.pos >= P.run.nb - .05){ c.out = true; c.back = null; c.cap = c.pos; c.outT = B.t; say('TAGGED OUT!'); B.pass = { ph:'hold', x:P.x, y:P.y, t0:B.t + .5 }; }
     return;
   }
@@ -4183,7 +4185,7 @@ function down(e){
   if (M && M.inter && M.inter.t > 350 && phase !== 'menu'){ M.inter = null; return; }
   touch = { x0:p.x, y0:p.y, x:p.x, y:p.y, t:performance.now(), used:false };
   for (const b of btns) if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h){ b.fn(); touch.used = true; return; }
-  if (P && P.state === 'inplay') for (const b of RUNBTN) if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h){
+  if (P && P.state === 'inplay') for (const b of RUNBTN.filter(q => p.x >= q.x && p.x <= q.x + q.w && p.y >= q.y && p.y <= q.y + q.h).sort((a, c) => Math.hypot(p.x - a.cx, p.y - a.cy) - Math.hypot(p.x - c.cx, p.y - c.cy)).slice(0, 1)){
     const c = RUNCTL[b.key], now = performance.now();
     if (c && c.lastTap && now - c.lastTap < 330){ runToggle(b.key); runBack(b.key); c.lastTap = 0; }      // two quick taps: turn round (the first tap's flip is undone)
     else { runToggle(b.key); if (c) c.lastTap = now; }
