@@ -21,12 +21,9 @@ window.GL3D = GL;
 // widening to 36 ft beside the infield, like a real park), then curve round behind the plate about 60 ft back.
 const foulWall = (P, sx) => {
   const t0 = Math.SQRT1_2 * P, at = (t, w) => [sx * (t + w * Math.SQRT1_2), t - w * Math.SQRT1_2];
-  let pts = [[sx * t0, t0], at(t0, 10), at(190, 13), at(130, 18), at(90, 25), at(58, 36), [sx * 54, -4], [sx * 50, -34], [sx * 32, -52], [sx * 14, -59], [0, -60]];
-  for (let k = 0; k < 3; k++){                                       // round the corners off (Chaikin), keeping both ends where they are
-    const out = [pts[0]];
-    for (let i = 0; i < pts.length - 1; i++){ const p = pts[i], q = pts[i + 1]; out.push([.75 * p[0] + .25 * q[0], .75 * p[1] + .25 * q[1]], [.25 * p[0] + .75 * q[0], .25 * p[1] + .75 * q[1]]); }
-    out.push(pts[pts.length - 1]); pts = out;
-  }
+  // straight pieces, like a real park seen from above: along the foul line (10 ft off it at the pole, 30 ft off beside the infield, in one straight run),
+  // then a straight cut across the corner, then straight across behind the plate
+  const pts = [[sx * t0, t0], at(t0, 10), at(20, 30), [sx * 34, -44], [0, -62]];
   const tab = [];                                                    // distance from home for each half degree, 45 to 180 past the pole
   for (let i = 0; i <= 270; i++){
     const ang = (45 + i / 2) * D2R, dx = Math.sin(ang) * sx, dy = Math.cos(ang);       // the ray, in this side's own coordinates
@@ -37,7 +34,7 @@ const foulWall = (P, sx) => {
       const t = (p[0] * ey - p[1] * ex) / den, u = (p[0] * dy - p[1] * dx) / den;
       if (t > 0 && u >= -1e-6 && u <= 1 + 1e-6 && t < best) best = t;
     }
-    tab.push(best < 1e8 ? best : 60);
+    tab.push(best < 1e8 ? best : 62);
   }
   return tab;
 };
