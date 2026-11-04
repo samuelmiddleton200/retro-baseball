@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-05n';
+const BUILD = '11-05o';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -1034,7 +1034,7 @@ function drawFielders(team){
 // ───────────────────────────────────────────────────────────────────────────
 const ZONE = { x: 190, y: 160, w: 22, h: 28 };                 // right over the plate
 function layoutZone(){                                          // sits over the plate, chest high, the way the target's batter stands
-  ZONE.w = 54 * TU; ZONE.h = 70 * TU; ZONE.x = tx(392) - ZONE.w / 2; ZONE.y = ty(318) - 3 * TU;      // 17 in plate + a ball's width, about 2.2 ft tall
+  ZONE.w = 54 * 1.2 * TU; ZONE.h = 70 * 1.2 * TU; ZONE.x = tx(392) - ZONE.w / 2; ZONE.y = ty(318) - 3 * TU + 35 * TU - ZONE.h / 2;      // 17 in plate + a ball's width, about 2.2 ft tall
 }
 const PITCHES = { FB:{ n:'Fastball', mph:[90,102], br:[0,0],     col:'#ff6b5a' },
                   CV:{ n:'Curve',    mph:[74,84],  br:[0,22],    col:'#5ad2ff' },
@@ -1528,18 +1528,18 @@ const outsideIn = (tx, ty) => Math.hypot(Math.max(0, Math.abs(tx) - 1) * IN_X, M
 // a pitch that touches the batter. His body as it is drawn, in zone units: lateral = how far toward him from the middle of the plate (the zone's edge is 1),
 // down = how far below the middle of the zone (the top of the zone is -1). [lateral from, to, down from, to]. The bat is not part of him.
 const BODY = [
-  [1.93, 3.95, -2.45, -1.05],      // helmet
-  [1.59, 1.93, -1.70, -1.30],      // the bill of the helmet
-  [2.00, 4.95, -1.05, .45],        // arms, hands and chest
-  [2.35, 4.65, .45, 2.60],         // hips, legs and feet
-];
+  [1.58, 3.51, -2.7, -1.36],      // helmet
+  [1.25, 1.58, -1.98, -1.6],      // the bill of the helmet
+  [1.65, 4.47, -1.36, 0.08],        // arms, hands and chest
+  [1.98, 4.18, 0.08, 2.14],         // hips, legs and feet
+];      // measured for the batter at 1.15x and the zone at 1.2x
 // the ball is 2.9 in across: a corner of it touching any part of him is a hit by pitch, so every part is grown by the ball's radius
 const BALL_R = { x: 1.45 / IN_X, y: 1.45 / IN_Y };
 function hitsBatter(){
   const b = M.batter, lateral = P.tx * (b.bats === 'L' ? 1 : -1) + (b.bats === 'L' ? LEFTY_SHIFT : 0);
   return BODY.some(([l0, l1, v0, v1]) => lateral >= l0 - BALL_R.x && lateral <= l1 + BALL_R.x && P.ty >= v0 - BALL_R.y && P.ty <= v1 + BALL_R.y);
 }
-const LEFTY_SHIFT = .22;                 // the left-handed batter is drawn a little closer to the plate than the right-handed one
+const LEFTY_SHIFT = .185;                 // the left-handed batter is drawn a little closer to the plate than the right-handed one
 const inZone = () => Math.abs(P.tx) <= 1 && Math.abs(P.ty) <= 1;
 
 // ── swinging: the input only SCHEDULES the swing ───────────────────────────
@@ -2766,16 +2766,17 @@ function drawPitcherAt(xL, yL, u){
   if (PWARM.n <= 16 && PWARM.n !== step){ const w = PWARM.n++; g.save(); g.globalAlpha = 0; bakeStamp('p', 'P' + wk + '|' + w, o, GL3D.posePitcher(w / 16), -.2, tx(412), ty(232), 74, false, 5.9); g.restore(); }
   return bakeStamp('p', 'P' + wk + '|' + step, o, GL3D.posePitcher(step / 16), -.2, tx(412), ty(232), 74, false, 5.9);
 }
+const BAT_H = 196 * 1.15;                              // the batter is drawn 15% bigger than before
 function drawBatter(p, swingT, idle, rel){
   if (GP.ready){
     const bt = batTeam(), lefty = p.bats === 'L';
-    const xL = lefty ? tx(478) : tx(300), yL = ty(449); GPSK = skinHex(p);
-    if (GP.warm !== uni(bt)){ GP.warm = uni(bt); for (let i = 0; i < 8; i++){ gpHead(i); gpScaled(GP.batter[i], 'B' + i, uni(bt), Math.round(GP.batter[i].naturalWidth * (196 * TU) / (GP.batter[i].naturalHeight * .97)), Math.round(196 * TU / .97)); } }
-    if (rel == null){ const f = batterFrame(rel, idle); return gpStamp(GP.batter[f], 'B' + f, uni(bt), xL, yL, 196, lefty, null, null, gpHead(f) - GP.batter[f].naturalWidth / 2 - (gpHead(0) - GP.batter[0].naturalWidth / 2), true); }
+    const xL = lefty ? tx(483) : tx(295), yL = ty(449); GPSK = skinHex(p);
+    if (GP.warm !== uni(bt)){ GP.warm = uni(bt); for (let i = 0; i < 8; i++){ gpHead(i); gpScaled(GP.batter[i], 'B' + i, uni(bt), Math.round(GP.batter[i].naturalWidth * (BAT_H * TU) / (GP.batter[i].naturalHeight * .97)), Math.round(BAT_H * TU / .97)); } }
+    if (rel == null){ const f = batterFrame(rel, idle); return gpStamp(GP.batter[f], 'B' + f, uni(bt), xL, yL, BAT_H, lefty, null, null, gpHead(f) - GP.batter[f].naturalWidth / 2 - (gpHead(0) - GP.batter[0].naturalWidth / 2), true); }
     const pos = batterPos(rel), snap = pos > 3.5, f0 = snap ? Math.min(7, Math.round(pos)) : Math.floor(pos), f1 = snap ? f0 : Math.min(7, f0 + 1), u = pos - f0, ref = gpHead(0) - GP.batter[0].naturalWidth / 2;
     const dx = f => gpHead(f) - GP.batter[f].naturalWidth / 2 - ref;
-    gpStamp(GP.batter[f0], 'B' + f0, uni(bt), xL, yL, 196, lefty, null, null, dx(f0), true);
-    if (u > .02 && f1 !== f0) gpStamp(GP.batter[f1], 'B' + f1, uni(bt), xL, yL, 196, lefty, null, u, dx(f1), true);
+    gpStamp(GP.batter[f0], 'B' + f0, uni(bt), xL, yL, BAT_H, lefty, null, null, dx(f0), true);
+    if (u > .02 && f1 !== f0) gpStamp(GP.batter[f1], 'B' + f1, uni(bt), xL, yL, BAT_H, lefty, null, u, dx(f1), true);
     return;
   }
   if (!plateOK()) return drawBatterOld(p, swingT, idle);
@@ -2783,7 +2784,7 @@ function drawBatter(p, swingT, idle, rel){
   const st = swingT == null ? 'w' + phaseStep(idle / 60, 8) : Math.round(clamp(swingT, 0, 1) * 24);
   const o = gxPerson('bat', 'bat', p, bt, 0, 0, 0, null, { cap:'#0e1424', shirt:'#161d36', sleeve:'#161d36', pants:'#b4b8c4', skin:'#c9936a', hair:'#14100c' });   // the target's batter: black helmet, navy top, grey pants
   const pose = swingT == null ? GL3D.poseBatter(null, phaseStep(idle / 60, 8) / 8 * 3) : GL3D.poseBatter(Math.round(clamp(swingT, 0, 1) * 24) / 24, 0);
-  return bakeStamp('b', 'B' + lookKey(p.look) + uni(bt) + '|' + st, o, pose, .5, cx, ty(449), 196, lefty);
+  return bakeStamp('b', 'B' + lookKey(p.look) + uni(bt) + '|' + st, o, pose, .5, cx, ty(449), BAT_H, lefty);
 }
 function drawBehindPlate(){
   if (!plateOK()) return drawBehindPlateOld();
@@ -3055,12 +3056,12 @@ function drawScoreboard(between){
   // the bases: a diamond, yellow when somebody is on
   const dcx = SX(177), dcy = SY(40), br = 12 * TU;
   [[1, 0, -17], [0, 24, 2], [2, -24, 2]].forEach(([i, ox, oy]) => {
-    const cx = dcx + ox * TU * SK, cy = dcy + oy * TU * SK;
+    const cx = dcx + ox * TU, cy = dcy + oy * TU;
     g.beginPath(); g.moveTo(cx, cy - br); g.lineTo(cx + br, cy); g.lineTo(cx, cy + br); g.lineTo(cx - br, cy); g.closePath();
     g.fillStyle = M.bases[i] ? '#f6c842' : 'rgba(255,255,255,.04)'; g.fill();
     g.strokeStyle = M.bases[i] ? '#ffe9a0' : '#7f93b8'; g.lineWidth = 1.2; g.stroke();
   });
-  g.fillStyle = '#e8eef9'; g.beginPath(); g.arc(dcx, dcy + 18 * TU * SK, 2.4 * TU, 0, 7); g.fill();
+  g.fillStyle = '#e8eef9'; g.beginPath(); g.arc(dcx, dcy + 18 * TU, 2.4 * TU, 0, 7); g.fill();
   if (between) tt(`${h.w || 0}-${h.l || 0}`, SX(177), SY(80), 24, '#ffffff', 'center');
   else tt(`${M.outs} OUT${M.outs === 1 ? '' : 'S'}`, SX(177), SY(80), 19, '#ffffff', 'center');
 }
