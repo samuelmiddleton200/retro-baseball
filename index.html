@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate"><meta charset="utf-8">
 <!-- no zooming; the game fills the screen -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <!-- opened from the home screen: no Safari bars, black status bar -->
@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-06b"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-06c"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-06b';
+const BUILD = '11-06c';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -1057,10 +1057,11 @@ function startGame(oppIdx, home, opts = {}){
     park: makePark(home ? me : opp), msg:null, msgT:0, over:false, exc:0,
   };
   M.uni = pickUniforms(M.home, M.away);                          // who wears what, once, for the whole game
+  M.coins0 = G.coins;                                            // what you had when it began: the game's total is worked out from this
   M.pitcherHome.st.ip = M.pitcherHome.st.ip || 0;
   PG.clear(); pg(M.pitcherHome).used = true; pg(M.pitcherAway).used = true;
   phase = 'atbat'; setupAtBat();
-  setTimeout(warmHitView, 400);                                // build the 3D park while the first pitch is still coming, not at the first hit
+  setTimeout(warmHitView, 30);                                // build the 3D park while the first pitch is still coming, not at the first hit
 }
 // The high 3D view that shows a ball in play builds the whole stadium (textures, crowd, towers) the first time it is drawn: 3-4 seconds
 // of freeze right at contact. Do that work up front, once per park, while nothing is happening.
@@ -1541,7 +1542,8 @@ function hitsBatter(){
   return BODY.some(([l0, l1, v0, v1]) => lateral >= l0 - BALL_R.x && lateral <= l1 + BALL_R.x && P.ty >= v0 - BALL_R.y && P.ty <= v1 + BALL_R.y);
 }
 const LEFTY_SHIFT = .185;                 // the left-handed batter is drawn a little closer to the plate than the right-handed one
-const inZone = () => Math.abs(P.tx) <= 1 && Math.abs(P.ty) <= 1;
+// a pitch is a strike if ANY part of the ball touches the zone: the ball is drawn with a radius of ballAt(1).r pixels at the plate, so the zone grows by that much on every side
+const inZone = () => { const r = ballAt(1).r; return Math.abs(P.tx) <= 1 + r / (ZONE.w / 2) && Math.abs(P.ty) <= 1 + r / (ZONE.h / 2); };
 
 // ── swinging: the input only SCHEDULES the swing ───────────────────────────
 const LATEST_SWING = 300;                        // the bat cannot arrive later than this past the plate
@@ -2127,8 +2129,8 @@ function applyPlay(res){
   if (runs){ p.st.er += runs; pg(p).r += runs; }
   M.outs += out; p.st.po = (p.st.po || 0) + out; pg(p).po += out;                       // the outs he got: his innings pitched
   say(txt);
-  if (weBat()) G.coins += ({ single:25, double:40, triple:75, hr:200 })[res] || 0;
-  if (!weBat() && res === 'k') G.coins += 30;
+  if (!M.league){ if (weBat()) G.coins += ({ single:25, double:40, triple:75, hr:200 })[res] || 0;
+    if (!weBat() && res === 'k') G.coins += 30; }
   nextBatter();
   if (M.outs >= 3) endHalf(); else setupAtBat();
 }
@@ -2169,7 +2171,7 @@ function snapMatch(){
       inning:M.inning, top:M.top, outs:M.outs, balls:M.balls, strikes:M.strikes, score:M.score, ls:M.ls, H:M.H, E:M.E, pcHome:M.pcHome, pcAway:M.pcAway,
       lineHome:M.lineHome, lineAway:M.lineAway, bases:M.bases.map(p => p ? bt.lineup.indexOf(p) : null), bi:{ home:M.home._bi || 0, away:M.away._bi || 0 },
       pH:pitchers(M.home).indexOf(M.pitcherHome), pA:pitchers(M.away).indexOf(M.pitcherAway),
-      pgH:pitchers(M.home).map(p => pg(p)), pgA:pitchers(M.away).map(p => pg(p)), t:Date.now() }));
+      pgH:pitchers(M.home).map(p => pg(p)), pgA:pitchers(M.away).map(p => pg(p)), t:Date.now(), coins0:M.coins0 }));
   } catch (e){}
 }
 const matchSnap = () => { try { const d = JSON.parse(localStorage.getItem(MSAVE)); return d && d.v === 1 && G && d.day === G.day && G.day < G.seasonLen ? d : null; } catch (e){ return null; } };
@@ -2181,26 +2183,58 @@ function resumeMatch(){
   Object.assign(M, { inning:d.inning, top:d.top, outs:d.outs, score:d.score, ls:d.ls, H:d.H, E:d.E, pcHome:d.pcHome, pcAway:d.pcAway, lineHome:d.lineHome, lineAway:d.lineAway });
   M.home._bi = d.bi.home; M.away._bi = d.bi.away;
   if (d.pH >= 0) M.pitcherHome = pitchers(M.home)[d.pH]; if (d.pA >= 0) M.pitcherAway = pitchers(M.away)[d.pA];
+  if (d.coins0 != null) M.coins0 = d.coins0;
   if (d.pgH && d.pgA){ PG.clear(); pitchers(M.home).forEach((p, i) => PG.set(p, d.pgH[i])); pitchers(M.away).forEach((p, i) => PG.set(p, d.pgA[i])); }      // who has pitched, and how much, same as before he quit
   const bt = batTeam(); M.bases = d.bases.map(i => i == null || i < 0 ? null : bt.lineup[i]);
   setupAtBat(); M.balls = d.balls; M.strikes = d.strikes;
   return true;
 }
+// the win goes to the winning team's pitcher with the most outs, the loss to the losing team's pitcher who gave up the most runs
+function giveDecisions(){
+  if (M.score.home === M.score.away) return;
+  const hw = M.score.home > M.score.away, team = t => t.rot.concat(t.pen).filter(p => pg(p).used);
+  const wp = team(hw ? M.home : M.away).sort((x, y) => pg(y).po - pg(x).po)[0], lp = team(hw ? M.away : M.home).sort((x, y) => pg(y).r - pg(x).r || pg(y).po - pg(x).po)[0];
+  if (wp) wp.st.w = (wp.st.w || 0) + 1;
+  if (lp) lp.st.l = (lp.st.l || 0) + 1;
+}
+// one game between two other clubs, played pitch by pitch with the same rules and stats as yours, then put away without a trace on the game you are in
+function simLeagueGame(hi, ai){
+  const keep = { M, P, BALL, swing, phase, pitchSel }, pgKeep = new Map(PG); PG.clear();
+  try {
+    const home = G.teams[hi], away = G.teams[ai]; home._bi = 0; away._bi = 0;
+    M = { home, away, meHome:false, league:true, inning:1, top:true, outs:0, bases:[null, null, null], score:{ home:0, away:0 }, balls:0, strikes:0, lineHome:0, lineAway:0,
+          ls:{ away:[], home:[] }, H:{ away:0, home:0 }, E:{ away:0, home:0 }, pitcherHome:home.rot[(G.day + hi) % 5], pitcherAway:away.rot[(G.day + ai) % 5],
+          pcHome:0, pcAway:0, line:[], mode:'sim', park:{}, msg:null, msgT:0, over:false, exc:0 };
+    pg(M.pitcherHome).used = true; pg(M.pitcherAway).used = true;
+    setupAtBat();
+    let guard = 0; while (!M.over && guard++ < 4000) simPitch();
+    if (!M.over) gameOver();
+  } catch (e){ console.error(e); }
+  finally { M = keep.M; P = keep.P; BALL = keep.BALL; swing = keep.swing; phase = keep.phase; pitchSel = keep.pitchSel; PG.clear(); pgKeep.forEach((v, k) => PG.set(k, v)); }
+}
+// the other 28 clubs: paired off at random every day (the same pairs on a reload of the same day)
+function simLeagueDay(day, oppIdx){
+  let seed = (day + 1) * 7919 + 13; const rnd2 = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const ids = G.teams.map((_, i) => i).filter(i => i !== G.team && i !== oppIdx);
+  for (let i = ids.length - 1; i > 0; i--){ const j = Math.floor(rnd2() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+  for (let k = 0; k + 1 < ids.length; k += 2) day % 2 ? simLeagueGame(ids[k], ids[k + 1]) : simLeagueGame(ids[k + 1], ids[k]);
+}
 function gameOver(){
+  if (M.league){                                                         // a game between two other clubs: decisions, the standings, nothing else
+    M.over = true; giveDecisions();
+    const hw = M.score.home > M.score.away; M.home[hw ? 'w' : 'l']++; M.away[hw ? 'l' : 'w']++; M.home.rs += M.score.home; M.home.ra += M.score.away; M.away.rs += M.score.away; M.away.ra += M.score.home;
+    return;
+  }
   clearMatchSnap();
   M.over = true; phase = 'over';
-  if (M.score.home !== M.score.away){                                      // the decisions
-    const hw = M.score.home > M.score.away, team = t => t.rot.concat(t.pen).filter(p => pg(p).used);
-    const wp = team(hw ? M.home : M.away).sort((x, y) => pg(y).po - pg(x).po)[0], lp = team(hw ? M.away : M.home).sort((x, y) => pg(y).r - pg(x).r || pg(y).po - pg(x).po)[0];
-    if (wp) wp.st.w = (wp.st.w || 0) + 1;
-    if (lp) lp.st.l = (lp.st.l || 0) + 1;
-  }
+  giveDecisions();
   const me = myTeam(), myRuns = M.meHome ? M.score.home : M.score.away, oth = M.meHome ? M.score.away : M.score.home;
   const won = myRuns > oth;
   me[won ? 'w' : 'l']++; me.rs += myRuns; me.ra += oth;
   G.coins += won ? 500 : 120;
   if (!M.meHome ? M.score.home === 0 : M.score.away === 0) G.coins += 500;      // shutout
   const sg = G.sched[G.day]; if (sg){ sg.done = true; sg.rs = myRuns; sg.ra = oth; }
+  simLeagueDay(G.day, sg ? sg.opp : -1);                                  // everybody else plays today too, and their players get stats
   G.day++; G.rotIdx++;
   save();
 }
@@ -4320,18 +4354,27 @@ function drawMenu(){
   else if (menu === 'trade'){ drawTrade(); return; }
   else if (menu === 'stats'){ drawStats(); return; }
   else if (menu === 'stand'){
-    R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff');
-    ptitle('STANDINGS', 10, 3, 9, '#ffffff', 'left');
-    const list = G.teams.map((t, i) => ({ ...t, i })).sort((a, b) => (b.w - b.l) - (a.w - a.l));
-    const colW = Math.floor((W - 24) / 2);
-    const col = (items, x0) => items.forEach((t, i) => {
-      const y = 25 + i * 12.5, mine = t.i === G.team;
-      if (mine) R(x0 - 3, y - 2, colW, 12, UI.blueDD);
-      textb(t.ab, x0, y, mine ? UI.yellow : '#ffffff', 7);
-      textb(`${t.w}-${t.l}`, x0 + 34, y, mine ? UI.yellow : UI.ice, 7);
-      textb(t.nick, x0 + 70, y, mine ? UI.yellow : '#ffffff', 6, 'left', colW - 76);
+    R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff'); ptitle('STANDINGS', 10, 3, 9, '#ffffff', 'left');
+    const colW = Math.floor((W - 30) / 2), RH = 10, pctOf = t => (t.w + t.l) ? t.w / (t.w + t.l) : 0;
+    ['AL', 'NL'].forEach((lg, ci) => {
+      const x0 = 10 + ci * (colW + 10); let y = 22;
+      [['E', 'EAST'], ['C', 'CENTRAL'], ['W', 'WEST']].forEach(([dv, nm]) => {
+        const list = G.teams.map((t, i) => ({ t, i })).filter(o => o.t.lg === lg && o.t.div === dv).sort((a, b) => pctOf(b.t) - pctOf(a.t) || b.t.w - a.t.w || a.i - b.i);
+        R(x0, y, colW, 9, UI.blueDD); textb(lg + ' ' + nm, x0 + 3, y + 2, '#ffffff', 6, 'left');
+        [['W', 74], ['L', 56], ['PCT', 32], ['GB', 7]].forEach(([h, dx]) => textb(h, x0 + colW - dx, y + 2, UI.ice, 6, 'right'));
+        y += 10;
+        const lead = list[0].t;
+        list.forEach((o, k) => {
+          const t = o.t, mine = o.i === G.team, c = mine ? UI.yellow : '#ffffff', gb = ((lead.w - t.w) + (t.l - lead.l)) / 2;
+          if (mine) R(x0, y - 1, colW, RH, 'rgba(255,210,63,.18)');
+          textb(t.ab, x0 + 3, y, c, 6, 'left'); textb(t.nick, x0 + 24, y, mine ? UI.yellow : UI.ice, 5, 'left', colW - 106);
+          textb(String(t.w), x0 + colW - 74, y, c, 6, 'right'); textb(String(t.l), x0 + colW - 56, y, c, 6, 'right');
+          textb(pctOf(t).toFixed(3).replace('0.', '.').replace('1.000', '1.000'), x0 + colW - 32, y, c, 6, 'right'); textb(k === 0 ? '-' : gb.toFixed(1), x0 + colW - 7, y, c, 6, 'right');
+          y += RH;
+        });
+        y += 3;
+      });
     });
-    col(list.slice(0, 15), 12); col(list.slice(15), 12 + colW + 6);
     button(W - 58, H - 20, 50, 16, 'BACK', () => menu = 'title');
   }
 }
@@ -4453,11 +4496,15 @@ function drawStats(){
 function drawOver(){
   btns = [];
   R(0, 0, W, H, '#0b1018ee');
-  const my = M.meHome ? M.score.home : M.score.away, ot = M.meHome ? M.score.away : M.score.home;
-  textb(my > ot ? 'WIN' : 'LOSS', W / 2, 46, my > ot ? '#54d67a' : '#ff6b5a', 24, 'center');
-  textb(`${M.away.ab} ${M.score.away}   -   ${M.home.ab} ${M.score.home}`, W / 2, 84, '#fff', 12, 'center');
-  textb(`+${my > ot ? 500 : 120} coins`, W / 2, 108, '#ffd23f', 9, 'center');
-  button(W / 2 - 50, 140, 100, 22, 'CONTINUE', () => { M = null; phase = 'menu'; menu = 'title'; }, '#2f6fe0');
+  const my = M.meHome ? M.score.home : M.score.away, ot = M.meHome ? M.score.away : M.score.home, won = my > ot;
+  const earned = Math.max(0, G.coins - (M.coins0 == null ? G.coins : M.coins0)), shut = ot === 0, bonus = (won ? 500 : 120) + (shut ? 500 : 0), play = Math.max(0, earned - bonus);
+  textb(won ? 'WIN' : 'LOSS', W / 2, 30, won ? '#54d67a' : '#ff6b5a', 24, 'center');
+  textb(`${M.away.ab} ${M.score.away}   -   ${M.home.ab} ${M.score.home}`, W / 2, 66, '#fff', 12, 'center');
+  const rows = [['HITS, HOME RUNS AND STRIKEOUTS', play], [won ? 'WIN BONUS' : 'PLAYED THE GAME', won ? 500 : 120]]; if (shut) rows.push(['SHUTOUT', 500]);
+  rows.forEach(([l, v], i) => { textb(l, W / 2 - 100, 92 + i * 12, UI.ice, 7, 'left'); textb('+' + v, W / 2 + 100, 92 + i * 12, '#ffffff', 7, 'right'); });
+  R(W / 2 - 100, 92 + rows.length * 12, 200, 1, '#2a5ba6');
+  textb('TOTAL EARNED', W / 2 - 100, 96 + rows.length * 12, '#ffd23f', 8, 'left'); textb('+' + earned + ' coins', W / 2 + 100, 96 + rows.length * 12, '#ffd23f', 9, 'right');
+  button(W / 2 - 50, 150, 100, 22, 'CONTINUE', () => { M = null; phase = 'menu'; menu = 'title'; }, '#2f6fe0');
 }
 
 // in-game menu button (switch to sim / offense only / defense only)
@@ -4612,7 +4659,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
     P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
-  runToggle, runBack, drawPlay, defTap, defBaseAt, defHit, get BALL(){ return BALL; }, circleIn, padGeom, padAim, get W(){ return W; }, get SC(){ return SC; }, get OX(){ return OX; }, simPitch, simRest, PG, pg, stamCap, pullCheck, changePitcher, fatigue, fastballMph, get P(){ return P; }, ballAt, throwPitch, inZone, nextPitch, ZONE, get menu(){ return menu; }, set menu(v){ menu = v; }, get G(){ return G; }, statRows, STAT_COLS, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, get statsView(){ return statsView; }, set statsView(v){ statsView = v; }, snapMatch, resumeMatch, matchSnap, startGame2: startGame, evMin, HR_ANGLE, EVMAX, evMax, reachIn, outsideIn, hitsBatter, throwRange, throwFps, spdOf, routeThrow, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
+  runToggle, runBack, drawPlay, simLeagueDay, simLeagueGame, inZone, defTap, defBaseAt, defHit, get BALL(){ return BALL; }, circleIn, padGeom, padAim, get W(){ return W; }, get SC(){ return SC; }, get OX(){ return OX; }, simPitch, simRest, PG, pg, stamCap, pullCheck, changePitcher, fatigue, fastballMph, get P(){ return P; }, ballAt, throwPitch, inZone, nextPitch, ZONE, get menu(){ return menu; }, set menu(v){ menu = v; }, get G(){ return G; }, statRows, STAT_COLS, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, get statsView(){ return statsView; }, set statsView(v){ statsView = v; }, snapMatch, resumeMatch, matchSnap, startGame2: startGame, evMin, HR_ANGLE, EVMAX, evMax, reachIn, outsideIn, hitsBatter, throwRange, throwFps, spdOf, routeThrow, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────
