@@ -60,20 +60,16 @@ function paintGround(park, reg){
   const poly = (pts, fill) => { g.save(); g.shadowColor = fill; g.shadowBlur = SOFT; g.beginPath(); pts.forEach((p, i) => { const q = P(p[0], p[1]); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); g.fillStyle = fill; g.fill(); g.restore(); };
   const circ = (lat, d, r, fill) => { const q = P(lat, d); g.save(); g.shadowColor = fill; g.shadowBlur = SOFT * 1.4; g.beginPath(); g.arc(q[0], q[1], r * S, 0, TAU); g.fillStyle = fill; g.fill(); g.restore(); };
   const GRASS_A = '#4c7c37', GRASS_B = '#3f6c2e', GRASS_C = '#578944', DIRT = '#b17846', DIRT2 = '#a66b3d', TRACK = '#a9743f', CHALK = '#f1ede2';
-  // base grass, with wide mowing stripes running out from home
-  g.fillStyle = GRASS_A; g.fillRect(0, 0, reg.w, reg.h);
-  for (let i = -24; i < 24; i++){
-    if (i % 2) continue;
-    poly([[i * 14, D0], [i * 14 + 14, D0], [i * 14 + 14, D0 + DW], [i * 14, D0 + DW]], GRASS_B);
-  }
+  // mowing: parallel straight stripes, 5.25 ft wide, light and dark the same width. One is centred on the line home - mound - second base, and the infield uses the very same
+  // stripes (they are laid down by world position), so every infield stripe carries straight on into the outfield.
+  const MOW_W = 5.25;
+  const mow = () => {
+    g.fillStyle = GRASS_C; g.fillRect(0, 0, reg.w, reg.h);
+    for (let i = -70; i <= 70; i += 2){ const x0 = P((i - .5) * MOW_W, 0)[0], x1 = P((i + .5) * MOW_W, 0)[0]; g.fillStyle = GRASS_B; g.fillRect(x0, 0, x1 - x0, reg.h); }
+  };
+  mow();
   const sp = (n, cols, lat0, lat1, d0, d1, sz) => { for (let i = 0; i < n; i++){ g.fillStyle = cols[(rr() * cols.length) | 0]; const q = P(lat0 + rr() * (lat1 - lat0), d0 + rr() * (d1 - d0)); g.fillRect(q[0], q[1], sz, sz); } };
   sp(reg.near ? 30000 : 160000, ['#4a7a35', '#4e7e39', '#477434'], reg.x0, reg.x0 + reg.xw, reg.d0, reg.d0 + reg.dw, reg.near ? 2 : 1);
-  // diagonal stripes inside the infield diamond
-  g.save(); g.beginPath(); [[0, 0], [63.6, 63.6], [0, 127.3], [-63.6, 63.6]].forEach((p, i) => { const q = P(p[0], p[1]); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); g.clip();
-  for (let i = -20; i < 20; i++){ if (i % 2) continue;
-    const a = P(-120 + i * 9, 63.6 - 120), b = P(120 + i * 9, 63.6 + 120), c2 = P(120 + i * 9 + 9, 63.6 + 120), d2 = P(-120 + i * 9 + 9, 63.6 - 120);
-    g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.lineTo(...c2); g.lineTo(...d2); g.closePath(); g.fillStyle = GRASS_C; g.fill(); }
-  g.restore();
   // the dirt edge: a strip of dirt exactly 20 ft wide that follows the stands and the outfield wall all the way round (outfield, foul ground, behind the plate).
   // It is the wall's outline stroked 40 ft wide and clipped to the inside, so the width is the same everywhere, square to the wall, with sharp corners where the wall turns.
   { const wp = []; for (let a = -180; a < 180; a += 1){ const r = fenceR(park, a), t = a * D2R; wp.push([Math.sin(t) * r, Math.cos(t) * r]); }
@@ -87,20 +83,16 @@ function paintGround(park, reg){
   g.save(); wedge(); g.clip(); g.beginPath(); { const q0 = P(0, 60.5); g.arc(q0[0], q0[1], 95 * S, 0, TAU); } g.clip();
   sp(reg.near ? 40000 : 160000, ['#b57d49', '#a87240', '#bb824c', '#a06a3a'], -100, 100, -40, 160, reg.near ? 2 : 1); g.restore();
   const gh = 63.64 - 11 * Math.SQRT2, GD = [[0, 63.64 - gh], [gh, 63.64], [0, 63.64 + gh], [-gh, 63.64]];
-  poly(GD, GRASS_A);
-  g.save(); g.beginPath(); GD.forEach((p, i) => { const q = P(p[0], p[1]); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); g.clip();
-  for (let i = -20; i < 20; i++){ if (i % 2) continue;
-    const a = P(-120 + i * 8, 63.6 - 120), b = P(120 + i * 8, 63.6 + 120), c2 = P(120 + i * 8 + 8, 63.6 + 120), d2 = P(-120 + i * 8 + 8, 63.6 - 120);
-    g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.lineTo(...c2); g.lineTo(...d2); g.closePath(); g.fillStyle = GRASS_C; g.fill(); }
-  g.restore();
+  g.save(); g.beginPath(); GD.forEach((p, i) => { const q = P(p[0], p[1]); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); g.clip(); mow(); g.restore();
   circ(0, 0, 17, DIRT2); circ(0, 60.5, 9.5, DIRT2);
+  { const A = P(-1.9, 61.0), B = P(1.9, 60.0); g.fillStyle = '#f6f3ea'; g.fillRect(A[0], A[1], B[0] - A[0], B[1] - A[1]); g.strokeStyle = '#6b4a2a'; g.lineWidth = .18 * S; g.strokeRect(A[0], A[1], B[0] - A[0], B[1] - A[1]); }      // the pitching rubber
   // the foul lines run from the plate to the poles and a bit beyond
   const line = (a, b, w, col) => { const A = P(a[0], a[1]), B = P(b[0], b[1]); g.strokeStyle = col; g.lineWidth = w * S; g.lineCap = 'butt'; g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke(); };
   const rp = fenceR(park, 45), lp = fenceR(park, -45);
   line([3.7, 3.7], [Math.sin(45 * D2R) * rp, Math.cos(45 * D2R) * rp], 1.15, CHALK);          // they start at the top of the batter's boxes
   line([-3.7, 3.7], [-Math.sin(45 * D2R) * lp, Math.cos(45 * D2R) * lp], 1.15, CHALK);
   // batter's boxes (4 x 6 ft, six inches off the plate) and the catcher's box
-  const box = (x0, x1, d0, d1) => { const a = P(x0, d1), b = P(x1, d0); g.strokeStyle = CHALK; g.lineWidth = .5 * S; g.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]); };
+  const box = (x0, x1, d0, d1) => { const a = P(x0, d1), b = P(x1, d0); g.strokeStyle = CHALK; g.lineWidth = .7 * S; g.lineJoin = 'miter'; g.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]); };
   box(-5.2, -1.2, -2.3, 3.7); box(1.2, 5.2, -2.3, 3.7);
   box(-3.6, 3.6, -9, -3);
   // 1st and 3rd base coaches' boxes
@@ -115,7 +107,7 @@ function paintGround(park, reg){
     rad.addColorStop(0, 'rgba(0,0,0,1)'); rad.addColorStop(1, 'rgba(0,0,0,0)'); mg.fillStyle = rad; mg.fillRect(0, 0, reg.w, reg.h);
     g.drawImage(m, 0, 0); g.globalCompositeOperation = 'source-over';
   }
-  const t = new THREE.CanvasTexture(c); t.minFilter = reg.near ? THREE.NearestFilter : THREE.LinearMipmapLinearFilter; t.magFilter = THREE.NearestFilter; t.anisotropy = 4; t.generateMipmaps = !reg.near;
+  const t = new THREE.CanvasTexture(c); t.minFilter = reg.near ? THREE.NearestFilter : THREE.LinearMipmapLinearFilter; t.magFilter = THREE.NearestFilter; t.anisotropy = 16; t.generateMipmaps = !reg.near;
   return t;
 }
 
@@ -210,9 +202,37 @@ function buildPark(park, teamCols){
   strip([[0, wallH - 1], [0, wallH]], basic(0xf0c53a), 1, 1);
   // the seating: two tiers of crowd with a dark aisle band between them, then the back wall
   const crowdMat = new THREE.MeshBasicMaterial({ map: crowd, side: THREE.DoubleSide });
-  strip([[1.5, wallH + .2], [50, wallH + 26]], crowdMat, 96, 12);                       // the lower deck: 50 ft deep behind the fence
+  // the stands are plain dark slopes; the crowd is thousands of little people standing on them (below)
+  strip([[1.5, wallH + .2], [50, wallH + 26]], basic(0x1e242e), 1, 1);                  // the lower deck: 50 ft deep behind the fence
   strip([[50, wallH + 26], [50, wallH + 30]], basic(0x203a40), 1, 1);                   // the rail between the decks
-  strip([[50, wallH + 30], [100, wallH + 60]], crowdMat, 96, 12);                       // the upper deck: another 50 ft
+  strip([[50, wallH + 30], [100, wallH + 60]], basic(0x1e242e), 1, 1);                  // the upper deck: another 50 ft
+  {
+    const C4 = teamCols.length >= 4 ? teamCols : [teamCols[0], teamCols[1], '#ffffff', '#222222'];     // home main, home secondary, away main, away secondary
+    const FANS = 42500, SC = .75, ROWS = 16;
+    const rowsInfo = []; [[1.5, 50, wallH + .2, wallH + 26], [50, 100, wallH + 30, wallH + 60]].forEach(([r0, r1, y0, y1]) => { for (let i = 0; i < ROWS; i++){ const u = (i + .5) / ROWS; rowsInfo.push([r0 + (r1 - r0) * u, y0 + (y1 - y0) * u]); } });
+    const at2 = a => { const t = a * D2R, r = fenceR(park, a); return [Math.sin(t) * r, -Math.cos(t) * r]; };
+    const path = []; for (let a = -180; a <= 180; a += .5){ const p = at2(a), p0 = at2(a - .5), p1 = at2(a + .5); let tx = p1[0] - p0[0], tz = p1[1] - p0[1]; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+      let nx = tz, nz = -tx; if (nx * p[0] + nz * p[1] < 0){ nx = -nx; nz = -nz; } path.push([p[0], p[1], nx, nz]); }
+    let seats; const gen = gap => { seats = []; rowsInfo.forEach(([r, y]) => { let acc = 0, last = path[0]; for (let k = 1; k < path.length; k++){ const q = path[k]; const seg = Math.hypot(q[0] - last[0], q[1] - last[1]); acc += seg;
+      while (acc >= gap){ acc -= gap; const u = 1 - acc / (seg || 1); seats.push([last[0] + (q[0] - last[0]) * u + (last[2] + (q[2] - last[2]) * u) * r, y, last[1] + (q[1] - last[1]) * u + (last[3] + (q[3] - last[3]) * u) * r, q[2], q[3]]); } last = q; } }); };
+    let gap = 1.7; gen(gap); gap = gap * seats.length / FANS; gen(gap);                      // spaced so there are about 42,500 of them
+    const boxG = (w, h, d, y) => { const bg = new THREE.BoxGeometry(w, h, d); bg.translate(0, y, 0); const n = bg.attributes.normal, cols = []; for (let i = 0; i < n.count; i++){ const ny = n.getY(i), nxx = Math.abs(n.getX(i)), nzz = n.getZ(i); const k = ny > .5 ? 1 : ny < -.5 ? .45 : nzz > .5 ? .88 : nxx > .5 ? .66 : .55; cols.push(k, k, k); } bg.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3)); return bg; };
+    const fm = new THREE.MeshBasicMaterial({ vertexColors: true });
+    const n = seats.length, body = new THREE.InstancedMesh(boxG(1.25 * SC, 1.5 * SC, .8 * SC, .75 * SC), fm, n), head = new THREE.InstancedMesh(boxG(.62 * SC, .66 * SC, .62 * SC, .33 * SC), fm, n);
+    const hx = h => { const c = new THREE.Color(h); return [c.r, c.g, c.b]; };
+    const SK = ['#f1c9a0', '#d9a577', '#b57d52', '#8a5a38', '#6b4430'].map(hx), TEAM = C4.map(hx);
+    const D = new THREE.Object3D(), col = new THREE.Color();
+    seats.forEach((s, i) => {
+      const r = rr(), ti = r < .6 ? 0 : r < .8 ? 1 : r < .95 ? 2 : 3, j = .82 + rr() * .36;
+      const yaw = Math.atan2(-s[3], -s[4]) + (rr() - .5) * .5, jx = (rr() - .5) * .35, jz = (rr() - .5) * .5;
+      D.position.set(s[0] + jx, s[1], s[2] + jz); D.rotation.set(0, yaw, 0); D.scale.set(1, 1, 1); D.updateMatrix(); body.setMatrixAt(i, D.matrix);
+      col.setRGB(Math.min(1, TEAM[ti][0] * j), Math.min(1, TEAM[ti][1] * j), Math.min(1, TEAM[ti][2] * j)); body.setColorAt(i, col);
+      D.position.set(s[0] + jx, s[1] + 1.5 * SC - .1 * SC, s[2] + jz); D.updateMatrix(); head.setMatrixAt(i, D.matrix);
+      const sk = SK[(rr() * SK.length) | 0]; col.setRGB(sk[0], sk[1], sk[2]); head.setColorAt(i, col);
+    });
+    [body, head].forEach(m => { m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; m.frustumCulled = false; G.add(m); });
+    GL.fanCount = n;
+  }
   strip([[100, wallH + 60], [100, wallH + 66]], basic(0x1f3a3a), 1, 1);                 // back wall: past it is out of the park
   strip([[100, wallH + 66], [104, wallH + 67]], basic(0x2f5a52), 1, 1);                 // its cap
   // the batter's eye behind centre field: a plain green wall in front of the lower deck
@@ -316,7 +336,7 @@ GL.placeCamera = function(){
   if (GL.view === 'bat'){ c.fov = 33.4; c.up.set(0, 1, 0); c.position.set(.15, 8.4, 21.5); c.lookAt(.15, 8.4 - Math.tan(7.44 * D2R) * 100, 21.5 - 100); }
   else if (GL.view === 'free'){ const f = GL.freeCam; c.fov = f.fov; c.up.set(0, 1, 0); c.position.set(...f.pos); c.lookAt(...f.look); }
   else if (GL.view === 'top'){ c.fov = 46; c.up.set(0, 0, -1); c.position.set(0, 470, 78); c.lookAt(0, 0, -170); }
-  else { c.fov = 60; c.up.set(0, 1, 0); c.position.set(0, 100, 50); c.lookAt(0, 0, -112); }          // the press box: 100 ft up, 50 ft behind the plate
+  else { c.fov = 58; c.up.set(0, 1, 0); c.position.set(0, 100, 70); c.lookAt(0, 0, -70); }          // a second-deck press box: 100 ft up, 70 ft back; home plate stays in view
   c.updateProjectionMatrix();
 };
 GL.render = function(){

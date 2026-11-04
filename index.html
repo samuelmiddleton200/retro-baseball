@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-05u"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-06a"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-05u';
+const BUILD = '11-06a';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -2285,7 +2285,7 @@ function gxZone(){
 }
 function gxBase(){                                              // everything that is the same in both views
   const ft = fldTeam(), bt = batTeam();
-  return { park: M.park, parkKey: 'p' + (M.park.wall || '') + M.park.cf, parkCols: [uni(ft), uni(bt)], time: frame / 60, people: [] };
+  return { park: M.park, parkKey: 'p' + (M.park.wall || '') + M.park.cf, parkCols: [uni(M.home), uni2(M.home), uni(M.away), uni2(M.away)], time: frame / 60, people: [] };
 }
 // the pitch ball's path from the hand to the plate, in feet
 function gxPitchBall(f){
