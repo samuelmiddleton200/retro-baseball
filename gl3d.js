@@ -21,9 +21,9 @@ window.GL3D = GL;
 // widening to 36 ft beside the infield, like a real park), then curve round behind the plate about 60 ft back.
 const foulWall = (P, sx) => {
   const t0 = Math.SQRT1_2 * P, at = (t, w) => [sx * (t + w * Math.SQRT1_2), t - w * Math.SQRT1_2];
-  // straight pieces, like a real park seen from above: along the foul line (10 ft off it at the pole, 30 ft off beside the infield, in one straight run),
-  // then a straight cut across the corner, then straight across behind the plate
-  const pts = [[sx * t0, t0], at(t0, 10), at(20, 30), [sx * 34, -44], [0, -62]];
+  // our field (design 9b): the stands are 10 ft off the foul line from the pole in to about 220 ft from home, so the white line runs through the middle of the
+  // 20 ft brown track; then a 45 degree step out to 45 ft for the dugouts, a straight run in toward the plate, a straight cut across the corner and straight across behind it
+  const pts = [[sx * t0, t0], at(t0, 10), at(155, 10), at(130, 45), at(40, 45), [sx * 52, -32], [0, -62]];
   const tab = [];                                                    // distance from home for each half degree, 45 to 180 past the pole
   for (let i = 0; i <= 270; i++){
     const ang = (45 + i / 2) * D2R, dx = Math.sin(ang) * sx, dy = Math.cos(ang);       // the ray, in this side's own coordinates
@@ -79,21 +79,21 @@ function paintGround(park, reg){
   { const wp = []; for (let a = -180; a < 180; a += 1){ const r = fenceR(park, a), t = a * D2R; wp.push([Math.sin(t) * r, Math.cos(t) * r]); }
     g.save(); g.beginPath(); wp.forEach((p, i) => { const q = P(p[0], p[1]); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); g.clip();
     g.strokeStyle = TRACK; g.lineWidth = 40 * S; g.lineJoin = 'miter'; g.miterLimit = 6; g.stroke(); g.restore(); }
-  // the infield dirt: a circle round the mound, a circle round the plate, and the base paths
-  circ(0, 60.5, 95, DIRT);
-  circ(0, 0, 14, DIRT2);
-  g.save(); g.beginPath(); const q0 = P(0, 60.5); g.arc(q0[0], q0[1], 95 * S, 0, TAU); g.clip();
+  // the infield dirt: the whole diamond is dirt, plus a fan beyond it (the arc round the mound, between the foul lines), a dirt circle round the plate and a small one round
+  // the mound. The infield grass is a smaller diamond, 11 ft in from every base line, with straight edges and sharp corners: no circles at the bases.
+  const wedge = () => { g.beginPath(); [[0, 0], [-420, 420], [420, 420]].forEach((p, i) => { const q = P(p[0], p[1]); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); };
+  g.save(); wedge(); g.clip(); circ(0, 60.5, 95, DIRT); g.restore();
+  poly([[0, 0], [63.64, 63.64], [0, 127.28], [-63.64, 63.64]], DIRT);
+  g.save(); wedge(); g.clip(); g.beginPath(); { const q0 = P(0, 60.5); g.arc(q0[0], q0[1], 95 * S, 0, TAU); } g.clip();
   sp(reg.near ? 40000 : 160000, ['#b57d49', '#a87240', '#bb824c', '#a06a3a'], -100, 100, -40, 160, reg.near ? 2 : 1); g.restore();
-  // the infield grass sits inside the diamond, leaving a strip of dirt along the base paths
-  const ins = 7;                                                  // dirt path half-width, ft
-  poly([[-6, 9], [6, 9], [63.6 - 3, 63.6], [0, 127.3 - 14], [-63.6 + 3, 63.6]], GRASS_A);
-  g.save(); g.beginPath(); [[-6, 9], [6, 9], [63.6 - 3, 63.6], [0, 127.3 - 14], [-63.6 + 3, 63.6]].forEach((p, i) => { const q = P(p[0], p[1]); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); g.clip();
+  const gh = 63.64 - 11 * Math.SQRT2, GD = [[0, 63.64 - gh], [gh, 63.64], [0, 63.64 + gh], [-gh, 63.64]];
+  poly(GD, GRASS_A);
+  g.save(); g.beginPath(); GD.forEach((p, i) => { const q = P(p[0], p[1]); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); g.clip();
   for (let i = -20; i < 20; i++){ if (i % 2) continue;
     const a = P(-120 + i * 8, 63.6 - 120), b = P(120 + i * 8, 63.6 + 120), c2 = P(120 + i * 8 + 8, 63.6 + 120), d2 = P(-120 + i * 8 + 8, 63.6 - 120);
     g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.lineTo(...c2); g.lineTo(...d2); g.closePath(); g.fillStyle = GRASS_C; g.fill(); }
   g.restore();
-  // dirt cut-outs round second, a mound, and base circles
-  circ(0, 127.3, 11, DIRT); circ(0, 60.5, 9.5, DIRT2); circ(63.6, 63.6, 8, DIRT); circ(-63.6, 63.6, 8, DIRT);
+  circ(0, 0, 17, DIRT2); circ(0, 60.5, 9.5, DIRT2);
   // the foul lines run from the plate to the poles and a bit beyond
   const line = (a, b, w, col) => { const A = P(a[0], a[1]), B = P(b[0], b[1]); g.strokeStyle = col; g.lineWidth = w * S; g.lineCap = 'butt'; g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke(); };
   const rp = fenceR(park, 45), lp = fenceR(park, -45);
