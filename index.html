@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-06c"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-06d"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-06c';
+const BUILD = '11-06d';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -1201,7 +1201,7 @@ const RESULT_HOLD = 1100;                        // how long a call stays up bef
 const CFG = {
   // time
   TIME_SCALE: 1.0,              // speeds up / slows down EVERYTHING once the ball is hit (ball, fielders, runners)
-  PITCH_TIME_SCALE: 0.5,        // only the pitch on its way to the plate; 0.5 = half real speed
+  PITCH_TIME_SCALE: 0.6,        // only the pitch on its way to the plate; 0.6 = 60% of real speed (20% quicker than the old 0.5)
   // units (feet and seconds; a ball in play is d = out from the plate, lat = to the right, h = height)
   PIXELS_PER_FOOT: 4.95,        // the aerial view's scale (bases 90 ft apart, mound 60.5 ft, fences 330 down the lines / 400 to centre)
   MPH_TO_FPS: 1.467, GRAVITY: 32.2, MOUND_FT: 60.5, BASE_FT: 90,
@@ -2113,7 +2113,7 @@ function applyPlay(res){
       else if (M.bases[0] && !M.bases[1] && chance(.28)){ M.bases[1] = M.bases[0]; M.bases[0] = null; }
       runs += advance(1); st.rbi += runs; txt = 'BASE HIT'; M.exc = .6; break; }
     case 'error':  st.ab++; runs = advance(1); txt = 'ERROR!'; break;
-    case 'dp':     st.ab++; out = 2; M.bases[0] = null; txt = 'DOUBLE PLAY'; break;
+    case 'dp':     st.ab++; out = 2; { const b = M.bases; b[0] = null; if (b[1]){ if (b[2] && M.outs + 2 < 3){ score(b[2]); runs++; } b[2] = b[1]; b[1] = null; } } txt = 'DOUBLE PLAY'; break;      // the forced runners move up
     case 'fc':     st.ab++; out = 1; M.bases[0] = M.batter; txt = "FIELDER'S CHOICE"; break;                  // the runner is forced out at second, the batter is on first
     case 'groundout': case 'flyout': case 'lineout':
       st.ab++; out = 1;
@@ -4426,6 +4426,7 @@ function statRows(){
 }
 function drawStats(){
   btns = [];
+  const tri = (x, y, up, col) => { g.fillStyle = col; g.beginPath(); if (up){ g.moveTo(x, y + 5); g.lineTo(x + 7, y + 5); g.lineTo(x + 3.5, y); } else { g.moveTo(x, y); g.lineTo(x + 7, y); g.lineTo(x + 3.5, y + 5); } g.closePath(); g.fill(); };
   uiBg();
   R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff');
   ptitle('LEAGUE LEADERS', 10, 3, 9, '#ffffff', 'left');
@@ -4436,47 +4437,42 @@ function drawStats(){
   };
   pill(8, 56, 'BATTERS', statsView === 'bat', () => { statsView = 'bat'; statsScroll = 0; });
   pill(68, 56, 'PITCHERS', statsView === 'pit', () => { statsView = 'pit'; statsScroll = 0; });
-  const tn = statsBy === 'team' ? 'TEAM AVERAGES' : statsTeam < 0 ? 'ALL TEAMS' : G.teams[statsTeam].ab + ' ' + G.teams[statsTeam].nick;
-  uiBox(130, 22, W - 138, 14); textb(tn, 136, 25, '#ffffff', 6, 'left', W - 170); textb('v', W - 16, 25, UI.yellow, 6, 'right');
+  const tn = statsBy === 'team' ? 'TEAM AVERAGES' : statsTeam < 0 ? 'ALL PLAYERS' : G.teams[statsTeam].ab + ' ' + G.teams[statsTeam].nick;
+  uiBox(130, 22, W - 138, 14); textb(tn, 136, 25, '#ffffff', 6, 'left', W - 170); tri(W - 20, 27, false, UI.yellow);
   btns.push({ x:130, y:22, w:W - 138, h:14, fn: () => statsMenu = true });
   const { rows, cols, col } = statRows(), so = statsSort[statsView];
-  const nameW = Math.max(70, Math.round(W * .27)), x0 = 8, cx0 = x0 + 12 + nameW + 22, cw = Math.floor((W - 30 - cx0) / cols.length);
-  const hy = 43; uiBox(4, 38, W - 34, H - 64);                                    // the dark panel the table sits in, like Retro Basket's
-  textb('#', x0, hy, '#ffffff', 6); textb(statsBy === 'team' ? 'TEAM (COUNTS = PER-PLAYER AVG)' : statsView === 'bat' ? 'PLAYER' : 'PITCHER', x0 + 12, hy, '#ffffff', 5, 'left', nameW + 20);
-  if (statsBy === 'player') textb('TM', x0 + 12 + nameW, hy, '#ffffff', 6);
+  const nameW = Math.max(70, Math.round(W * .25)), x0 = 8, cx0 = x0 + 12 + nameW + 26, cw = Math.floor((W - 10 - cx0) / cols.length), fs = cw >= 46 ? 9 : 8;
+  const hy = 43; uiBox(4, 38, W - 8, H - 64);                                    // the dark panel the table sits in, like Retro Basket's
+  textb('#', x0, hy, '#ffffff', 7); textb(statsBy === 'team' ? 'TEAM (AVG PER PLAYER)' : statsView === 'bat' ? 'PLAYER' : 'PITCHER', x0 + 12, hy, '#ffffff', 7, 'left', nameW + 20);
+  if (statsBy === 'player') textb('TM', x0 + 12 + nameW, hy, '#ffffff', 7);
   cols.forEach((c, i) => {
     const x = cx0 + i * cw, on = c.k === col.k;
-    const lab = c.h + (on ? (so.asc ? '^' : 'v') : '');
-    if (on){ R(x + cw - 6 - lab.length * 6, hy - 3, lab.length * 6 + 5, 11, UI.yellow); text(lab, x + cw - 2, hy, '#241a00', 6, 'right'); }      // the column being ranked gets a yellow box
-    else textb(lab, x + cw - 2, hy, '#ffffff', 6, 'right');
-    btns.push({ x:x - 2, y:hy - 3, w:cw, h:13, fn: () => { if (statsSort[statsView].k === c.k) statsSort[statsView].asc = !statsSort[statsView].asc; else statsSort[statsView] = { k:c.k, asc:c.k === 'era' || c.k === 'whip' || c.k === 'l' }; statsScroll = 0; } });
+    if (on){ const bw = c.h.length * fs + 17; R(x + cw - bw + 2, hy - 4, bw, fs + 6, UI.yellow); text(c.h, x + cw - 12, hy - 1, '#241a00', fs, 'right'); tri(x + cw - 9, hy + 1, so.asc, '#241a00'); }      // the column being ranked gets a yellow box and a triangle: up = low first
+    else textb(c.h, x + cw - 2, hy - 1, '#ffffff', fs, 'right');
+    btns.push({ x:x - 2, y:hy - 4, w:cw, h:fs + 6, fn: () => { if (statsSort[statsView].k === c.k) statsSort[statsView].asc = !statsSort[statsView].asc; else statsSort[statsView] = { k:c.k, asc:c.k === 'era' || c.k === 'whip' || c.k === 'l' }; statsScroll = 0; } });
   });
-  const rh = 11, top = 54, vis = Math.floor((H - top - 24) / rh), maxScroll = Math.max(0, rows.length - vis);
+  const rh = fs + 5, top = 57, vis = Math.floor((H - top - 24) / rh), maxScroll = Math.max(0, rows.length - vis);
   statsMax = maxScroll; statsScroll = clamp(statsScroll, 0, maxScroll);
   const i0 = Math.floor(statsScroll), off = Math.round((statsScroll - i0) * rh);
-  g.save(); g.beginPath(); g.rect(4, top - 3, W - 34, H - 26 - top); g.clip();
+  g.save(); g.beginPath(); g.rect(4, top - 3, W - 8, H - 26 - top); g.clip();
   rows.slice(i0, i0 + vis + 2).forEach((r, i) => {
     const y = top + i * rh - off, mine = r.ti === G.team, tc = r.zero || r.v === null ? (mine ? '#bfa24a' : '#9fb3e0') : mine ? UI.yellow : '#ffffff';
-    textb(String(i0 + i + 1), x0, y, tc, 6);
-    textb(r.p.name, x0 + 12, y, tc, 6, 'left', (statsBy === 'team' ? nameW + 20 : nameW) - 4);
-    if (statsBy === 'player') textb(r.t.ab, x0 + 12 + nameW, y, tc, 6);
+    textb(String(i0 + i + 1), x0, y, tc, 7);
+    textb(r.p.name, x0 + 12, y, tc, 8, 'left', (statsBy === 'team' ? nameW + 20 : nameW) - 4);
+    if (statsBy === 'player') textb(r.t.ab, x0 + 12 + nameW, y, tc, 8);
     cols.forEach((c, j) => {
       let v = c.v(r.st);
       const txt = v === null ? '-' : r.n && c.cnt ? (c.fa ? c.fa(v / r.n) : (v / r.n).toFixed(1)) : c.f(v, r.st);
-      textb(txt, cx0 + j * cw + cw - 2, y, c === col ? UI.yellow : tc, 6, 'right');
+      textb(txt, cx0 + j * cw + cw - 2, y, c === col ? UI.yellow : tc, fs, 'right');
     });
   });
   g.restore();
-  if (maxScroll > 0){
-    button(W - 26, top - 2, 20, 18, '^', () => statsScroll = Math.max(0, statsScroll - 5), '#1a2030', '#fff', 8);
-    button(W - 26, H - 44, 20, 18, 'v', () => statsScroll = Math.min(maxScroll, statsScroll + 5), '#1a2030', '#fff', 8);
-  }
-  textb('tap a column to rank by it, drag to scroll', W / 2, H - 12, UI.ice, 6, 'center');
+  textb('tap a column to rank by it, drag to scroll', W / 2, H - 12, UI.ice, 7, 'center');
   button(8, H - 22, 50, 16, 'BACK', () => menu = 'title');
   if (statsMenu){                                                       // the team dropdown: a list over the page, tap one to pick it
     btns = [];
     R(0, 0, W, H, 'rgba(8,12,30,.7)');
-    const items = [{ l:'ALL TEAMS', w:2, on:statsBy === 'player' && statsTeam < 0, fn:() => { statsBy = 'player'; statsTeam = -1; } },
+    const items = [{ l:'ALL PLAYERS', w:2, on:statsBy === 'player' && statsTeam < 0, fn:() => { statsBy = 'player'; statsTeam = -1; } },
                    { l:'TEAM AVERAGES', w:2, on:statsBy === 'team', fn:() => { statsBy = 'team'; } }];
     G.teams.forEach((t, i) => items.push({ l:t.ab, w:1, on:statsBy === 'player' && statsTeam === i, fn:() => { statsBy = 'player'; statsTeam = i; } }));
     const cell = 44, cols = Math.max(4, Math.floor((W - 20) / cell)), gx = Math.floor((W - cols * cell) / 2);
