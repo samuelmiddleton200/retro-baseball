@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-04w';
+const BUILD = '11-04x';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -1058,7 +1058,7 @@ function startGame(oppIdx, home, opts = {}){
   };
   M.uni = pickUniforms(M.home, M.away);                          // who wears what, once, for the whole game
   M.pitcherHome.st.ip = M.pitcherHome.st.ip || 0;
-  M.sp = { home: M.pitcherHome, away: M.pitcherAway };
+  PG.clear(); pg(M.pitcherHome).used = true; pg(M.pitcherAway).used = true;
   phase = 'atbat'; setupAtBat();
   setTimeout(warmHitView, 400);                                // build the 3D park while the first pitch is still coming, not at the first hit
 }
@@ -1142,6 +1142,7 @@ let swing = null;
 const PITCH_GAP = 5000;         // five seconds from one pitch to the next
 function setupAtBat(){
   M.balls = 0; M.strikes = 0;
+  pullCheck();
   M.batter = curBatter();
   M.catcher = fldTeam().lineup[0];
   // the two cards face off first; tap to step in
@@ -1149,16 +1150,40 @@ function setupAtBat(){
   if (M.mode !== 'sim' && (userBats() || userPitches())){ phase = 'matchup'; P = null; swing = null; return; }
   nextPitch();
 }
-function fatigue(){
-  const p = curPitcher(), pc = M.top ? M.pcHome : M.pcAway;
-  const cap = 40 + (p.stamina - 60) * 1.6;              // ~40 pitches at 60 stamina, ~135 at 120
-  return clamp(pc / cap, 0, 1.8);
+// what each pitcher has done in this game: pitches, runs, outs, and whether he has been in (a pitcher taken out cannot come back)
+const PG = new Map();
+const pg = p => PG.get(p) || (PG.set(p, { pc:0, r:0, po:0, used:false }), PG.get(p));
+const stamCap = p => 60 + (clamp(p.stamina, 60, 120) - 60) * 2 / 3;               // 60 stamina = 60 pitches, 120 = 100, in a straight line
+// 0 fresh, 1 at his limit: he throws up to 20 mph slower and his circle grows up to 2x, both in a straight line
+function fatigue(){ const p = curPitcher(); return clamp(pg(p).pc / stamCap(p), 0, 1); }
+// the best reliever who has not pitched yet: the closer saves the 8th and 9th of a close game
+function pickReliever(t){
+  const left = t.pen.filter(p => !pg(p).used);
+  if (!left.length) return null;
+  const cp = t.pen[t.pen.length - 1], lead = t === M.home ? M.score.home - M.score.away : M.score.away - M.score.home;
+  if (M.inning >= 8 && lead >= 0 && lead <= 3 && left.includes(cp)) return cp;
+  const rest = left.filter(p => p !== cp);
+  return (rest.length ? rest : left).slice().sort((a, b) => b.ovr - a.ovr)[0];
+}
+function changePitcher(t, nx){
+  if (!nx || pg(nx).used) return false;
+  if (t === M.home) M.pitcherHome = nx; else M.pitcherAway = nx;
+  pg(nx).used = true; nx.st.ip = nx.st.ip || 0;
+  if (!nx.pitches[pitchSel]) pitchSel = 'FB';
+  say('NEW PITCHER: ' + nx.name.toUpperCase());
+  return true;
+}
+// he is taken out once he has gone at least 3 innings and then reaches his limit, or has given up more runs than his pitches / 10
+function pullCheck(){
+  const t = fldTeam(), p = curPitcher(), g = pg(p);
+  if (g.po < 9) return;
+  if (g.pc >= stamCap(p) || g.r > g.pc / 10) changePitcher(t, pickReliever(t));
 }
 // how tight the pitcher can hit a spot: great control = about a twentieth of the zone,
 // poor control = about a third of it, and tiredness widens it
 function spread(p){
   const base = lerp(34, 7, clamp((p.control - 60) / 60, 0, 1));
-  return base * (1 + fatigue() * .55);
+  return base * (1 + fatigue());
 }
 /* ═══════════════════════════════════════════════════════════════════════════
    THE AT-BAT
@@ -1190,7 +1215,7 @@ const CFG = {
   GROUND_MAX_LA: 10, LINE_MAX_LA: 25, POP_MIN_LA: 50,
   // ratings (all 60-120)
   CQ_MIN: 0.72, CQ_MAX: 1.10,   // exit velo = power * contact quality: an 84-power hitter averages ~88 mph, the league average
-  FB_BASE: 70, FB_SLOPE: 0.58,  // fastball mph = 70 + (rating - 60) * 0.58
+  FB_BASE: 82, FB_SLOPE: 0.4,   // fastball mph = 82 + (rating - 60) * 0.4: 60 throws 82, 120 throws 106
   OFFSPEED_SLOW: { CV: 15, SL: 11, CH: 13 },
   SPRINT_BASE: 25, SPRINT_SLOPE: 0.09,   // top speed ft/s = 25 + (rating - 60) * 0.09  (25 to 30 ft/s: the MLB range)
   ARM_BASE: 70, ARM_SLOPE: 0.5, // throw mph = 70 + (fielding - 60) * 0.5: 60 throws 70 mph, 120 throws 100 mph
@@ -1469,13 +1494,13 @@ function throwPitch(type, ax, ay){
   P.tx = ax + (bell() - .5) * 2 * miss;
   P.ty = ay + (bell() - .5) * 2 * miss;
   const fb = fastballMph(p.velocity);                    // the fastball from the rating; off-speed pitches are 10-15 mph slower
-  P.mph = Math.round((type === 'FB' ? fb : fb - (CFG.OFFSPEED_SLOW[type] || 12)) - fatigue() * 3);
+  P.mph = Math.round((type === 'FB' ? fb : fb - (CFG.OFFSPEED_SLOW[type] || 12)) - fatigue() * 20);
   if (type === 'FB'){ const ps = curPitcher().st; ps.fbn = (ps.fbn || 0) + 1; ps.fbs = (ps.fbs || 0) + P.mph; }      // for his average fastball
   P.dur = CFG.MOUND_FT / (P.mph * CFG.MPH_TO_FPS) * 1000 / CFG.PITCH_TIME_SCALE;   // 60.5 ft at its real speed, slowed by PITCH_TIME_SCALE
   P.br = [info.br[0] * lerp(.6, 1.3, (q - 60) / 60), info.br[1] * lerp(.6, 1.3, (q - 60) / 60)];
   P.quality = q;
   P.thrown = true; P.t = 0; P.state = 'flight';
-  if (M.top) M.pcHome++; else M.pcAway++;
+  pg(curPitcher()).pc++; if (M.top) M.pcHome++; else M.pcAway++;
   // the computer's batter makes up its mind as the ball comes in
   if (!userBats()) cpuDecide();
 }
@@ -2015,8 +2040,8 @@ function applyPlay(res){
       runs = walkAdvance(); } txt = 'WALK'; break;
     case 'hbp': st.hbp = (st.hbp || 0) + 1; runs = walkAdvance(); txt = 'HIT BY PITCH'; break;
   }
-  if (runs) p.st.er += runs;
-  M.outs += out; p.st.po = (p.st.po || 0) + out;                       // the outs he got: his innings pitched
+  if (runs){ p.st.er += runs; pg(p).r += runs; }
+  M.outs += out; p.st.po = (p.st.po || 0) + out; pg(p).po += out;                       // the outs he got: his innings pitched
   say(txt);
   if (weBat()) G.coins += ({ single:25, double:40, triple:75, hr:200 })[res] || 0;
   if (!weBat() && res === 'k') G.coins += 30;
@@ -2060,7 +2085,7 @@ function snapMatch(){
       inning:M.inning, top:M.top, outs:M.outs, balls:M.balls, strikes:M.strikes, score:M.score, ls:M.ls, H:M.H, E:M.E, pcHome:M.pcHome, pcAway:M.pcAway,
       lineHome:M.lineHome, lineAway:M.lineAway, bases:M.bases.map(p => p ? bt.lineup.indexOf(p) : null), bi:{ home:M.home._bi || 0, away:M.away._bi || 0 },
       pH:pitchers(M.home).indexOf(M.pitcherHome), pA:pitchers(M.away).indexOf(M.pitcherAway),
-      spH:M.sp ? pitchers(M.home).indexOf(M.sp.home) : -1, spA:M.sp ? pitchers(M.away).indexOf(M.sp.away) : -1, t:Date.now() }));
+      pgH:pitchers(M.home).map(p => pg(p)), pgA:pitchers(M.away).map(p => pg(p)), t:Date.now() }));
   } catch (e){}
 }
 const matchSnap = () => { try { const d = JSON.parse(localStorage.getItem(MSAVE)); return d && d.v === 1 && G && d.day === G.day && G.day < G.seasonLen ? d : null; } catch (e){ return null; } };
@@ -2072,7 +2097,7 @@ function resumeMatch(){
   Object.assign(M, { inning:d.inning, top:d.top, outs:d.outs, score:d.score, ls:d.ls, H:d.H, E:d.E, pcHome:d.pcHome, pcAway:d.pcAway, lineHome:d.lineHome, lineAway:d.lineAway });
   M.home._bi = d.bi.home; M.away._bi = d.bi.away;
   if (d.pH >= 0) M.pitcherHome = pitchers(M.home)[d.pH]; if (d.pA >= 0) M.pitcherAway = pitchers(M.away)[d.pA];
-  if (d.spH >= 0 && d.spA >= 0) M.sp = { home: pitchers(M.home)[d.spH], away: pitchers(M.away)[d.spA] };      // the starters who get the win and loss, same ones as before he quit
+  if (d.pgH && d.pgA){ PG.clear(); pitchers(M.home).forEach((p, i) => PG.set(p, d.pgH[i])); pitchers(M.away).forEach((p, i) => PG.set(p, d.pgA[i])); }      // who has pitched, and how much, same as before he quit
   const bt = batTeam(); M.bases = d.bases.map(i => i == null || i < 0 ? null : bt.lineup[i]);
   setupAtBat(); M.balls = d.balls; M.strikes = d.strikes;
   return true;
@@ -2080,9 +2105,11 @@ function resumeMatch(){
 function gameOver(){
   clearMatchSnap();
   M.over = true; phase = 'over';
-  if (M.sp && M.score.home !== M.score.away){                              // the starters get the decision
-    const hw = M.score.home > M.score.away, wp = (hw ? M.sp.home : M.sp.away).st, lp = (hw ? M.sp.away : M.sp.home).st;
-    wp.w = (wp.w || 0) + 1; lp.l = (lp.l || 0) + 1;
+  if (M.score.home !== M.score.away){                                      // the decisions
+    const hw = M.score.home > M.score.away, team = t => t.rot.concat(t.pen).filter(p => pg(p).used);
+    const wp = team(hw ? M.home : M.away).sort((x, y) => pg(y).po - pg(x).po)[0], lp = team(hw ? M.away : M.home).sort((x, y) => pg(y).r - pg(x).r || pg(y).po - pg(x).po)[0];
+    if (wp) wp.st.w = (wp.st.w || 0) + 1;
+    if (lp) lp.st.l = (lp.st.l || 0) + 1;
   }
   const me = myTeam(), myRuns = M.meHome ? M.score.home : M.score.away, oth = M.meHome ? M.score.away : M.score.home;
   const won = myRuns > oth;
@@ -4325,7 +4352,28 @@ function drawGameMenu(){
     if ((m === 'offense' && !weBat()) || (m === 'defense' && weBat())){ simHalfIfNeeded(); if (!M.over && phase === 'atbat' && !P) nextPitch(); }   // the half you just skipped plays out now
     else nextPitch();
   }, M.mode === m ? '#2f6fe0' : '#1a2230'));
-  button(W / 2 - 40, 174, 80, 18, 'BACK', () => { phase = userPitches() ? 'pitching' : 'atbat'; });
+  const mine = M.meHome ? M.home : M.away, open = !(P && P.thrown) && mine.pen.some(p => !pg(p).used);
+  button(W / 2 - 80, 166, 160, 18, 'CHANGE PITCHER', () => { if (open) phase = 'pitchpick'; }, open ? '#6a3aa8' : '#1a2230');
+  button(W / 2 - 40, 190, 80, 18, 'BACK', () => { phase = userPitches() ? 'pitching' : 'atbat'; });
+}
+// pick a reliever: only pitchers who have not been in yet
+function drawPitchPick(){
+  btns = [];
+  R(0, 0, W, H, '#0b1018f0');
+  const mine = M.meHome ? M.home : M.away, cur = M.meHome ? M.pitcherHome : M.pitcherAway;
+  textb('BRING IN A PITCHER', W / 2, 8, '#ffd23f', 10, 'center');
+  textb(`${cur.name} has thrown ${pg(cur).pc} pitches (limit ${Math.round(stamCap(cur))}). A pitcher who is taken out cannot come back.`, W / 2, 24, UI.ice, 6, 'center', W - 20);
+  const list = mine.rot.concat(mine.pen).filter(p => p !== cur);
+  list.forEach((p, i) => {
+    const y = 36 + i * 15, x = W / 2 - 150, used = pg(p).used || mine.rot.includes(p), on = !used;
+    R(x, y, 300, 13, on ? '#1b3e78' : '#1a2030');
+    textb(mine.rot.includes(p) ? 'SP' : p === mine.pen[mine.pen.length - 1] ? 'CP' : 'RP', x + 4, y + 3, on ? UI.yellow : '#667', 6);
+    textb(p.name, x + 24, y + 3, on ? '#ffffff' : '#667', 7, 'left', 130);
+    [['VEL', p.velocity], ['CTL', p.control], ['STA', p.stamina]].forEach(([l, v], j) => textb(l + ' ' + v, x + 162 + j * 44, y + 3, on ? '#cfe0ff' : '#667', 6));
+    if (pg(p).used) textb('USED', x + 296, y + 3, '#ff8a7a', 6, 'right');
+    if (on) btns.push({ x, y, w:300, h:13, fn: () => { changePitcher(mine, p); phase = userPitches() ? 'pitching' : 'atbat'; nextPitch(); } });
+  });
+  button(W / 2 - 40, H - 22, 80, 16, 'BACK', () => phase = 'gmenu');
 }
 
 // ── simulating ─────────────────────────────────────────────────────────────
@@ -4334,6 +4382,7 @@ function simPitch(){
   // .300 average, one home run per team per game and 22% strikeouts. A player's ratings push
   // each rate up or down from there.
   const b = M.batter, p = curPitcher();
+  pg(p).pc += ri(3, 5);
   // Ratings swing the result hard: a lineup of red cards (110+) should bury an average team,
   // and a green-card lineup (70s) should get buried. 85 is the middle of the league.
   const con = (b.contact - 85) / 30, pow = (b.power - 85) / 30, spd = (spdOf(b) - 85) / 30;
@@ -4430,7 +4479,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
     P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
-  runToggle, runBack, drawPlay, get P(){ return P; }, ballAt, throwPitch, inZone, nextPitch, ZONE, get menu(){ return menu; }, set menu(v){ menu = v; }, get G(){ return G; }, statRows, STAT_COLS, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, get statsView(){ return statsView; }, set statsView(v){ statsView = v; }, snapMatch, resumeMatch, matchSnap, startGame2: startGame, evMin, HR_ANGLE, EVMAX, evMax, reachIn, outsideIn, hitsBatter, throwRange, throwFps, spdOf, routeThrow, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
+  runToggle, runBack, drawPlay, simPitch, simRest, PG, pg, stamCap, pullCheck, changePitcher, fatigue, fastballMph, spread, get P(){ return P; }, ballAt, throwPitch, inZone, nextPitch, ZONE, get menu(){ return menu; }, set menu(v){ menu = v; }, get G(){ return G; }, statRows, STAT_COLS, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, get statsView(){ return statsView; }, set statsView(v){ statsView = v; }, snapMatch, resumeMatch, matchSnap, startGame2: startGame, evMin, HR_ANGLE, EVMAX, evMax, reachIn, outsideIn, hitsBatter, throwRange, throwFps, spdOf, routeThrow, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -4456,6 +4505,7 @@ function loop(now){
   }
   else if (phase === 'over'){ drawBatterViewSafe(dt); drawOver(); }
   else if (phase === 'gmenu'){ drawBatterViewSafe(dt); drawGameMenu(); }
+  else if (phase === 'pitchpick'){ drawBatterViewSafe(dt); drawPitchPick(); }
   else if (phase === 'matchup'){ drawMatchup(); drawGameMenuBtn(); }
   else if (phase === 'play' || phase === 'over2'){ /* no longer used */ }
   else if (M){
