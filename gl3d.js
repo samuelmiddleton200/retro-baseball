@@ -17,27 +17,37 @@ const GL = { ready:false, rows:270, view:'bat', park:null };
 window.GL3D = GL;
 
 // ── the fence line: its distance from home for every angle around the park ─────────────────────
-// the wall all the way round: the outfield fence, then a wall that runs back along each foul line about 25 ft outside it
-// (the foul ground real parks have: 10 to 30 ft wide), then across behind the plate about 62 ft back
-const FOUL_W = 25, BACK_D = 62;
-const wallPoly = (park) => {
-  // from the pole the wall runs back along the line, flaring out as it comes in (foul ground widens beside the infield: dugouts, then
-  // the box seats), and swings round behind the plate in one smooth curve
-  const side = (P, sx) => {
-    const t0 = Math.SQRT1_2 * P, at = (t, w) => [sx * (t + w * Math.SQRT1_2), t - w * Math.SQRT1_2];
-    return [at(t0, 25), at(190, 34), at(130, 46), at(90, 62), at(58, 78), [sx * 78, -22], [sx * 62, -48], [sx * 34, -66]];
-  };
-  const R = side(park.rf, 1), L = side(park.lf, -1);
-  return R.concat([[0, -70]], L.slice().reverse());
+// Out to the foul poles it is the outfield fence. From each pole the stands run back along the foul line, close to it (10 ft away at the pole,
+// widening to 36 ft beside the infield, like a real park), then curve round behind the plate about 60 ft back.
+const foulWall = (P, sx) => {
+  const t0 = Math.SQRT1_2 * P, at = (t, w) => [sx * (t + w * Math.SQRT1_2), t - w * Math.SQRT1_2];
+  let pts = [[sx * t0, t0], at(t0, 10), at(190, 13), at(130, 18), at(90, 25), at(58, 36), [sx * 54, -4], [sx * 50, -34], [sx * 32, -52], [sx * 14, -59], [0, -60]];
+  for (let k = 0; k < 3; k++){                                       // round the corners off (Chaikin), keeping both ends where they are
+    const out = [pts[0]];
+    for (let i = 0; i < pts.length - 1; i++){ const p = pts[i], q = pts[i + 1]; out.push([.75 * p[0] + .25 * q[0], .75 * p[1] + .25 * q[1]], [.25 * p[0] + .75 * q[0], .25 * p[1] + .75 * q[1]]); }
+    out.push(pts[pts.length - 1]); pts = out;
+  }
+  const tab = [];                                                    // distance from home for each half degree, 45 to 180 past the pole
+  for (let i = 0; i <= 270; i++){
+    const ang = (45 + i / 2) * D2R, dx = Math.sin(ang) * sx, dy = Math.cos(ang);       // the ray, in this side's own coordinates
+    let best = 1e9;
+    for (let j = 0; j < pts.length - 1; j++){
+      const p = pts[j], q = pts[j + 1], ex = q[0] - p[0], ey = q[1] - p[1], den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = (p[0] * ey - p[1] * ex) / den, u = (p[0] * dy - p[1] * dx) / den;
+      if (t > 0 && u >= -1e-6 && u <= 1 + 1e-6 && t < best) best = t;
+    }
+    tab.push(best < 1e8 ? best : 60);
+  }
+  return tab;
 };
 function fenceR(park, deg){
   const a = Math.abs(deg);
   const wd = d => d < 0 ? lerp(park.lf, park.cf, (clamp(d, -45, 0) + 45) / 45) : lerp(park.cf, park.rf, clamp(d, 0, 45) / 45);
   if (a <= 45) return wd(deg);
-  // past the foul poles the stands sweep round in one smooth bowl: far out beside the poles, closing in gradually to about 75 ft behind
-  // the plate, so the wall never hugs a foul line and then veers off
-  const r45 = wd(deg < 0 ? -45 : 45), u = clamp((a - 45) / 135, 0, 1);
-  return 75 + (r45 - 75) * Math.pow(1 - u, 8);
+  const key = park.lf + '|' + park.rf, c = park._fz && park._fz.key === key ? park._fz : (park._fz = { key, R:foulWall(park.rf, 1), L:foulWall(park.lf, -1) });
+  const tab = deg > 0 ? c.R : c.L, f = clamp((a - 45) * 2, 0, 270), i = Math.min(269, Math.floor(f));
+  return lerp(tab[i], tab[i + 1], f - i);
 }
 GL.fenceR = fenceR;
 const toX = (d, lat) => lat, toZ = (d, lat) => -d;
@@ -176,16 +186,19 @@ function buildPark(park, teamCols){
 
   // the fence and the seating bowl, as strips swept around the angle
   const crowd = crowdTexture(teamCols[0], teamCols[1]);
-  const STEP = 2, A0 = -178, A1 = 178, n = (A1 - A0) / STEP;
+  const STEP = 1, A0 = -180, A1 = 180, n = (A1 - A0) / STEP;
   const wallH = 8.5;
   // each strip is a ribbon around the park; u runs along the fence in feet so textures keep their size
   const strip = (profile, mat, uFeet, vFeet) => {                // profile: [[dr, y], ...] from the fence outward
     const pos = [], uv = [], idx = [];
     let run = 0, last = null;
+    const at = a => { const t = a * D2R, r = fenceR(park, a); return [Math.sin(t) * r, -Math.cos(t) * r]; };
     for (let i = 0; i <= n; i++){
-      const a = A0 + i * STEP, t = a * D2R, r0 = fenceR(park, a), px = Math.sin(t) * r0, pz = -Math.cos(t) * r0;
-      if (last) run += Math.hypot(px - last[0], pz - last[1]); last = [px, pz];
-      profile.forEach((pt, j) => { const r = r0 + pt[0]; pos.push(Math.sin(t) * r, pt[1], -Math.cos(t) * r); uv.push(run / uFeet, (pt[1] - profile[0][1]) / (vFeet || 1)); });
+      const a = A0 + i * STEP, p = at(a), p0 = at(a - STEP), p1 = at(a + STEP);
+      let tx = p1[0] - p0[0], tz = p1[1] - p0[1]; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+      let nx = tz, nz = -tx; if (nx * p[0] + nz * p[1] < 0){ nx = -nx; nz = -nz; }          // which way is out of the park: away from home, square to the wall
+      if (last) run += Math.hypot(p[0] - last[0], p[1] - last[1]); last = p;
+      profile.forEach((pt, j) => { pos.push(p[0] + nx * pt[0], pt[1], p[1] + nz * pt[0]); uv.push(run / uFeet, (pt[1] - profile[0][1]) / (vFeet || 1)); });
     }
     const m = profile.length;
     for (let i = 0; i < n; i++) for (let j = 0; j < m - 1; j++){ const a = i * m + j, b = a + m; idx.push(a, b, a + 1, b, b + 1, a + 1); }

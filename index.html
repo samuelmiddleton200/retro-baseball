@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-04v';
+const BUILD = '11-04w';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -1485,7 +1485,8 @@ function ballAt(f){
   const e = f * f;
   const rel = releasePt();
   const tx = ZONE.x + ZONE.w / 2 + P.tx * ZONE.w / 2, ty = ZONE.y + ZONE.h / 2 + P.ty * ZONE.h / 2;
-  return { x: lerp(rel.x, tx + P.br[0] * e, e), y: lerp(rel.y, ty + P.br[1] * e, e), r: lerp(1.15, 3.5, e) };
+  // the ball ends exactly at (P.tx, P.ty), the spot the call is made on; the pitch's break only bends its path on the way in
+  return { x: lerp(rel.x, tx, e) - P.br[0] * e * (1 - e), y: lerp(rel.y, ty, e) - P.br[1] * e * (1 - e), r: lerp(1.15, 3.5, e) };
 }
 function releasePt(){
   // the ball leaves the hand of the painted pitcher: sprite pixel (28, 59) of the release frame, so it never pops in somewhere else
@@ -2262,7 +2263,7 @@ function gxBase(){                                              // everything th
 function gxPitchBall(f){
   const e = f * f, rel = [-.55, 6.0, -56.5];
   const cx = P.tx * .95, cy = 2.55 - P.ty * 1.2, bx = P.br[0] / 15, by = -P.br[1] / 15;
-  return [lerp(rel[0], cx + bx * e, e), lerp(rel[1], cy + by * e, e), lerp(rel[2], -.7, f)];
+  return [lerp(rel[0], cx, e) - bx * e * (1 - e), lerp(rel[1], cy, e) - by * e * (1 - e), lerp(rel[2], -.7, f)];      // it arrives at the spot the call is made on
 }
 const BAT_YAW = 78 * Math.PI / 180;                  // he is turned partly toward us, like the target, not square to the plate
 // the target draws the far players bigger than true size so they can be read: stretch by distance
@@ -4429,7 +4430,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
     P.play = res; P.playT = 0; P.applied = true; phase = 'play'; }, get G(){ return G; }, get M(){ return M; }, get phase(){ return phase; }, set phase(v){ phase = v; },
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
-  runToggle, runBack, drawPlay, get menu(){ return menu; }, set menu(v){ menu = v; }, get G(){ return G; }, statRows, STAT_COLS, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, get statsView(){ return statsView; }, set statsView(v){ statsView = v; }, snapMatch, resumeMatch, matchSnap, startGame2: startGame, evMin, HR_ANGLE, EVMAX, evMax, reachIn, outsideIn, hitsBatter, throwRange, throwFps, spdOf, routeThrow, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
+  runToggle, runBack, drawPlay, get P(){ return P; }, ballAt, throwPitch, inZone, nextPitch, ZONE, get menu(){ return menu; }, set menu(v){ menu = v; }, get G(){ return G; }, statRows, STAT_COLS, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, get statsView(){ return statsView; }, set statsView(v){ statsView = v; }, snapMatch, resumeMatch, matchSnap, startGame2: startGame, evMin, HR_ANGLE, EVMAX, evMax, reachIn, outsideIn, hitsBatter, throwRange, throwFps, spdOf, routeThrow, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────
