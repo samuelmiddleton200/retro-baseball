@@ -316,7 +316,7 @@ GL.placeCamera = function(){
   if (GL.view === 'bat'){ c.fov = 33.4; c.up.set(0, 1, 0); c.position.set(.15, 8.4, 21.5); c.lookAt(.15, 8.4 - Math.tan(7.44 * D2R) * 100, 21.5 - 100); }
   else if (GL.view === 'free'){ const f = GL.freeCam; c.fov = f.fov; c.up.set(0, 1, 0); c.position.set(...f.pos); c.lookAt(...f.look); }
   else if (GL.view === 'top'){ c.fov = 46; c.up.set(0, 0, -1); c.position.set(0, 470, 78); c.lookAt(0, 0, -170); }
-  else { c.fov = 60; c.up.set(0, 1, 0); c.position.set(0, 100, 50); c.lookAt(0, 0, -112); }          // the press box: 100 ft up, 50 ft behind the plate
+  else { c.fov = 68; c.up.set(0, 1, 0); c.position.set(0, 62, 50); c.lookAt(0, 0, -78); }          // a second-row press box: lower and closer behind the plate, looking out; home plate stays in view at the bottom
   c.updateProjectionMatrix();
 };
 GL.render = function(){
