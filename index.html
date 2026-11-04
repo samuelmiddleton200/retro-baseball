@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-06d"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-07a"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-06d';
+const BUILD = '11-07a';
 const SAVE = 'retrobaseball.v1';
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
@@ -232,7 +232,7 @@ function newGame(teamAb){
     [...lineup, ...rot, ...pen].forEach(p => { p.num = ri(1, 72); });
     return { ...t, lineup, rot, pen, w:0, l:0, rs:0, ra:0 };
   });
-  G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:27500, gift25k:true, seasonLen:25,
+  G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:37500, gift25k:true, seen:{}, streak:{ day:0, last:'' }, seasonLen:25,
         sched:[], rotIdx:0, cards:[], slots:{ lineup:[], rot:[], pen:[] }, freeAt:0 };
   // your own nine, five starters and five relievers all become cards you own
   const me = G.teams[G.team];
@@ -279,6 +279,9 @@ const load = () => {
       _cardId = Math.max(1, ...G.cards.map(c => c.id || 0)) + 1;
       G.cards.forEach(c => { c.st = c.st || newStat(); if (c.fielding != null) c.speed = c.fielding; });
       rebuildTeam();
+      if (!G.seen){ G.seen = {}; G.cards.forEach(c => { G.seen[c.name] = 1; }); }
+      if (!G.streak) G.streak = { day:0, last:'' };
+      G.cards.forEach(c => { if (c.fz == null) c.fz = 0; });
       if (!G.gift25k){                                                       // the 1,000,000 gift is taken back and replaced by a one-time 25,000
         G.gift25k = true;
         if (G.gift1m) G.coins = Math.max(25000, G.coins - 975000); else G.coins += 25000;
@@ -1058,6 +1061,7 @@ function startGame(oppIdx, home, opts = {}){
   };
   M.uni = pickUniforms(M.home, M.away);                          // who wears what, once, for the whole game
   M.coins0 = G.coins;                                            // what you had when it began: the game's total is worked out from this
+  M.earn = {}; M.rep = {}; M.pitchSimmed = false;                 // what you earned for what you played, repeat bonuses, and whether any of your pitching was simmed
   M.pitcherHome.st.ip = M.pitcherHome.st.ip || 0;
   PG.clear(); pg(M.pitcherHome).used = true; pg(M.pitcherAway).used = true;
   phase = 'atbat'; setupAtBat();
@@ -2086,7 +2090,7 @@ function defHit(){
 function applyPlay(res){
   const b = M.batter, st = b.st, p = curPitcher();
   let runs = 0, out = 0, txt = '';
-  st.pa++;
+  st.pa++; const rbi0 = st.rbi;
   const isDef = res === 'def' && BALL && BALL.defManual;
   const manual = isDef ? defHit() : (['single', 'double', 'triple', 'error'].includes(res) && isManualPlay(BALL) && Object.keys(RUNCTL).length ? manualHit(res) : null);
   if (['single','double','triple','hr'].includes(res)) M.H[M.top ? 'away' : 'home']++;
@@ -2123,16 +2127,29 @@ function applyPlay(res){
       break;
     case 'k':   st.ab++; st.k++; p.st.ko++; out = 1; txt = 'STRIKE THREE!'; break;
     case 'bb':  st.bb++; p.st.bba = (p.st.bba || 0) + 1; { const forced = M.bases[0] && (!M.bases[1] || M.bases[2] !== null);
-      runs = walkAdvance(); } txt = 'WALK'; break;
-    case 'hbp': st.hbp = (st.hbp || 0) + 1; runs = walkAdvance(); txt = 'HIT BY PITCH'; break;
+      runs = walkAdvance(); st.rbi += runs; } txt = 'WALK'; break;
+    case 'hbp': st.hbp = (st.hbp || 0) + 1; runs = walkAdvance(); st.rbi += runs; txt = 'HIT BY PITCH'; break;
   }
   if (runs){ p.st.er += runs; pg(p).r += runs; }
   M.outs += out; p.st.po = (p.st.po || 0) + out; pg(p).po += out;                       // the outs he got: his innings pitched
   say(txt);
-  if (!M.league){ if (weBat()) G.coins += ({ single:25, double:40, triple:75, hr:200 })[res] || 0;
-    if (!weBat() && res === 'k') G.coins += 30; }
+  payPlay(res, b, p, st.rbi - rbi0);
   nextBatter();
   if (M.outs >= 3) endHalf(); else setupAtBat();
+}
+// coins for what you play: nothing for innings the game simulates. The same batter repeating a hit or a walk earns 15 more each time; a pitcher's repeat strikeouts 10 more.
+let SIMMING = false;
+function earn(cat, amt, n = 1){ G.coins += amt; const e = (M.earn[cat] = M.earn[cat] || { n:0, c:0 }); e.n += n; e.c += amt; }
+function payPlay(res, b, p, rbi){
+  if (M.league || SIMMING || !M.earn) return;
+  if (weBat()){
+    const base = ({ single:50, double:125, triple:350, hr:200, bb:65, hbp:65 })[res];
+    if (base){ const cat = res === 'hbp' ? 'bb' : res, key = (b.id || b.name) + ':' + cat, n = (M.rep[key] || 0) + 1; M.rep[key] = n; earn(cat, base + 15 * (n - 1)); }
+    if (rbi > 0) earn('rbi', rbi * 70, rbi);
+  } else {
+    if (res === 'k'){ const key = 'K:' + (p.id || p.name), n = (M.rep[key] || 0) + 1; M.rep[key] = n; earn('k', 75 + 10 * (n - 1)); }
+    if (res === 'dp') earn('dp', 125);
+  }
 }
 function walkAdvance(){
   // the batter takes first; runners only move when they are forced
@@ -2171,7 +2188,7 @@ function snapMatch(){
       inning:M.inning, top:M.top, outs:M.outs, balls:M.balls, strikes:M.strikes, score:M.score, ls:M.ls, H:M.H, E:M.E, pcHome:M.pcHome, pcAway:M.pcAway,
       lineHome:M.lineHome, lineAway:M.lineAway, bases:M.bases.map(p => p ? bt.lineup.indexOf(p) : null), bi:{ home:M.home._bi || 0, away:M.away._bi || 0 },
       pH:pitchers(M.home).indexOf(M.pitcherHome), pA:pitchers(M.away).indexOf(M.pitcherAway),
-      pgH:pitchers(M.home).map(p => pg(p)), pgA:pitchers(M.away).map(p => pg(p)), t:Date.now(), coins0:M.coins0 }));
+      pgH:pitchers(M.home).map(p => pg(p)), pgA:pitchers(M.away).map(p => pg(p)), t:Date.now(), coins0:M.coins0, earn:M.earn, rep:M.rep, ps:M.pitchSimmed }));
   } catch (e){}
 }
 const matchSnap = () => { try { const d = JSON.parse(localStorage.getItem(MSAVE)); return d && d.v === 1 && G && d.day === G.day && G.day < G.seasonLen ? d : null; } catch (e){ return null; } };
@@ -2184,6 +2201,7 @@ function resumeMatch(){
   M.home._bi = d.bi.home; M.away._bi = d.bi.away;
   if (d.pH >= 0) M.pitcherHome = pitchers(M.home)[d.pH]; if (d.pA >= 0) M.pitcherAway = pitchers(M.away)[d.pA];
   if (d.coins0 != null) M.coins0 = d.coins0;
+  if (d.earn) M.earn = d.earn; if (d.rep) M.rep = d.rep; if (d.ps) M.pitchSimmed = true;
   if (d.pgH && d.pgA){ PG.clear(); pitchers(M.home).forEach((p, i) => PG.set(p, d.pgH[i])); pitchers(M.away).forEach((p, i) => PG.set(p, d.pgA[i])); }      // who has pitched, and how much, same as before he quit
   const bt = batTeam(); M.bases = d.bases.map(i => i == null || i < 0 ? null : bt.lineup[i]);
   setupAtBat(); M.balls = d.balls; M.strikes = d.strikes;
@@ -2231,8 +2249,9 @@ function gameOver(){
   const me = myTeam(), myRuns = M.meHome ? M.score.home : M.score.away, oth = M.meHome ? M.score.away : M.score.home;
   const won = myRuns > oth;
   me[won ? 'w' : 'l']++; me.rs += myRuns; me.ra += oth;
-  G.coins += won ? 500 : 120;
-  if (!M.meHome ? M.score.home === 0 : M.score.away === 0) G.coins += 500;      // shutout
+  G.coins += won ? 600 : 150;
+  M.shutBonus = oth === 0 && !M.pitchSimmed;                                 // a shutout pays only if you pitched every inning yourself
+  if (M.shutBonus) G.coins += 850;
   const sg = G.sched[G.day]; if (sg){ sg.done = true; sg.rs = myRuns; sg.ra = oth; }
   simLeagueDay(G.day, sg ? sg.opp : -1);                                  // everybody else plays today too, and their players get stats
   G.day++; G.rotIdx++;
@@ -3357,14 +3376,153 @@ function drawPlay(){
    ═══════════════════════════════════════════════════════════════════════════ */
 const CARD_W = 60, CARD_H = 84;                 // a card's size in game pixels
 const PACKS = {
-  bronze:  { n:'Bronze',  price:1000,  col:'#b07a46', col2:'#e0a86a', p:[.55,.30,.12,.025,.004,.001] },
-  silver:  { n:'Silver',  price:3000,  col:'#8d97a8', col2:'#d2dae6', p:[.30,.35,.25,.080,.017,.003] },
-  gold:    { n:'Gold',    price:8000,  col:'#b8902c', col2:'#ffd964', p:[.12,.25,.35,.220,.050,.010] },
-  diamond: { n:'Diamond', price:20000, col:'#49a7c8', col2:'#b6f0ff', p:[.02,.10,.28,.400,.160,.040] },
+  bronze:  { n:'Bronze',  price:2500,  col:'#b07a46', col2:'#e0a86a', p:[.545,.30,.12,.03,.004,.001] },
+  silver:  { n:'Silver',  price:6500,  col:'#8d97a8', col2:'#d2dae6', p:[.297,.35,.25,.08,.02,.003] },
+  gold:    { n:'Gold',    price:15000, col:'#b8902c', col2:'#ffd964', p:[.12,.25,.35,.22,.05,.01] },
+  diamond: { n:'Diamond', price:39500, col:'#49a7c8', col2:'#b6f0ff', p:[.02,.10,.28,.40,.16,.04] },
 };
 const BULK = [[1, 1], [5, .9], [10, .8]];        // buy 5 for 10% off, 10 for 20% off
 const TIER_LO = [60, 70, 80, 90, 100, 110], TIER_HI = [69, 79, 89, 99, 109, 120];
-const UP_COST = [300, 500, 700, 1000, 1300, 1700, 2100, 2600, 3100, 3700];
+const TIER_KEYS = ['bronze', 'silver', 'gold', 'diamond'];
+// position packs: every card plays one of these spots. TODAY is one spot that changes every day.
+const POSGROUPS = [
+  { k:'infield',  n:'INFIELD',  sub:'1B 2B SS 3B',   pos:['1B', '2B', 'SS', '3B'], mult:1.2 },
+  { k:'outfield', n:'OUTFIELD', sub:'LF CF RF C',    pos:['LF', 'CF', 'RF', 'C'], mult:1.2 },
+  { k:'pitcher',  n:'PITCHER',  sub:'SP RP CP',      pos:['SP', 'SP', 'SP', 'RP', 'RP', 'CP'], mult:1.2 },
+  { k:'today',    n:'TODAY',    sub:'NEW EVERY DAY', pos:null, mult:1.3 },
+];
+const TODAY_POS = ['1B', '2B', '3B', 'SS', 'C', 'CF', 'RF', 'LF'];
+const POSTIERS = ['silver', 'gold', 'diamond'];
+const dayKey = (d = new Date()) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const seedRng = str => { let a = 0; for (const ch of str) a = (Math.imul(a, 31) + ch.charCodeAt(0)) | 0;
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
+const todayPos = () => TODAY_POS[Math.floor(seedRng('pos' + dayKey())() * TODAY_POS.length)];
+const posPackPrice = (grp, tier) => Math.round(PACKS[tier].price * grp.mult);
+
+// what a card is worth in coins: the table from 80 to 109, the same 17.5% a point either side of it
+const VAL_T = { 80:380, 81:450, 82:525, 83:620, 84:725, 85:855, 86:1000, 87:1175, 88:1375, 89:1625, 90:1900, 91:2250, 92:2625, 93:3100, 94:3625, 95:4275, 96:5025, 97:5900, 98:6925, 99:8125,
+  100:9550, 101:11200, 102:13200, 103:15500, 104:18200, 105:21350, 106:25100, 107:29450, 108:34600, 109:40650 };
+const VAL_STEP = Math.pow(40650 / 380, 1 / 29);
+const valueOf = r => { r = clamp(r, 60, 125); const f = Math.floor(r); if (r === f && VAL_T[f]) return VAL_T[f]; return 380 * Math.pow(VAL_STEP, r - 80); };
+const sellPrice = c => Math.round(valueOf(ovrOf(c)) * .4);                              // selling pays 40% of what a card is worth
+const upCost = c => Math.round(1.3 * (valueOf(ovrOf(c) + 5) - valueOf(ovrOf(c))) / 10);  // one of its ten levels: 1.3 x the value it adds
+// the hot deal prices: Epics 20% off, Legendaries 10% off
+const DEAL_PRICE = { 90:1525, 91:1800, 92:2100, 93:2475, 94:2900, 95:3425, 96:4025, 97:4725, 98:5525, 99:6500,
+  100:8600, 101:10100, 102:11850, 103:13950, 104:16350, 105:19200, 106:22550, 107:26500, 108:31150, 109:36600 };
+const dealPrice = c => DEAL_PRICE[clamp(ovrOf(c), 90, 109)] || Math.round(valueOf(ovrOf(c)) * .85);
+
+// one new card at a rating: a random player, or at one position / with one face
+function makeCardAt(lvl, o = {}){
+  lvl = clamp(Math.round(lvl), 60, 120);
+  const pitcher = o.pitcher != null ? o.pitcher : o.pos ? ['SP', 'RP', 'CP'].includes(o.pos) : chance(.26);
+  const c = pitcher ? makePitcher(lvl, o.pos || pick(['SP', 'SP', 'SP', 'RP', 'RP', 'CP']))
+                    : makeHitter(lvl, o.pos || pick(POS));
+  // the rolled number is the card's headline rating, so the overall lands on it
+  const keys = statsOf(c).map(s => s[1]);
+  const cur = ovrOf(c), d = lvl - cur;
+  if (c.fielding != null){                                    // a hitter: speed follows fielding, so the three real stats carry the shift
+    const k3 = ['contact', 'power', 'fielding'];
+    for (let n = 0; n < 6; n++){ c.speed = c.fielding; const dd = lvl - ovrOf(c); if (!dd) break; k3.forEach(k => c[k] = clamp(c[k] + dd, 60, 120)); }
+    c.speed = c.fielding;
+  } else keys.forEach(k => c[k] = clamp(c[k] + d, 60, 120));
+  c.id = _cardId++; c.lvl = 0; c.fz = 0; c.ovr = ovrOf(c); c.num = ri(1, 72);
+  c.tm = ri(0, G.teams.length - 1);                            // which club's colours he wears on his card
+  if (o.face != null) c.face = o.face;
+  return c;
+}
+// roll one card out of a pack
+function rollCard(packKey, forceTier, o){
+  let tier = 0;
+  if (forceTier != null) tier = forceTier;
+  else { const p = PACKS[packKey].p; let r = Math.random(), a = 0;
+    for (let i = 0; i < 6; i++){ a += p[i]; if (r < a){ tier = i; break; } } }
+  return makeCardAt(TIER_LO[tier] + Math.floor(Math.random() * (TIER_HI[tier] - TIER_LO[tier] + 1)), o);
+}
+
+// ── fusing: two cards with one face (+5) or one position (+3), in the same band of the 4-3-3 ladder ──
+const bandOf = r => { const d = Math.floor(r / 10) * 10, o = r - d; return d + (o < 4 ? 0 : o < 7 ? 4 : 7); };
+const bandText = b => { const o = b % 10; return b + '-' + (b + (o === 0 ? 3 : 2)); };
+function fuseKey(c, mode){
+  const band = bandOf(ovrOf(c));
+  if (mode === 'face'){ const f = portraitFor(c); return (f >= 0 ? 'f' + f : 'x' + c.id) + '|' + band; }
+  return 'p' + c.pos + '|' + band;
+}
+function fuseGroups(mode){
+  const m = new Map();
+  G.cards.filter(c => (c.fz || 0) < 2).forEach(c => { const k = fuseKey(c, mode); if (!m.has(k)) m.set(k, []); m.get(k).push(c); });
+  const out = []; m.forEach((list, k) => { if (list.length >= 2) out.push({ k, list:list.sort((a, b) => ovrOf(b) - ovrOf(a)), band:+k.split('|')[1], top:ovrOf(list[0]) }); });
+  return out.sort((a, b) => b.top - a.top);
+}
+const fuseRating = (a, b, mode) => clamp(Math.floor((ovrOf(a) + ovrOf(b)) / 2 + (mode === 'face' ? 5 : 3) + .5), 60, 120);
+const canFuse = (a, b, mode) => !!(a && b && a.id !== b.id && (a.fz || 0) < 2 && (b.fz || 0) < 2 && fuseKey(a, mode) === fuseKey(b, mode) && !(inUse(a.id) && inUse(b.id)));
+function doFuse(a, b, mode){
+  if (!canFuse(a, b, mode)) return null;
+  const slotCard = inUse(a.id) ? a : inUse(b.id) ? b : null;
+  const o = {};
+  if (mode === 'face') o.face = portraitFor(a);
+  if (slotCard || mode === 'pos') o.pos = slotCard ? slotCard.pos : a.pos;            // a lineup spot keeps his position
+  const nc = makeCardAt(fuseRating(a, b, mode), o);
+  nc.lvl = Math.max(a.lvl || 0, b.lvl || 0); nc.fz = Math.max(a.fz || 0, b.fz || 0) + 1;
+  G.cards = G.cards.filter(c => c.id !== a.id && c.id !== b.id); G.cards.push(nc);
+  ['lineup', 'rot', 'pen'].forEach(k => { G.slots[k] = G.slots[k].map(id => id === a.id || id === b.id ? nc.id : id); });
+  rebuildTeam(); G.seen = G.seen || {}; G.seen[nc.name] = 1; save();
+  return nc;
+}
+
+// ── hot deals: three a day, 75% Epic and 25% Legendary, the same all day ──
+function dealsToday(){
+  const k = dayKey();
+  if (!G.deals || G.deals.key !== k){
+    const R = seedRng('deals' + k + G.team), cards = [];
+    for (let i = 0; i < 3; i++){ const epic = R() < .75; const c = makeCardAt(epic ? 90 + Math.floor(R() * 10) : 100 + Math.floor(R() * 10)); c.id = null; cards.push(c); }
+    G.deals = { key:k, cards, sold:[0, 0, 0] }; save();
+  }
+  return G.deals;
+}
+function buyDeal(i){
+  const D = dealsToday(), c = D.cards[i]; if (!c || D.sold[i]) return;
+  const cost = dealPrice(c); if (G.coins < cost) return;
+  G.coins -= cost; c.id = _cardId++; D.sold[i] = 1; G.cards.push(c); G.seen = G.seen || {}; G.seen[c.name] = 1;
+  shopMsg = 'BOUGHT ' + c.name.toUpperCase(); shopMsgT = 2200; save();
+}
+
+// ── the daily pack and its streak ──
+function streakInfo(){
+  const s = G.streak || { day:0, last:'' }, today = dayKey(), yest = dayKey(new Date(Date.now() - 86400000));
+  const run = (s.last === today || s.last === yest) ? s.day : 0;
+  return { run, next: s.last === today ? run : run >= 7 ? 1 : run + 1, claimedToday: s.last === today };
+}
+const STREAK_COINS = [500, 1000, 1500, 2000, 2500, 3000];
+function freePack(){
+  if (Date.now() < (G.freeAt || 0)) return;
+  const si = streakInfo(), day = si.claimedToday ? si.run : si.next;
+  G.streak = { day, last:dayKey() }; G.freeAt = Date.now() + 24 * 3600 * 1000;
+  const batches = [{ tier:'bronze', cards:Array.from({ length:5 }, () => rollCard('bronze')) }];
+  let bonus = '';
+  if (day >= 7) batches.push({ tier:'gold', cards:Array.from({ length:3 }, () => rollCard('gold')) });
+  else { G.coins += STREAK_COINS[day - 1]; bonus = 'DAY ' + day + ' STREAK  +' + STREAK_COINS[day - 1].toLocaleString() + ' COINS'; }
+  startOpen({ kind:'pack', batches, bonus, free:true }); save();
+}
+function buyPack(kind, n){
+  const cost = Math.round(PACKS[kind].price * BULK.find(b => b[0] === n)[1] * n);
+  if (G.coins < cost) return;
+  G.coins -= cost;
+  const batches = []; for (let i = 0; i < n; i++) batches.push({ tier:kind, cards:[rollCard(kind), rollCard(kind), rollCard(kind)] });
+  startOpen({ kind:'pack', batches, again:{ type:'pack', kind, n } }); save();
+}
+function buyPosPack(gk, tier){
+  const grp = POSGROUPS.find(x => x.k === gk), cost = posPackPrice(grp, tier);
+  if (G.coins < cost) return;
+  G.coins -= cost;
+  const cards = [0, 1, 2].map(() => rollCard(tier, null, { pos: grp.k === 'today' ? todayPos() : pick(grp.pos) }));
+  startOpen({ kind:'pack', batches:[{ tier, cards }], again:{ type:'pos', gk, tier } }); save();
+}
+const againCost = A => !A ? 0 : A.type === 'pack' ? Math.round(PACKS[A.kind].price * BULK.find(b => b[0] === A.n)[1] * A.n) : posPackPrice(POSGROUPS.find(x => x.k === A.gk), A.tier);
+function openAgain(A){ if (A.type === 'pack') buyPack(A.kind, A.n); else buyPosPack(A.gk, A.tier); }
+
+// ── trading in: 5 cards of one colour make a card rated (their average + 10), rounded down ──
+const TRADE_N = 5;
+const tradeRating = cards => clamp(Math.floor(cards.reduce((s, c) => s + ovrOf(c), 0) / cards.length + 10), 60, 120);
 
 let _cardId = 1;
 const cardById = id => G.cards.find(c => c.id === id);
@@ -3375,31 +3533,7 @@ const isPitcher = c => ['SP','RP','CP'].includes(c.pos);
 const statsOf = c => isPitcher(c)
   ? [['VEL','velocity'], ['CTL','control'], ['STA','stamina'], ['BAT','batting']]
   : [['CON','contact'], ['POW','power'], ['SPD','speed'], ['FLD','fielding']];
-const sellPrice = c => Math.round(Math.pow(Math.max(0, ovrOf(c) - 55), 2) * 1.1);
 const inUse = id => G.slots.lineup.includes(id) || G.slots.rot.includes(id) || G.slots.pen.includes(id);
-
-// roll one card out of a pack
-function rollCard(packKey, forceTier){
-  let tier = 0;
-  if (forceTier != null) tier = forceTier;
-  else { const p = PACKS[packKey].p; let r = Math.random(), a = 0;
-    for (let i = 0; i < 6; i++){ a += p[i]; if (r < a){ tier = i; break; } } }
-  const lvl = TIER_LO[tier] + Math.floor(Math.random() * (TIER_HI[tier] - TIER_LO[tier] + 1));
-  // a quarter of the cards are pitchers, as on a real roster
-  const c = chance(.26) ? makePitcher(lvl, pick(['SP','SP','SP','RP','RP','CP']))
-                        : makeHitter(lvl, pick(POS));
-  // the rolled number is the card's headline rating, so the overall lands on it
-  const keys = statsOf(c).map(s => s[1]);
-  const cur = ovrOf(c), d = lvl - cur;
-  if (c.fielding != null){                                    // a hitter: speed follows fielding, so the three real stats carry the shift
-    const k3 = ['contact', 'power', 'fielding'];
-    for (let n = 0; n < 6; n++){ c.speed = c.fielding; const dd = lvl - ovrOf(c); if (!dd) break; k3.forEach(k => c[k] = clamp(c[k] + dd, 60, 120)); }
-    c.speed = c.fielding;
-  } else keys.forEach(k => c[k] = clamp(c[k] + d, 60, 120));
-  c.id = _cardId++; c.lvl = 0; c.ovr = ovrOf(c); c.num = ri(1, 72);
-  c.tm = ri(0, G.teams.length - 1);                            // which club's colours he wears on his card
-  return c;
-}
 
 // ── card art ───────────────────────────────────────────────────────────────
 // Five things make a card read at a glance, like the reference: a metal frame that gets fancier with the tier, a
@@ -3659,321 +3793,375 @@ function drawCardBackInner(x, y, c, w, h, t){
   const by = iy + 27 * k + 5 * rh + 2 * k;
   R(ix + 3, by, iw - 6, 1, P.dark);
   text(`OVERALL ${ovr}`, x + w / 2, by + 2.5 * k, P.lite, Math.max(5, Math.round(5.5 * k)), 'center', iw - 4);
+  const ly = by + 9 * k, lv = c.lvl || 0;                                                   // his upgrade level: ten pips
+  text(`LEVEL ${lv} OF 10`, x + w / 2, ly, '#9fb0d8', Math.max(4.6, Math.round(5 * k)), 'center', iw - 4);
+  for (let i = 0; i < 10; i++) R(ix + 3 + i * ((iw - 6) / 10), ly + 7 * k, Math.max(2, (iw - 6) / 10 - 1), Math.max(2, 2.4 * k), i < lv ? '#7fd38f' : '#2a3350');
 }
 
-// ── opening a pack ─────────────────────────────────────────────────────────
-let OPEN = null;      // { cards, i, spin, t, done }
-function buyPack(kind, n){
-  const cost = Math.round(PACKS[kind].price * BULK.find(b => b[0] === n)[1] * n);
-  if (G.coins < cost) return;
-  G.coins -= cost;
-  const cards = [];
-  for (let i = 0; i < n * 3; i++) cards.push(rollCard(kind));
-  OPEN = { kind, cards, i:0, t:0, spin:null, revealed:[], n, per: n === 5 ? 3 : n === 10 ? 5 : 1, bspin:null };
-  menu = 'open'; save();
+// ── shop pictures: the pack art, the tearing, the spinning card backs ──────────────────────────────
+const SH = {};
+function shopImg(n){ let im = SH[n]; if (!im){ im = SH[n] = new Image(); im.onload = () => { im._ok = true; }; im.src = SRC('assets/shop/' + n + '.png'); } return im; }
+const imgOk = im => !!(im && im._ok && im.naturalWidth);
+TIER_KEYS.forEach(t => { shopImg('p_' + t); for (let k = 0; k < 7; k++) shopImg(`t_${t}_${k}`); });
+for (let k = 0; k < 7; k++) shopImg('s' + k);
+// a picture standing on a line (cx, bottom) at scale s
+function spriteAt(n, cx, bottom, s, alpha){
+  const im = shopImg(n); if (!imgOk(im)) return null;
+  const w = im.naturalWidth * s, h = im.naturalHeight * s;
+  g.save(); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; if (alpha != null) g.globalAlpha = alpha;
+  g.drawImage(im, cx - w / 2, bottom - h, w, h); g.restore(); return { w, h };
 }
-function freePack(){
-  if (Date.now() < (G.freeAt || 0)) return;
-  G.freeAt = Date.now() + 24 * 3600 * 1000;
-  OPEN = { kind:'bronze', cards:[rollCard('bronze'), rollCard('bronze'), rollCard('bronze')], i:0, t:0, spin:null, revealed:[], n:1, free:true };
-  menu = 'open'; save();
+function spriteC(n, cx, cy, s, alpha){
+  const im = shopImg(n); if (!imgOk(im)) return null;
+  const w = im.naturalWidth * s, h = im.naturalHeight * s;
+  g.save(); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; if (alpha != null) g.globalAlpha = alpha;
+  g.drawImage(im, cx - w / 2, cy - h / 2, w, h); g.restore(); return { w, h };
 }
-// tapping the face-down card starts the spin; better cards spin more and faster
-function spinFor(c){
-  const ti = clamp(Math.floor((ovrOf(c) - 60) / 10), 0, 5);
-  return { t:0, turns: 4 + ti * 1.2, dur: 1500 - ti * 90 + ti * 260, ti, flash:0 };        // in a batch the great ones also take longer, so they land last
+const tornCv = document.createElement('canvas');
+// the part of the wrapper that has been ripped so far, from fraction a to b of its width: the torn picture shows through a soft mask over the sealed one
+function drawTorn(tier, cx, bottom, s, a, b){
+  const im = shopImg(`t_${tier}_3`); if (!imgOk(im) || b - a < .02) return;
+  const w = im.naturalWidth * s, h = im.naturalHeight * s, K = 2;
+  tornCv.width = Math.ceil(w * K); tornCv.height = Math.ceil(h * K);
+  const o = tornCv.getContext('2d'); o.clearRect(0, 0, tornCv.width, tornCv.height);
+  o.imageSmoothingEnabled = true; o.drawImage(im, 0, 0, tornCv.width, tornCv.height);
+  o.globalCompositeOperation = 'destination-in';
+  const f = .06, gx = o.createLinearGradient(0, 0, tornCv.width, 0);
+  if (a <= .02) gx.addColorStop(0, 'rgba(0,0,0,1)'); else { gx.addColorStop(Math.max(0, a - f), 'rgba(0,0,0,0)'); gx.addColorStop(a, 'rgba(0,0,0,1)'); }
+  if (b >= .98) gx.addColorStop(1, 'rgba(0,0,0,1)'); else { gx.addColorStop(b, 'rgba(0,0,0,1)'); gx.addColorStop(Math.min(1, b + f), 'rgba(0,0,0,0)'); }
+  o.fillStyle = gx; o.fillRect(0, 0, tornCv.width, tornCv.height);
+  const gy = o.createLinearGradient(0, 0, 0, tornCv.height); gy.addColorStop(0, 'rgba(0,0,0,1)'); gy.addColorStop(.36, 'rgba(0,0,0,1)'); gy.addColorStop(.52, 'rgba(0,0,0,0)');
+  o.fillStyle = gy; o.fillRect(0, 0, tornCv.width, tornCv.height);
+  g.save(); g.imageSmoothingEnabled = true; g.drawImage(tornCv, cx - w / 2, bottom - h, w, h); g.restore();
 }
-function revealNext(){
-  if (OPEN && OPEN.per > 1){
-    if (OPEN.bspin) return;
-    const cs = OPEN.cards.slice(OPEN.i, OPEN.i + OPEN.per); if (!cs.length) return;
-    OPEN.bspin = cs.map(c => Object.assign(spinFor(c), { c }));
-    return;
-  }
-  if (!OPEN || OPEN.spin) return;
-  const c = OPEN.cards[OPEN.i];
-  if (!c) return;
-  const ti = clamp(Math.floor((ovrOf(c) - 60) / 10), 0, 5);
-  const turns = 4 + ti * 1.2;                                  // 4 spins for a dud, 10 for a red
-  const dur = 1500 - ti * 90;                                  // and the great ones whip round faster
-  OPEN.spin = { t:0, turns, dur, ti, flash:0 };
+
+// ── opening: tear the pack, the cards spin face down together, each turns over on its last turn ──
+const T0 = 560;                                         // one full turn of a card, in ms
+let OPEN = null;
+const PK_S = .78, PK_CX = () => W / 2, PK_BOTTOM = 206;
+const packBox = () => ({ x: PK_CX() - 161 * PK_S / 2, w: 161 * PK_S, top: PK_BOTTOM - 201 * PK_S, bottom: PK_BOTTOM });
+function startOpen(o){
+  OPEN = Object.assign({ phase:'pack', bi:0, t:0, ph0:0, revealed:[], newIds:new Set(), tr:{ a:null, b:null }, shake:0, sold:false, sellArmed:false }, o);
+  if (o.kind !== 'pack') OPEN.phase = 'ready';
+  menu = 'open';
+}
+function startSpin(){
+  const O = OPEN, B = O.batches[O.bi];
+  O.sp = B.cards.map(c => { const R = clamp(Math.round(3 + (ovrOf(c) - 60) / 10), 3, 9); return { c, ti:tierIdx(c), R, dur:R * T0, t:0, landed:false, flash:0 }; });
+  O.phase = 'spin'; O.ph0 = 0;
+}
+function landCard(s){
+  const O = OPEN, c = s.c; s.landed = true; s.flash = 700;
+  if (!O.pre) G.cards.push(c);
+  O.revealed.push(c); G.seen = G.seen || {};
+  if (!O.pre && !G.seen[c.name]) O.newIds.add(c.id);
+  G.seen[c.name] = 1;
+  if (s.ti >= 4) O.shake = 520;
+  save();
 }
 function openTick(dt){
-  if (!OPEN) return;
-  OPEN.t += dt;
-  if (OPEN.bspin){
-    OPEN.bspin.forEach(b => {
-      b.t += dt;
-      if (b.t >= b.dur && !b.landed){ b.landed = true; b.flash = 420; G.cards.push(b.c); OPEN.revealed.push(b.c); save(); }
-      if (b.landed) b.flash -= dt;
-    });
-    if (OPEN.bspin.every(b => b.landed) && OPEN.bnext){
-      OPEN.bnext = false; OPEN.bspin = null; OPEN.i += OPEN.per; if (OPEN.i >= OPEN.cards.length) OPEN.done = true;
-    }
-    return;
-  }
-  const sp = OPEN.spin;
-  if (!sp) return;
-  sp.t += dt;
-  if (sp.t >= sp.dur && !sp.landed){
-    sp.landed = true; sp.flash = 420;
-    const c = OPEN.cards[OPEN.i];
-    G.cards.push(c); OPEN.revealed.push(c); save();
-  }
-  if (sp.landed){
-    sp.flash -= dt;
-    if (sp.next){ OPEN.spin = null; OPEN.i++; if (OPEN.i >= OPEN.cards.length) OPEN.done = true; }     // it stays on screen until you tap
+  const O = OPEN; if (!O) return;
+  O.t += dt; O.ph0 += dt; if (O.shake > 0) O.shake -= dt;
+  if (O.phase === 'autotear'){
+    const f = clamp(O.ph0 / 360, 0, 1);
+    O.tr.a = O.tr.a0 * (1 - f); O.tr.b = O.tr.b0 + (1 - O.tr.b0) * f;
+    if (f >= 1){ O.phase = 'burst'; O.ph0 = 0; }
+  } else if (O.phase === 'burst'){ if (O.ph0 > 560) startSpin(); }
+  else if (O.phase === 'ready'){ if (O.ph0 > 450) startSpin(); }
+  else if (O.phase === 'spin'){
+    let all = true;
+    O.sp.forEach(s => { s.t += dt; if (!s.landed && s.t >= s.dur) landCard(s); if (s.landed) s.flash -= dt; else all = false; });
+    if (all){ O.phase = 'hold'; O.ph0 = 0; }
   }
 }
+function openAdvance(){
+  const O = OPEN;
+  if (O.bi + 1 < O.batches.length){ O.bi++; O.sp = null; O.tr = { a:.5, b:.5, a0:.5, b0:.5 }; O.phase = 'autotear'; O.ph0 = 0; }
+  else { O.phase = 'done'; O.ph0 = 0; }
+}
+function openLeave(){
+  const O = OPEN; OPEN = null;
+  if (O.from === 'bench'){ menu = 'cards'; colFilter = 'bench'; }
+  else if (O.from === 'trade'){ menu = 'trade'; }
+  else if (O.from === 'fuse'){ menu = 'shop'; shopTab = 'fuse'; }
+  else { menu = 'shop'; if (shopTab === 'featured' && !O.free) shopTab = 'packs'; }
+}
+// a finger on the pack: it tears wherever the finger goes (from the left edge to the middle tears only that much); the whole way across opens it
+function openPointer(kind, p){
+  const O = OPEN; if (!O || O.phase !== 'pack') return false;
+  const b = packBox(), fx = clamp((p.x - b.x) / b.w, 0, 1);
+  if (kind === 'down'){
+    if (p.x < b.x - 26 || p.x > b.x + b.w + 26 || p.y < b.top - 26 || p.y > b.bottom + 6) return false;
+    O.drag = true; O.dragStart = fx;
+    if (O.tr.a == null){ O.tr.a = fx; O.tr.b = fx; }
+    else { if (fx < O.tr.a - .12 || fx > O.tr.b + .12) { /* a new stroke further along keeps what is already torn */ } }
+    return true;
+  }
+  if (!O.drag) return false;
+  if (p.y > b.top + (b.bottom - b.top) * .62) return true;                // the finger has wandered off the top of the pack
+  if (O.tr.a == null){ O.tr.a = fx; O.tr.b = fx; }
+  O.tr.a = Math.min(O.tr.a, fx); O.tr.b = Math.max(O.tr.b, fx);
+  if (O.tr.a <= .07 && O.tr.b >= .93){ O.phase = 'burst'; O.ph0 = 0; O.drag = false; O.tr.a = 0; O.tr.b = 1; }
+  return true;
+}
+
+function drawSpinCard(s, cx, cy, k){
+  const O = OPEN, c = s.c, R = s.R, cwR = 100 * k, chR = 140 * k, T = TIERS[s.ti].col;
+  const cl = (R - 1) * T0, u = clamp((s.t - cl) / T0, 0, 1);
+  const h = s.t < cl ? 2 * s.t / T0 : 2 * R - 2 + (1 - Math.pow(1 - u, 3));               // half turns so far; the last half turn is slow and shows the front
+  const e = h - (2 * R - 2);                                                          // 0..1 inside the last half turn
+  const rgb = s.ti >= 5 ? '255,77,77' : s.ti >= 4 ? '255,210,63' : s.ti >= 3 ? '178,107,255' : s.ti >= 2 ? '74,163,255' : '255,255,255';
+  if (!s.landed && e < .5){
+    const frac = h - Math.floor(h), idx = clamp(Math.round(frac * 6), 0, 6);
+    spriteC('s' + idx, cx, cy, k);
+    return;
+  }
+  // the front turns into view, with light behind it
+  const sx = s.landed ? 1 : Math.abs(Math.cos(Math.PI * e));
+  const fl = s.landed ? clamp(s.flash / 700, 0, 1) : 0, grow = s.landed ? 1 : (e - .5) * 2;
+  const rays = 14, rr = (chR * (.75 + .5 * (s.ti + 1) / 6)) * (.5 + .5 * grow), spin = O.t / 900;
+  g.save(); g.beginPath(); g.rect(0, 0, W, H); g.clip();
+  for (let r = 0; r < rays; r++){
+    const a = r / rays * Math.PI * 2 + spin;
+    g.fillStyle = `rgba(${rgb},${(.10 + .08 * s.ti / 5) * grow * (.6 + .4 * fl)})`;
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * rr * 1.6, cy + Math.sin(a) * rr * 1.6); g.lineTo(cx + Math.cos(a + .11) * rr * 1.6, cy + Math.sin(a + .11) * rr * 1.6); g.fill();
+  }
+  const hg = g.createRadialGradient(cx, cy, 4, cx, cy, rr); hg.addColorStop(0, `rgba(${rgb},${.45 * grow})`); hg.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = hg; g.fillRect(cx - rr, cy - rr, rr * 2, rr * 2);
+  g.restore();
+  g.save(); g.translate(cx, 0); g.scale(Math.max(.03, sx), 1); g.translate(-cx, 0);
+  drawCard(cx - cwR / 2, cy - chR / 2, c, cwR, chR, O.t);
+  if (fl > 0) R2(cx - cwR / 2 - 2, cy - chR / 2 - 2, cwR + 4, chR + 4, `rgba(255,255,255,${fl * .5})`);
+  g.restore();
+  if (s.landed){
+    if (s.ti >= 2) ptitle(TIER_LABEL[s.ti], cx, cy - chR / 2 - 11, s.ti >= 4 ? 8 : 7, T);
+    if (O.newIds.has(c.id)){ R2(cx + cwR / 2 - 20, cy - chR / 2 - 11, 22, 9, UI.red); text('NEW', cx + cwR / 2 - 9, cy - chR / 2 - 10, '#ffffff', 5, 'center'); }
+  }
+}
+const R2 = (x, y, w, h, c) => R(x, y, w, h, c);
+
 function drawOpen(){
   btns = [];
-  const P2 = PACKS[OPEN.kind] || TRADE_PACK, cx = W / 2, cy = 112, sp = OPEN.spin;
-  // deep navy with a pool of light behind the action
+  const O = OPEN, B = O.batches[O.bi] || O.batches[0], tier = B.tier || 'bronze', P2 = PACKS[tier] || PACKS.bronze;
   R(0, 0, W, H, UI.navy);
-  const pool = g.createRadialGradient(cx, cy, 8, cx, cy, 190);
-  pool.addColorStop(0, 'rgba(80,120,240,.55)'); pool.addColorStop(1, 'rgba(15,31,85,0)');
+  const pool = g.createRadialGradient(W / 2, 118, 8, W / 2, 118, 230); pool.addColorStop(0, 'rgba(80,120,240,.55)'); pool.addColorStop(1, 'rgba(15,31,85,0)');
   g.fillStyle = pool; g.fillRect(0, 0, W, H);
-  ptitle(`${P2.n.toUpperCase()}${OPEN.kind === 'trade' ? '' : ' PACK'}`, cx, 6, 11, P2.col2);
-  if (!OPEN.done) text(OPEN.per > 1 ? `cards ${Math.min(OPEN.i + 1, OPEN.cards.length)}-${Math.min(OPEN.i + OPEN.per, OPEN.cards.length)} of ${OPEN.cards.length}` : `card ${Math.min(OPEN.i + 1, OPEN.cards.length)} of ${OPEN.cards.length}`, cx, 22, UI.ice, 7, 'center');
-
-  // turning light rays behind the card; stronger for better pulls
-  const rays = (strength, col) => {
-    g.save(); g.beginPath(); g.rect(0, 0, W, H); g.clip();
-    for (let r = 0; r < 12; r++){
-      const a = r / 12 * Math.PI * 2 + OPEN.t / 1600;
-      g.fillStyle = `rgba(${col},${.05 + strength * .09})`;
-      g.beginPath(); g.moveTo(cx, cy);
-      g.lineTo(cx + Math.cos(a) * 260, cy + Math.sin(a) * 260); g.lineTo(cx + Math.cos(a + .13) * 260, cy + Math.sin(a + .13) * 260); g.fill();
-    }
+  g.save();
+  if (O.shake > 0){ const m = 3.2 * clamp(O.shake / 520, 0, 1); g.translate((Math.random() - .5) * m * 2, (Math.random() - .5) * m * 2); }
+  const title = O.kind === 'pack' ? (O.batches.length > 1 ? `PACK ${O.bi + 1} OF ${O.batches.length}` : `${P2.n.toUpperCase()} PACK`) : O.kind === 'fuse' ? 'FUSED' : 'TRADE IN';
+  if (O.phase !== 'done') ptitle(title, W / 2, 6, 11, O.kind === 'pack' ? P2.col2 : '#dcc2ff');
+  const ph = O.phase;
+  if (ph === 'pack'){
+    const b = packBox(), pulse = .6 + .4 * Math.sin(O.t / 240);
+    text('DRAG ACROSS THE TOP TO TEAR IT OPEN', W / 2, 26, `rgba(255,255,255,${.7 + .3 * pulse})`, 8, 'center', W - 20);
+    const bob = O.tr.a == null ? Math.sin(O.t / 320) * 2 : 0;
+    g.save(); g.translate(0, bob);
+    spriteAt(`t_${tier}_0`, PK_CX(), PK_BOTTOM, PK_S);
+    if (O.tr.a != null) drawTorn(tier, PK_CX(), PK_BOTTOM, PK_S, O.tr.a, O.tr.b);
     g.restore();
-  };
-
-  // ── all done: every card from the pack on one screen ──
-  if (OPEN.done){
-    ptitle('ALL YOURS!', cx, 20, 14, UI.yellow);
-    const n = OPEN.revealed.length, big = n <= 5, cw = big ? 54 : n <= 10 ? 40 : 28, ch = Math.round(cw * 1.4), gap = 5;
-    const per = Math.min(n, Math.floor((W - 20) / (cw + gap))), rows = Math.ceil(n / per);
-    const x0 = cx - (per * (cw + gap) - gap) / 2, y0 = 44;
-    OPEN.revealed.forEach((c, i) => drawCard(x0 + (i % per) * (cw + gap), y0 + Math.floor(i / per) * (ch + gap), c, cw, ch, OPEN.t));
-    const by = Math.min(H - 28, y0 + rows * (ch + gap) + 6);
-    const again = OPEN.kind !== 'trade' && OPEN.n ? Math.round(PACKS[OPEN.kind].price * BULK.find(b => b[0] === OPEN.n)[1] * OPEN.n) : 0;
-    const can = again > 0 && G.coins >= again;
-    if (OPEN.kind === 'trade'){                                       // after a trade-in: just the two ways out, centred
-      button(cx - 68, by, 64, 20, 'MY CARDS', () => { const fb = OPEN.from === 'bench'; OPEN = null; menu = 'cards'; if (fb) colFilter = 'bench'; }, '#1a2030', '#fff', 8);
-      button(cx + 4, by, 64, 20, 'SHOP', () => { OPEN = null; menu = 'shop'; }, '#1a2030', '#fff', 8);
-    } else {
-      button(cx - 118, by, 112, 20, can ? `OPEN ANOTHER · ${fmt(again)}` : 'NOT ENOUGH COINS', () => { if (can){ const k = OPEN.kind, n = OPEN.n; buyPack(k, n); } }, can ? '#2f6fe0' : '#161b26', '#fff', 7);
-      button(cx - 2 + 6, by, 56, 20, 'SHOP', () => { OPEN = null; menu = 'shop'; }, '#1a2030', '#fff', 8);
-      button(cx + 66, by, 64, 20, 'MY CARDS', () => { OPEN = null; menu = 'cards'; }, '#1a2030', '#fff', 7);
+    if (O.tr.a == null){                                                         // a hint: a dashed line along the top, and an arrow
+      g.fillStyle = 'rgba(255,255,255,.8)';
+      for (let x = b.x; x < b.x + b.w - 6; x += 10) g.fillRect(x + ((O.t / 40) % 10), b.top + 24, 5, 1.5);
+      text('>>', b.x - 14, b.top + 20, '#ffffff', 8, 'center');
     }
-    return;
-  }
-
-  // the cards already turned over, in a row along the bottom
-  const shown = OPEN.revealed.slice(-10);
-  shown.forEach((c, i) => { const w = 26, x = cx - (shown.length * 29) / 2 + i * 29; drawCard(x, H - 46, c, w, 36, OPEN.t); });
-
-  if (OPEN.per > 1){
-    const cnt = Math.min(OPEN.per, OPEN.cards.length - OPEN.i), bw = OPEN.per <= 3 ? 62 : 46, bh = Math.round(bw * 1.4), gp = OPEN.per <= 3 ? 10 : 6;
-    const x0 = cx - (cnt * bw + (cnt - 1) * gp) / 2, y0 = cy - bh / 2, bs = OPEN.bspin;
-    if (!bs){
-      // face-down cards (the pack itself for the first batch), tap to turn them all over
-      const bob = Math.sin(OPEN.t / 300) * 3; rays(.3, '255,255,255');
-      for (let k = 0; k < cnt; k++){
-        const x = x0 + k * (bw + gp);
-        uiBox(x, y0 + bob, bw, bh, mix(UI.blueDD, P2.col, .35)); g.fillStyle = P2.col2; g.beginPath(); g.arc(x + bw / 2, cy + bob, 9, 0, 7); g.fill();
-        g.fillStyle = UI.navy; g.fillRect(x + bw / 2 - 9, cy + bob - 1, 18, 2);
-      }
-      const pulse = .6 + .4 * Math.sin(OPEN.t / 220);
-      ptitle(OPEN.i === 0 ? 'TAP TO OPEN' : 'TAP TO REVEAL', cx, y0 + bh + 12, 9, `rgba(255,255,255,${.7 + .3 * pulse})`);
-      btns.push({ x:0, y:30, w:W, h:H - 30, fn: revealNext });
-      return;
+  } else if (ph === 'autotear'){
+    spriteAt(`t_${tier}_0`, PK_CX(), PK_BOTTOM, PK_S); drawTorn(tier, PK_CX(), PK_BOTTOM, PK_S, O.tr.a, O.tr.b);
+  } else if (ph === 'burst'){
+    const f = O.ph0 < 160 ? 4 : O.ph0 < 320 ? 5 : 6;
+    spriteAt(`t_${tier}_${f}`, PK_CX(), PK_BOTTOM + (f === 6 ? 4 : 0), PK_S);
+  } else if (ph === 'ready'){
+    text(O.kind === 'fuse' ? 'A NEW PLAYER' : 'WHAT DID YOU GET?', W / 2, 90, '#ffffff', 8, 'center');
+  } else if (ph === 'spin' || ph === 'hold'){
+    const n = O.sp.length, slotW = (W - 16) / n, k = Math.min(n === 1 ? .95 : .9, (W - 16) / (n * 200)), cy = 124;
+    O.sp.forEach((s, i) => drawSpinCard(s, 8 + slotW * (i + .5), cy, k));
+    if (ph === 'hold'){
+      const pulse = .6 + .4 * Math.sin(O.t / 240);
+      text('TAP TO CONTINUE', W / 2, H - 20, `rgba(255,255,255,${.7 + .3 * pulse})`, 8, 'center');
+      if (O.ph0 > 380) btns.push({ x:0, y:0, w:W, h:H, fn: openAdvance });
     }
-    const top = bs.reduce((m, b) => b.ti > m.ti ? b : m, bs[0]), rgbT = top.ti >= 5 ? '255,77,77' : top.ti >= 4 ? '255,210,63' : top.ti >= 3 ? '178,107,255' : '255,255,255';
-    rays(bs.every(b => b.landed) ? 1 : clamp(top.t / top.dur, 0, 1) * (top.ti + 1) / 6, rgbT);
-    bs.forEach((b, k) => {
-      const x = x0 + k * (bw + gp), mx = x + bw / 2, f = clamp(b.t / b.dur, 0, 1), eased = 1 - Math.pow(1 - f, 2.1), ang = eased * b.turns * Math.PI, sx = Math.abs(Math.cos(ang)), tcol = TIERS[b.ti].col;
-      if (b.landed){
-        drawCard(x, y0, b.c, bw, bh, OPEN.t);
-        const fl = clamp(b.flash / 420, 0, 1); if (fl > 0) R(x - 3, y0 - 3, bw + 6, bh + 6, `rgba(255,255,255,${fl * .55})`);
-        if (b.ti >= 2) ptitle(OPEN.per >= 4 ? ({ LEGENDARY:'LEGEND', UNCOMMON:'UNCOM' }[TIER_LABEL[b.ti]] || TIER_LABEL[b.ti]) : TIER_LABEL[b.ti], mx, y0 - 14, OPEN.per >= 4 ? 6 : b.ti >= 4 ? 8 : 7, tcol);
-      } else {
-        const face = Math.cos(ang) > 0, cw2 = Math.max(2, Math.round(bw * sx));
-        if (face){ g.save(); g.translate(mx, 0); g.scale(sx, 1); g.translate(-mx, 0); drawCard(x, y0, b.c, bw, bh, OPEN.t); g.restore(); }
-        else { R(mx - cw2 / 2, y0, cw2, bh, mix(UI.blueDD, tcol, .45)); g.strokeStyle = '#fff'; g.strokeRect(mx - cw2 / 2 + .5, y0 + .5, cw2 - 1, bh - 1); }
-        if (b.ti >= 3){ const gl = f * (b.ti - 2) / 3; for (let i = 4; i > 0; i--) R(x - i * 2, y0 - i * 2, bw + i * 4, bh + i * 4, `rgba(${rgbT},${.05 * gl})`); }
-      }
-    });
-    if (bs.every(b => b.landed)){
-      const ready = bs.every(b => b.flash < 260);
-      if (bs.every(b => b.flash <= 0)) ptitle('TAP', cx, y0 + bh + 12, 8, UI.ice);
-      btns.push({ x:0, y:0, w:W, h:H, fn: () => { if (ready) OPEN.bnext = true; } });
-    }
-    return;
-  }
-  const w = 76, h = 107;
-  if (!sp){
-    // the pack itself, waiting: tap to tear it open
-    const bob = Math.sin(OPEN.t / 300) * 3;
-    rays(.3, '255,255,255');
-    if (OPEN.kind === 'trade' || OPEN.i > 0){
-      // a face-down card
-      uiBox(cx - w / 2, cy - h / 2 + bob, w, h, mix(UI.blueDD, P2.col, .35));
-      g.fillStyle = P2.col2; g.beginPath(); g.arc(cx, cy + bob, 14, 0, 7); g.fill();
-      g.fillStyle = UI.navy; g.fillRect(cx - 14, cy + bob - 1, 28, 2);
-    } else drawPackArt(cx - w / 2, cy - h / 2 + bob, w, h, OPEN.kind, true, OPEN.t);
-    const pulse = .6 + .4 * Math.sin(OPEN.t / 220);
-    ptitle(OPEN.i === 0 && OPEN.kind !== 'trade' ? 'TAP TO OPEN' : 'TAP TO REVEAL', cx, cy + h / 2 + 8, 9, `rgba(255,255,255,${.7 + .3 * pulse})`);
-    btns.push({ x: cx - w / 2, y: cy - h / 2, w, h, fn: revealNext });
-    return;
-  }
-
-  // the spin: the card turns edge-on over and over, faster near the end
-  const f = clamp(sp.t / sp.dur, 0, 1), eased = 1 - Math.pow(1 - f, 2.1);
-  const ang = eased * sp.turns * Math.PI, sx = Math.abs(Math.cos(ang)), tc = TIERS[sp.ti].col;
-  const rgb = sp.ti >= 5 ? '255,77,77' : sp.ti >= 4 ? '255,210,63' : sp.ti >= 3 ? '178,107,255' : '255,255,255';
-  rays(sp.landed ? 1 : f * (sp.ti + 1) / 6, rgb);
-  if (sp.ti >= 3){                                          // glow builds as the better cards spin
-    const gl = f * (sp.ti - 2) / 3;
-    for (let i = 6; i > 0; i--) R(cx - w / 2 - i * 2, cy - h / 2 - i * 2, w + i * 4, h + i * 4, `rgba(${rgb},${.05 * gl})`);
-  }
-  const cw = Math.max(2, Math.round(w * sx));
-  if (sp.landed){
-    drawCard(cx - w / 2, cy - h / 2, OPEN.cards[OPEN.i], w, h, OPEN.t);
-    const fl = clamp(sp.flash / 420, 0, 1);
-    if (fl > 0) R(cx - w / 2 - 4, cy - h / 2 - 4, w + 8, h + 8, `rgba(255,255,255,${fl * .55})`);
-    if (sp.ti >= 2) ptitle(`${TIER_LABEL[sp.ti]} PULL!`, cx, cy - h / 2 - 18, sp.ti >= 4 ? 12 : 10, tc);
-    if (sp.flash <= 0) ptitle('TAP', cx, cy + h / 2 + 8, 8, UI.ice);
-    btns.push({ x:0, y:0, w:W, h:H, fn: () => { if (sp.flash < 260) sp.next = true; } });
-  } else {
-    const face = Math.cos(ang) > 0;                         // front or back of the card
-    if (face){ g.save(); g.translate(cx, 0); g.scale(sx, 1); g.translate(-cx, 0);
-      drawCard(cx - w / 2, cy - h / 2, OPEN.cards[OPEN.i], w, h, OPEN.t); g.restore(); }
-    else { R(cx - cw / 2, cy - h / 2, cw, h, mix(UI.blueDD, tc, .45));
-      g.strokeStyle = '#fff'; g.strokeRect(cx - cw / 2 + .5, cy - h / 2 + .5, cw - 1, h - 1); }
-  }
-}
-
-// ── the shop ───────────────────────────────────────────────────────────────
-let shopSel = 'gold';
-
-// a foil pack: crimped wrapper, a real player's face in a burst of light, the name on a ribbon
-const PACK_FACE = { bronze:5, silver:0, gold:10, diamond:17 };           // a rookie, a youngster, a veteran, a star
-function drawPackArt(x, y, w, h, key, on, t){
-  const Pk = PACKS[key], dark = mix(Pk.col, '#000000', .55), mid = Pk.col, lite = mix(Pk.col2, '#ffffff', .30);
-  // wrapper body: a smooth metallic gradient with the corners knocked off
-  R(x + 1, y, w - 2, h, '#05070d'); R(x, y + 1, w, h - 2, '#05070d');
-  const body = g.createLinearGradient(x, y, x + w, y + h);
-  body.addColorStop(0, lite); body.addColorStop(.35, mid); body.addColorStop(.7, dark); body.addColorStop(1, mix(dark, '#000000', .35));
-  g.fillStyle = body; g.fillRect(x + 1, y + 1, w - 2, h - 2);
-  // crimped top and bottom edges
-  for (let i = 0; i < w - 2; i += 3){
-    R(x + 1 + i, y + 1, 2, 4, i % 6 ? mix(lite, '#ffffff', .5) : mid);
-    R(x + 1 + i, y + h - 5, 2, 4, i % 6 ? dark : mix(dark, '#000000', .4));
-  }
-  R(x + 1, y + 5, w - 2, 1, mix(dark, '#000000', .3)); R(x + 1, y + h - 6, w - 2, 1, mix(lite, '#ffffff', .3));
-  // the window: a burst of light and a face
-  const wx = x + 5, wy = y + 9, ww = w - 10, wh = Math.round(h * .50);
-  g.save(); g.beginPath(); g.rect(wx, wy, ww, wh); g.clip();
-  const bg = g.createRadialGradient(wx + ww / 2, wy + wh * .45, 3, wx + ww / 2, wy + wh * .45, ww * .8);
-  bg.addColorStop(0, mix(Pk.col2, '#ffffff', .6)); bg.addColorStop(.45, Pk.col2); bg.addColorStop(1, mix(dark, '#000000', .3));
-  g.fillStyle = bg; g.fillRect(wx, wy, ww, wh);
-  for (let r = 0; r < 10; r++){                                       // rays
-    const a = r / 10 * Math.PI * 2 + t / 2400;
-    g.fillStyle = 'rgba(255,255,255,.13)'; g.beginPath(); g.moveTo(wx + ww / 2, wy + wh * .5);
-    g.lineTo(wx + ww / 2 + Math.cos(a) * ww, wy + wh * .5 + Math.sin(a) * ww); g.lineTo(wx + ww / 2 + Math.cos(a + .2) * ww, wy + wh * .5 + Math.sin(a + .2) * ww); g.fill();
-  }
-  const fi = PACK_FACE[key];
-  if (PORT[fi] && PORT[fi]._ok){
-    const cv = portraitTinted(fi, { c1: mix(Pk.col, '#101a40', .35) }, false), sc = (wh - 3) / (cv.height * .72), dw = cv.width * sc, dh = cv.height * sc;   // the whole head, cap to chin, fits the window
-    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-    g.drawImage(cv, Math.round(wx + (ww - dw) / 2), wy + 3, Math.round(dw), Math.round(dh));
-    g.imageSmoothingEnabled = false;
-  }
-  // a shine that sweeps across the window
-  for (let i = 0; i < wh; i++){
-    const sx = wx + ((i * 1.4 + t / 36) % (ww + wh)) - wh * .5;
-    if (sx > wx && sx < wx + ww - 2) R(sx, wy + i, 3, 1, 'rgba(255,255,255,.22)');
+  } else if (ph === 'done'){
+    drawOpenDone(O);
   }
   g.restore();
-  R(wx - 1, wy - 1, ww + 2, 1, '#05070d'); R(wx - 1, wy + wh, ww + 2, 1, '#05070d'); R(wx - 1, wy, 1, wh, '#05070d'); R(wx + ww, wy, 1, wh, '#05070d');
-  // the ribbon with the name, and a "3 cards" star
-  const ry = wy + wh + 4, rh = Math.max(16, h - (ry - y) - 11);
-  R(x + 2, ry, w - 4, rh, '#0b1230'); R(x + 2, ry, w - 4, 1, lite); R(x + 2, ry + rh - 1, w - 4, 1, dark);
-  const fs = Math.min(10, Math.max(7, w / 9));
-  ptitle(Pk.n.toUpperCase(), x + w / 2, ry + 2, fs, '#ffffff');
-  text('PACK', x + w / 2, ry + 3 + fs * 1.15, lite, Math.max(5, fs * .75), 'center');
-  R(x + w - 19, y + 8, 16, 11, '#e63946'); R(x + w - 19, y + 8, 16, 1, '#ff8f98');
-  text('x3', x + w - 11, y + 10, '#ffffff', 6, 'center');
-  // little sparkles
-  for (let i = 0; i < 4; i++){
-    const sp = (t / 500 + i * .27) % 1, sx = x + 6 + ((i * 53) % (w - 14)), sy = wy + 6 + ((i * 29) % Math.max(10, wh - 14));
-    if (sp < .35){ const a = Math.sin(sp / .35 * Math.PI); R(sx - 1, sy, 3, 1, `rgba(255,255,255,${a})`); R(sx, sy - 1, 1, 3, `rgba(255,255,255,${a})`); }
-  }
-  g.strokeStyle = on ? '#ffffff' : mix(Pk.col, '#000000', .1); g.lineWidth = 1; g.strokeRect(x + .5, y + .5, w - 1, h - 1);
+}
+function drawOpenDone(O){
+  const cx = W / 2, cards = O.revealed, n = cards.length;
+  const top = cards.reduce((m, c) => Math.max(m, tierIdx(c)), 0);
+  const ttl = top >= 4 ? `${TIER_LABEL[top]} PULL!` : O.kind === 'pack' ? 'ALL YOURS!' : O.kind === 'fuse' ? 'NEW PLAYER!' : 'YOUR NEW CARD';
+  ptitle(ttl, cx, 6, 13, top >= 4 ? TIERS[top].col : UI.yellow);
+  if (O.bonus) text(O.bonus, cx, 23, '#c8ffd8', 6, 'center', W - 20);
+  const gap = 5, availH = H - 34 - 34;
+  let cw = 24; for (let t = 74; t >= 24; t -= 2){ const pr = Math.min(n, Math.floor((W - 20) / (t + gap))); if (pr > 0 && Math.ceil(n / pr) * (Math.round(t * 1.4) + gap) <= availH){ cw = t; break; } }
+  const ch = Math.round(cw * 1.4), per = Math.min(n, Math.floor((W - 20) / (cw + gap))), rows = Math.ceil(n / per);
+  const x0 = cx - (per * (cw + gap) - gap) / 2, y0 = O.bonus ? 34 : 30;
+  cards.forEach((c, i) => {
+    const x = x0 + (i % per) * (cw + gap), y = y0 + Math.floor(i / per) * (ch + gap);
+    drawCard(x, y, c, cw, ch, O.t);
+    if (O.newIds.has(c.id)){ R(x - 1, y + 3, 18, 8, UI.red); text('NEW', x + 8, y + 4, '#ffffff', 5, 'center'); }
+  });
+  const by = H - 26, bn = 4, bw = Math.floor((W - 16 - (bn - 1) * 4) / bn);
+  const sellable = cards.filter(c => G.cards.includes(c) && !inUse(c.id)), sv = sellable.reduce((s, c) => s + sellPrice(c), 0);
+  if (O.kind === 'pack' || O.kind === 'trade'){
+    button(8, by, bw, 20, O.sellArmed ? `SURE? +${fmt(sv)}` : sv ? `SELL ALL ${fmt(sv)}` : 'SELL ALL', () => {
+      if (!sv) return;
+      if (!O.sellArmed){ O.sellArmed = true; return; }
+      G.coins += sv; const ids = new Set(sellable.map(c => c.id)); G.cards = G.cards.filter(c => !ids.has(c.id)); O.revealed = O.revealed.filter(c => !ids.has(c.id)); O.sellArmed = false; save();
+    }, O.sellArmed ? '#4a2030' : sv ? '#1a2030' : '#161b26', sv ? '#fff' : '#8896b3', 6);
+  } else button(8, by, bw, 20, 'MY CARDS', () => { OPEN = null; menu = 'cards'; }, '#1a2030', '#fff', 7);
+  button(8 + (bw + 4), by, bw, 20, 'FUSE', () => { OPEN = null; menu = 'shop'; shopTab = 'fuse'; fuseSel = []; }, '#1a2030', '#fff', 7);
+  const again = O.again, cost = againCost(again), can = again && G.coins >= cost;
+  if (again) button(8 + 2 * (bw + 4), by, bw, 20, can ? `AGAIN ${fmt(cost)}` : 'NO COINS', () => { if (can) openAgain(again); }, can ? '#2f6fe0' : '#161b26', '#fff', 6);
+  else button(8 + 2 * (bw + 4), by, bw, 20, 'SHOP', () => { OPEN = null; menu = 'shop'; }, '#1a2030', '#fff', 7);
+  button(8 + 3 * (bw + 4), by, bw, 20, 'DONE', openLeave, '#2a6a3a', '#fff', 7);
 }
 
+// ── the shop: a row of tabs ────────────────────────────────────────────────
+let shopTab = 'featured', shopMsg = '', shopMsgT = 0, fuseMode = 'face', fuseSel = [], fuseScroll = 0, fuseMax = 0, fuseRect = null, fuseRows = [];
+function shopHeader(){
+  R(0, 0, W, 21, UI.blueDD); R(0, 21, W, 2, '#ffffff');
+  button(6, 3, 44, 15, 'BACK', () => menu = 'title', '#1a2030', '#fff', 7);
+  ptitle('SHOP', 58, 5, 10, '#ffffff', 'left');
+  coinText(G.coins, W - 8, 6, 9, UI.yellow, 'right');
+  const tabs = [['featured', 'FEATURED'], ['packs', 'PACKS'], ['position', 'POSITION'], ['fuse', 'FUSE'], ['trade', 'TRADE-UP'], ['cards', 'MY CARDS']];
+  const tw = Math.floor((W - 16 - (tabs.length - 1) * 3) / tabs.length);
+  tabs.forEach(([k, l], i) => {
+    const x = 8 + i * (tw + 3), on = shopTab === k;
+    if (on) R(x, 26, tw, 14, UI.yellow); else uiBox(x, 26, tw, 14);
+    text(l, x + tw / 2, 29, on ? '#241a00' : '#ffffff', 6, 'center', tw - 3);
+    btns.push({ x, y:26, w:tw, h:14, fn: () => { if (k === 'trade'){ menu = 'trade'; tradeSel = []; } else if (k === 'cards') menu = 'cards'; else { shopTab = k; fuseSel = []; fuseScroll = 0; } } });
+  });
+  if (shopMsgT > 0){ shopMsgT -= 16; const w = 200; R(W / 2 - w / 2, 44, w, 14, 'rgba(15,31,85,.95)'); text(shopMsg, W / 2, 47, UI.yellow, 7, 'center', w - 6); }
+}
+const hoursLeftToday = () => { const n = new Date(), m = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1); return m - n; };
+const hm = ms => `${Math.floor(ms / 3600000)}H ${String(Math.floor(ms % 3600000 / 60000)).padStart(2, '0')}M`;
+
+function drawFeatured(){
+  const y0 = 44, gap = 6, lw = Math.floor((W - 16 - gap) * .5), rw = W - 16 - gap - lw, ph = 66;
+  // the free daily pack
+  const left = (G.freeAt || 0) - Date.now(), ready = left <= 0;
+  uiBox(8, y0, lw, ph, ready ? '#1d6b3a' : UI.blueDD);
+  ptitle('FREE DAILY PACK', 14, y0 + 5, 8, '#ffffff', 'left');
+  text('A BRONZE PACK WITH 5 CARDS', 70, y0 + 17, UI.ice, 5.5, 'left', lw - 76);
+  spriteAt('p_bronze', 38, y0 + ph - 5, 44 / 237);
+  if (ready) button(70, y0 + 28, lw - 70 - 6, 22, 'CLAIM NOW', freePack, '#2f6fe0', '#fff', 8);
+  else {
+    text(`NEXT ONE IN ${hm(left)}`, 70, y0 + 30, UI.ice, 6, 'left', lw - 76);
+    const fw = lw - 82; R(70, y0 + 42, fw, 6, UI.navy); R(70, y0 + 42, Math.round(fw * clamp(1 - left / 86400000, 0, 1)), 6, UI.yellow);
+  }
+  // this week: the streak
+  const sx = 8 + lw + gap; uiBox(sx, y0, rw, ph);
+  ptitle('THIS WEEK', sx + 6, y0 + 5, 8, '#ffffff', 'left');
+  const si = streakInfo();
+  text('FREE GOLD PACK ON DAY 7', sx + 6, y0 + 17, UI.ice, 5.5, 'left', rw - 10);
+  const bw = Math.floor((rw - 12 - 6 * 3) / 7);
+  for (let d = 1; d <= 7; d++){
+    const x = sx + 6 + (d - 1) * (bw + 3), y = y0 + 27, done = d <= si.run, nxt = !si.claimedToday && d === si.next;
+    R(x, y, bw, 33, done ? '#2a3a8a' : UI.navy); if (nxt){ R(x, y, bw, 1, UI.yellow); R(x, y + 32, bw, 1, UI.yellow); R(x, y, 1, 33, UI.yellow); R(x + bw - 1, y, 1, 33, UI.yellow); }
+    text('DAY ' + d, x + bw / 2, y + 3, done || nxt ? '#fff' : UI.ice, 5, 'center');
+    text(d === 7 ? 'GOLD' : '+' + STREAK_COINS[d - 1], x + bw / 2, y + 13, UI.yellow, d === 7 ? 5.5 : 5.5, 'center', bw - 2);
+    if (done) text('GOT', x + bw / 2, y + 23, '#7fd38f', 5, 'center');
+  }
+  // hot deals
+  const y1 = y0 + ph + 5, hh = H - 4 - y1; uiBox(8, y1, W - 16, hh);
+  ptitle('HOT DEALS', 16, y1 + 5, 8, '#ffffff', 'left');
+  text(`NEW DEALS IN ${hm(hoursLeftToday())}`, W - 16, y1 + 7, UI.ice, 5.5, 'right');
+  const D = dealsToday(), sw = Math.floor((W - 16 - 12) / 3), cw = clamp(Math.round(sw * .38), 34, 58), chh = Math.round(cw * 1.4);
+  D.cards.forEach((c, i) => {
+    const x = 14 + i * (sw + 2), y = y1 + 20, sold = D.sold[i], ov = ovrOf(c), price = dealPrice(c), full = Math.round(valueOf(ov)), off = ov >= 100 ? 10 : 20;
+    drawCard(x, y, c, cw, chh, frame); if (sold) R(x, y, cw, chh, 'rgba(8,12,30,.65)');
+    const ix = x + cw + 6, iw = sw - cw - 10;
+    const fs = `${full.toLocaleString()}`; text(fs, ix, y + 2, '#ff9a8a', 6); R(ix, y + 5, Math.min(iw, fs.length * 6 * .62 * 1.0 + 1), 1, '#ff9a8a');
+    coinText(price, ix, y + 13, 8, sold ? '#8896b3' : UI.yellow);
+    R(ix, y + 26, 32, 9, UI.red); text(`${off}% OFF`, ix + 16, y + 27, '#ffffff', 5, 'center');
+    const can = G.coins >= price && !sold;
+    button(ix, y + 40, Math.min(iw, 62), 16, sold ? 'SOLD' : 'BUY', () => buyDeal(i), can ? '#2f6fe0' : '#161b26', '#fff', 7);
+    if (!sold && !can) text(`NEED ${(price - G.coins).toLocaleString()}`, ix, y + 58, '#ffd2ce', 5, 'left', iw);
+  });
+}
+function drawPacksTab(){
+  const gap = 6, y0 = 44, pw = Math.floor((W - 16 - gap * 3) / 4), th = 118;
+  TIER_KEYS.forEach((k, i) => {
+    const x = 8 + i * (pw + gap), Pk = PACKS[k];
+    uiBox(x, y0, pw, th);
+    spriteAt('p_' + k, x + pw / 2, y0 + th - 8, Math.min(100 / 237, (pw - 14) / 190));
+    coinText(Pk.price, x + pw / 2, y0 + th + 5, 8, '#ffffff', 'center');
+    BULK.forEach(([n, mult], j) => {
+      const cost = Math.round(Pk.price * mult * n), can = G.coins >= cost, by = y0 + th + 18 + j * 17;
+      button(x, by, pw, 15, n === 1 ? 'BUY 1' : `BUY ${n}  ${cost.toLocaleString()}  -${Math.round((1 - mult) * 100)}%`, () => buyPack(k, n), can ? '#2f6fe0' : '#161b26', '#fff', n === 1 ? 6 : 5.5);
+    });
+  });
+}
+function drawPositionTab(){
+  const gap = 6, y0 = 44, pw = Math.floor((W - 16 - gap * 3) / 4), th = 176;
+  POSGROUPS.forEach((grp, i) => {
+    const x = 8 + i * (pw + gap), today = grp.k === 'today';
+    uiBox(x, y0, pw, th, today ? '#1b3a96' : UI.blueDD); if (today) R(x + 2, y0 + 2, pw - 4, 1, UI.yellow);
+    ptitle(grp.n, x + pw / 2, y0 + 6, 7.5, '#ffffff'); text(grp.sub, x + pw / 2, y0 + 18, UI.ice, 5, 'center', pw - 4);
+    const sb = y0 + 24 + 82, s = Math.min(78 / 237, (pw - 12) / 171), sp = spriteAt('p_gold', x + pw / 2, sb, s);
+    if (today && sp){ const px = x + pw / 2 - sp.w * .32, py = sb - sp.h * .70, pw2 = sp.w * .64, ph2 = sp.h * .30;
+      R(px, py, pw2, ph2, '#fff'); R(px + 1, py + 1, pw2 - 2, ph2 - 2, '#101a4a'); ptitle(todayPos(), px + pw2 / 2, py + ph2 * .22, Math.round(ph2 * .55), '#fff3d0'); }
+    POSTIERS.forEach((t, j) => {
+      const cost = posPackPrice(grp, t), can = G.coins >= cost, by = y0 + 112 + j * 21;
+      button(x + 3, by, pw - 6, 20, `${t.toUpperCase()}  ${cost.toLocaleString()}`, () => buyPosPack(grp.k, t), can ? '#2f6fe0' : '#161b26', '#fff', 6);
+    });
+  });
+}
+function drawFuseTab(){
+  const y0 = 44, gap = 6, lw = Math.floor((W - 16 - gap) * .52), rx = 8 + lw + gap, rw = W - 8 - rx, ph = H - 4 - y0;
+  uiBox(8, y0, lw, ph); uiBox(rx, y0, rw, ph);
+  // the two ways to fuse
+  [['face', 'SAME FACE +5'], ['pos', 'SAME POS +3']].forEach(([k, l], i) => {
+    const bw = Math.floor((lw - 14) / 2), x = 11 + i * (bw + 3), on = fuseMode === k;
+    if (on) R(x, y0 + 5, bw, 14, UI.yellow); else uiBox(x, y0 + 5, bw, 14);
+    text(l, x + bw / 2, y0 + 8, on ? '#241a00' : '#ffffff', 6, 'center', bw - 2);
+    btns.push({ x, y:y0 + 5, w:bw, h:14, fn: () => { fuseMode = k; fuseSel = []; fuseScroll = 0; } });
+  });
+  const cw = clamp(Math.floor((lw - 20 - 2 * 12) / 3), 34, 54), chh = Math.round(cw * 1.4), sy = y0 + 28;
+  const a = cardById(fuseSel[0]), b = cardById(fuseSel[1]), ok = canFuse(a, b, fuseMode), x1 = 12, x2 = 12 + cw + 12, x3 = 12 + 2 * (cw + 12);
+  [[a, x1], [b, x2]].forEach(([c, x]) => { if (c) drawCard(x, sy, c, cw, chh, frame); else { uiBox(x, sy, cw, chh, UI.navy); text('PICK', x + cw / 2, sy + chh / 2 - 3, UI.ice, 6, 'center'); } });
+  text('+', x1 + cw + 6, sy + chh / 2 - 4, '#fff', 10, 'center'); text('=', x2 + cw + 6, sy + chh / 2 - 4, '#fff', 10, 'center');
+  uiBox(x3, sy, cw, chh, UI.navy);
+  if (a && b){ const r = fuseRating(a, b, fuseMode); ptitle(String(r), x3 + cw / 2, sy + chh / 2 - 12, 15, colOf(r)); text('NEW PLAYER', x3 + cw / 2, sy + chh / 2 + 8, UI.ice, 5, 'center', cw - 2); }
+  else text('?', x3 + cw / 2, sy + chh / 2 - 8, UI.ice, 16, 'center');
+  const note = a && b && inUse(a.id) && inUse(b.id) ? 'ONE OF THEM MUST BE ON THE BENCH' : `BOTH IN THE SAME RANGE${a ? ' (' + bandText(bandOf(ovrOf(a))) + ')' : ''}`;
+  text(note, 8 + lw / 2, sy + chh + 7, a && b && inUse(a.id) && inUse(b.id) ? '#ffd2ce' : UI.ice, 5.5, 'center', lw - 8);
+  button(12, y0 + ph - 26, lw - 8, 20, 'FUSE', () => {
+    if (!ok) return; const nc = doFuse(a, b, fuseMode); fuseSel = []; if (nc) startOpen({ kind:'fuse', batches:[{ tier:null, cards:[nc] }], pre:true, from:'fuse' });
+  }, ok ? '#2f6fe0' : '#161b26', '#fff', 8);
+  // the list of what you could fuse
+  ptitle('YOUR MATCHES', rx + 6, y0 + 5, 7.5, '#fff', 'left');
+  fuseRows = [];
+  const groups = fuseGroups(fuseMode), ly = y0 + 18, lh = ph - 22, RH = 11;
+  const rows = []; groups.forEach(gr => { rows.push({ head:gr }); gr.list.forEach(c => rows.push({ c, gr })); });
+  fuseMax = Math.max(0, rows.length * RH - lh); fuseScroll = clamp(fuseScroll, 0, fuseMax); fuseRect = { x:rx, y:ly, w:rw, h:lh };
+  g.save(); g.beginPath(); g.rect(rx + 3, ly, rw - 6, lh); g.clip();
+  if (!rows.length) text('NO PAIRS YET', rx + rw / 2, ly + 20, UI.ice, 6, 'center', rw - 8);
+  rows.forEach((r, i) => {
+    const y = ly + i * RH - fuseScroll; if (y < ly - RH || y > ly + lh) return;
+    if (r.head){
+      const gr = r.head, label = fuseMode === 'face' ? `FACE ${gr.k.split('|')[0].replace(/^[fx]/, '')}` : gr.k.split('|')[0].slice(1);
+      R(rx + 4, y, rw - 8, RH - 1, '#223a8a'); text(`${label}  ${bandText(gr.band)}`, rx + 7, y + 2, UI.yellow, 5.5, 'left', rw - 14);
+    } else {
+      const c = r.c, sel = fuseSel.includes(c.id), key = a ? fuseKey(a, fuseMode) : null, dim = a && !sel && fuseKey(c, fuseMode) !== key;
+      if (sel) R(rx + 4, y, rw - 8, RH - 1, 'rgba(255,210,63,.28)');
+      textb(String(ovrOf(c)), rx + 8, y + 2, dim ? '#6c7aa8' : colOf(ovrOf(c)), 6);
+      text(c.pos, rx + 26, y + 2, dim ? '#6c7aa8' : UI.ice, 5.5); text(c.name, rx + 44, y + 2, dim ? '#6c7aa8' : '#fff', 5.5, 'left', rw - 74);
+      text('L' + (c.lvl || 0), rx + rw - 8, y + 2, dim ? '#6c7aa8' : UI.ice, 5, 'right');
+      const vy = Math.max(y, ly), vh = Math.min(y + RH, ly + lh) - vy;
+      if (vh > 4) fuseRows.push({ x:rx + 4, y:vy, w:rw - 8, h:vh, fn: () => {
+        if (sel) fuseSel = fuseSel.filter(id => id !== c.id);
+        else if (fuseSel.length === 1 && canFuseKey(cardById(fuseSel[0]), c)) fuseSel.push(c.id);
+        else fuseSel = [c.id];
+      } });
+    }
+  });
+  g.restore();
+}
+const canFuseKey = (a, c) => a && a.id !== c.id && fuseKey(a, fuseMode) === fuseKey(c, fuseMode);
 function drawShop(){
   btns = [];
-  uiBg();
-  // ── the bar across the top: where you are, what you can reach, what you have ──
-  R(0, 0, W, 24, UI.blueDD); R(0, 24, W, 2, '#ffffff');
-  button(6, 4, 52, 16, 'BACK', () => menu = 'title', '#1a2030', '#fff', 7);
-  ptitle('SHOP', 68, 6, 11, '#ffffff', 'left');
-  coinText(G.coins, W - 8, 8, 9, UI.yellow, 'right');
-  button(W - 188, 4, 62, 16, 'MY CARDS', () => menu = 'cards', '#1a2030', '#fff', 7);
-  button(W - 252, 4, 60, 16, 'TRADE 5→1', () => { menu = 'trade'; tradeSel = []; }, '#1a2030', '#fff', 7);
-
-  // ── the free daily pack: one clear strip ──
-  const left = (G.freeAt || 0) - Date.now(), ready = left <= 0;
-  uiBox(8, 31, W - 16, 24, ready ? '#1d6b3a' : UI.blueDD);
-  ptitle('FREE DAILY PACK', 16, 36, 8, ready ? '#ffffff' : UI.ice, 'left');
-  if (ready){
-    text('a free bronze pack is waiting for you', 118, 38, '#c8ffd8', 7);
-    button(W - 98, 34, 84, 18, 'OPEN FREE', freePack, '#2f6fe0', '#fff', 8);
-  } else {
-    const hrs = Math.floor(left / 3600000), mins = Math.floor(left % 3600000 / 60000);
-    text(`next one in ${hrs}h ${String(mins).padStart(2, '0')}m`, 118, 38, UI.ice, 7);
-    const fw = 90, fx = W - fw - 16;
-    R(fx, 41, fw, 6, UI.navy); R(fx, 41, Math.round(fw * clamp(1 - left / 86400000, 0, 1)), 6, UI.yellow);
-  }
-
-  // ── the four packs, each with its price on it ──
-  const keys = Object.keys(PACKS), gap = 6, pw = Math.floor((W - 16 - gap * 3) / 4), ph = 92, py = 60;
-  keys.forEach((k, i) => {
-    const x = 8 + i * (pw + gap), on = shopSel === k, Pk = PACKS[k];
-    const lift = on ? -2 + Math.sin(frame / 14) * 1.2 : 0;
-    uiBox(x, py + lift, pw, ph, on ? UI.blueD : UI.blueDD);
-    if (on){ R(x + 2, py + lift + 2, pw - 4, 2, UI.yellow); }
-    drawPackArt(x + 6, py + lift + 8, pw - 12, ph - 30, k, on, frame);
-    coinText(Pk.price, x + pw / 2, py + lift + ph - 17, 9, on ? UI.yellow : '#ffffff', 'center');
-    text('3 cards', x + pw / 2, py + lift + ph - 7, UI.ice, 6, 'center');
-    btns.push({ x, y:py - 2, w:pw, h:ph + 4, fn: () => shopSel = k });
-    if (on){ R(x + pw / 2 - 4, py - 7 + Math.sin(frame / 10) * 1.5, 8, 2, UI.yellow); R(x + pw / 2 - 2, py - 5 + Math.sin(frame / 10) * 1.5, 4, 2, UI.yellow); }
-  });
-
-  // ── what is in the selected pack: the odds, as six coloured chips ──
-  const P3 = PACKS[shopSel], iy = py + ph + 6;
-  uiBox(8, iy, W - 16, 44);
-  ptitle(`${P3.n.toUpperCase()} PACK ODDS`, 16, iy + 5, 7, P3.col2, 'left');
-  const cw6 = Math.floor((W - 16 - 16 - 5 * 4) / 6);
-  P3.p.forEach((pp, ti) => {
-    const x = 16 + ti * (cw6 + 4), T = TIERS[ti];
-    R(x, iy + 16, cw6, 24, UI.navy); R(x, iy + 16, cw6, 3, T.col);
-    text(`${Math.max(pp * 100 < 1 ? Math.round(pp * 1000) / 10 : Math.round(pp * 100), 0)}%`, x + cw6 / 2, iy + 21, '#ffffff', 7, 'center');
-    text(TIER_LABEL[ti], x + cw6 / 2, iy + 29, T.col, 5, 'center', cw6 - 4);
-    text(`${TIER_LO[ti]}-${TIER_HI[ti]}`, x + cw6 / 2, iy + 34, UI.ice, 5, 'center');
-  });
-
-  // ── buy one, five or ten: always the whole row, and it says why a button is off ──
-  const by = iy + 50, bw3 = Math.floor((W - 16 - 8) / 3);
-  BULK.forEach(([n, mult], i) => {
-    const cost = Math.round(P3.price * mult * n), can = G.coins >= cost, x = 8 + i * (bw3 + 4);
-    button(x, by, bw3, 22, `BUY ${n}  ·  ${cost.toLocaleString()}`, () => buyPack(shopSel, n), can ? '#2f6fe0' : '#161b26', '#fff', 8);
-    if (mult < 1) { R(x + bw3 - 30, by - 4, 30, 9, UI.green); text(`SAVE ${Math.round((1 - mult) * 100)}%`, x + bw3 - 15, by - 3, '#ffffff', 5, 'center'); }
-    if (!can) text(`need ${(cost - G.coins).toLocaleString()} more`, x + bw3 / 2, by + 24, '#ffd2ce', 6, 'center');
-    else text(`${n * 3} cards`, x + bw3 / 2, by + 24, UI.ice, 6, 'center');
-  });
+  uiBg(); shopHeader();
+  if (shopTab === 'featured') drawFeatured(); else if (shopTab === 'packs') drawPacksTab(); else if (shopTab === 'position') drawPositionTab(); else if (shopTab === 'fuse') drawFuseTab();
 }
 
 // ── the collection ─────────────────────────────────────────────────────────
@@ -3992,10 +4180,9 @@ function benchTrade(){
   if (give.length < TRADE_N || give.length % TRADE_N || give.some(c => inUse(c.id))) { benchSel = []; return; }
   const ti = tierIdx(give[0]), count = give.length / TRADE_N;
   if (give.some(c => tierIdx(c) !== ti) || ti >= 5){ benchSel = []; return; }
+  const cards = []; for (let k = 0; k < count; k++) cards.push(makeCardAt(tradeRating(give.slice(k * TRADE_N, (k + 1) * TRADE_N))));
   G.cards = G.cards.filter(c => !benchSel.includes(c.id));
-  const cards = []; for (let k = 0; k < count; k++) cards.push(rollCard('bronze', ti + 1));
-  OPEN = { kind:'trade', cards, i:0, t:0, spin:null, revealed:[], from:'bench', per: count > 1 ? count : 1, bspin:null };
-  benchSel = []; menu = 'open'; save();
+  benchSel = []; startOpen({ kind:'trade', batches:[{ tier:null, cards }], from:'bench' }); save();
 }
 function myCards(){
   let list = G.cards.slice();
@@ -4052,82 +4239,85 @@ function drawCards(){
   button(W - 86, H - 22, 76, 18, 'LINEUP', () => menu = 'lineup', '#2f6fe0');
 }
 
-// ── one card: upgrade, sell, put him in the lineup ────────────────────────
+// ── one card: upgrade a stat, sell, put him in the lineup ─────────────────────────────────────────
 let upStat = 0, cardFlipA = 0;
+const linkedStat = (c, i) => !isPitcher(c) && (i === 2 || i === 3);                        // a hitter's speed IS his fielding: the two rows move together
+function upgradeCard(c){
+  if (c.lvl >= 10) return;
+  const cost = upCost(c); if (G.coins < cost) return;
+  const key = statsOf(c)[upStat][1];
+  if (linkedStat(c, upStat)){ if (c.fielding >= 120) return; G.coins -= cost; c.fielding = clamp(c.fielding + 1, 60, 120); c.speed = c.fielding; }
+  else { if (c[key] >= 120) return; G.coins -= cost; c[key] = clamp(c[key] + 2, 60, 120); }
+  c.lvl++; c.ovr = ovrOf(c); upFx = 600; save();
+}
 function drawCardView(){
   btns = [];
   uiBg();
   const c = cardById(colSel);
   if (!c){ menu = 'cards'; return; }
-  const cw = 92, chh = 129, cx = 18, cy = 40;
-  // the flip: the card turns edge-on, and the other side comes round
+  const wide = W >= 430, cw = 84, chh = 118, cx = 10, cy = 32;
+  R(0, 0, W, 21, UI.blueDD); R(0, 21, W, 2, '#ffffff');
+  button(6, 3, 44, 15, 'BACK', () => menu = 'cards', '#1a2030', '#fff', 7);
+  ptitle(c.name.toUpperCase(), 58, 5, 9, '#ffffff', 'left'); coinText(G.coins, W - 8, 6, 9, UI.yellow, 'right');
+  // the front, and (room permitting) the back with his level on it; on a narrow screen tap the card to turn it over
   cardFlipA += clamp((cardFlip ? 1 : 0) - cardFlipA, -.085, .085);
-  const fsx = Math.max(.03, Math.abs(Math.cos(cardFlipA * Math.PI)));
-  g.save(); g.translate(cx + cw / 2, 0); g.scale(fsx, 1); g.translate(-(cx + cw / 2), 0);
-  if (cardFlipA > .5) drawCardBack(cx, cy, c, cw, chh, frame); else drawCard(cx, cy, c, cw, chh, frame);
-  g.restore();
-  btns.push({ x:cx, y:cy, w:cw, h:chh, fn: () => cardFlip = !cardFlip });
-  textb(cardFlip ? 'tap for the front' : 'tap for his stats', cx + cw / 2, cy + chh + 4, '#5c6473', 6, 'center');
-
-  const x0 = cx + cw + 16;
-  textb(c.name, x0, 16, '#f2efe6', 11);
-  textb(`${c.pos} · overall ${ovrOf(c)}`, x0, 30, colOf(ovrOf(c)), 8);
-  // each rating, with the colour of its own band
+  if (wide){
+    drawCard(cx, cy, c, cw, chh, frame); drawCardBack(cx + cw + 6, cy, c, cw, chh, frame);
+  } else {
+    const fsx = Math.max(.03, Math.abs(Math.cos(cardFlipA * Math.PI)));
+    g.save(); g.translate(cx + cw / 2, 0); g.scale(fsx, 1); g.translate(-(cx + cw / 2), 0);
+    if (cardFlipA > .5) drawCardBack(cx, cy, c, cw, chh, frame); else drawCard(cx, cy, c, cw, chh, frame);
+    g.restore();
+    btns.push({ x:cx, y:cy, w:cw, h:chh, fn: () => cardFlip = !cardFlip });
+    text(cardFlip ? 'TAP FOR THE FRONT' : 'TAP: LEVEL AND STATS', cx + cw / 2, cy + chh + 4, '#cfe0ff', 5, 'center', cw + 10);
+  }
+  const x0 = wide ? cx + 2 * (cw + 6) + 8 : cx + cw + 10, pw = W - 8 - x0;
+  uiBox(x0, 28, pw, H - 32);
+  ptitle('UPGRADE', x0 + 6, 33, 8.5, '#fff', 'left');
+  text(`${c.pos}  OVERALL ${ovrOf(c)}  LEVEL ${c.lvl} OF 10`, x0 + 6, 46, colOf(ovrOf(c)), 6, 'left', pw - 10);
+  const maxed = c.lvl >= 10;
   statsOf(c).forEach(([lbl, key], i) => {
-    const y = 48 + i * 17, v = c[key];
-    textb(lbl, x0, y + 2, '#8e97a8', 7);
-    R(x0 + 28, y + 2, 80, 7, '#182030');
-    R(x0 + 28, y + 2, Math.round(80 * clamp((v - 55) / 65, 0, 1)), 7, colOf(v));
-    textb(String(v), x0 + 114, y, colOf(v), 9);
-    if (c.lvl < 10){
-      const on = upStat === i;
-      R(x0 + 136, y, 16, 11, on ? '#2f6fe0' : '#1a2230');
-      textb('+', x0 + 144, y + 2, on ? '#fff' : '#8e97a8', 8, 'center');
-      btns.push({ x:x0 + 136, y, w:16, h:11, fn: () => upStat = i });
-    }
+    const y = 58 + i * 25, v = c[key], sel = !maxed && (upStat === i || (linkedStat(c, i) && linkedStat(c, upStat))), step = linkedStat(c, i) ? 1 : 2;
+    R(x0 + 5, y, pw - 10, 22, sel ? '#2c3f95' : UI.navy);
+    if (sel){ R(x0 + 5, y, pw - 10, 1, UI.yellow); R(x0 + 5, y + 21, pw - 10, 1, UI.yellow); R(x0 + 5, y, 1, 22, UI.yellow); R(x0 + pw - 6, y, 1, 22, UI.yellow); }
+    if (sel) text('>', x0 + 8, y + 7, UI.yellow, 8);
+    textb(lbl, x0 + 20, y + 7, '#fff', 7);
+    textb(String(v), x0 + 52, y + 5, colOf(v), 10);
+    const bx = x0 + 74, bw = Math.max(20, pw - 74 - 62);
+    R(bx, y + 8, bw, 6, '#1b2a66'); R(bx, y + 8, Math.round(bw * clamp((v - 55) / 65, 0, 1)), 6, sel ? UI.yellow : '#6f8de8');
+    text(sel && !maxed ? `${v} > ${Math.min(120, v + step)}` : `+${step}`, x0 + pw - 9, y + 7, sel ? UI.yellow : '#8aa0d0', 7, 'right');
+    if (!maxed) btns.push({ x:x0 + 5, y, w:pw - 10, h:22, fn: () => upStat = i });
   });
-  // upgrading: ten levels, each one dearer than the last
-  const y2 = 120;
-  if (c.lvl < 10){
-    const cost = UP_COST[c.lvl], can = G.coins >= cost;
-    textb(`Upgrade ${c.lvl}/10 · +2 ${statsOf(c)[upStat][0]}`, x0, y2, '#b9c2d2', 7);
-    button(x0, y2 + 10, 110, 20, `${fmt(cost)} coins`, () => {
-      if (G.coins < cost) return;
-      G.coins -= cost; { const sk = statsOf(c)[upStat][1] === 'speed' ? 'fielding' : statsOf(c)[upStat][1]; c[sk] = clamp(c[sk] + 2, 60, 120); if (c.fielding != null) c.speed = c.fielding; }
-      c.lvl++; c.ovr = ovrOf(c); upFx = 600; save();
-    }, can ? '#2a6a3a' : '#1a1f2a', can ? '#fff' : '#5c6473');
-  } else textb('Fully upgraded', x0, y2 + 14, '#7fd38f', 8);
-
-  if (!inUse(c.id)){
-    button(x0 + 124, y2 + 10, 74, 20, `SELL ${fmt(sellPrice(c))}`, () => {
-      G.coins += sellPrice(c); G.cards = G.cards.filter(z => z.id !== c.id); menu = 'cards'; save();
-    }, '#4a2030');
-  } else textb('In your lineup', x0 + 124, y2 + 16, '#54d67a', 7);
-  button(10, H - 22, 70, 18, 'BACK', () => menu = 'cards');
+  const by = 162;
+  if (!maxed){
+    const cost = upCost(c), can = G.coins >= cost;
+    button(x0 + 5, by, pw - 10 - (inUse(c.id) ? 0 : 74), 22, `UPGRADE ${statsOf(c)[upStat][0]}  ${cost.toLocaleString()}`, () => upgradeCard(c), can ? '#2f6fe0' : '#161b26', '#fff', 7);
+  } else text('FULLY UPGRADED', x0 + 10, by + 7, '#7fd38f', 8);
+  if (!inUse(c.id)) button(x0 + pw - 5 - 70, by, 70, 22, `SELL ${fmt(sellPrice(c))}`, () => { G.coins += sellPrice(c); G.cards = G.cards.filter(z => z.id !== c.id); menu = 'cards'; save(); }, '#4a2030', '#fff', 7);
+  else text('IN YOUR LINEUP', x0 + pw - 10, by + 28, '#54d67a', 5.5, 'right');
+  text('EACH LEVEL ADDS TO ONE STAT', x0 + 6, by + 28, UI.ice, 5, 'left', pw - 10);
   if (upFx > 0){ upFx -= 16; R(cx - 3, cy - 3, cw + 6, chh + 6, `rgba(127,211,143,${clamp(upFx / 900, 0, .5)})`); }
 }
 let upFx = 0;
 
-// ── trading cards in: 5 of one colour for 1 random card of the next colour up ──────────────────────
+// ── trading cards in: 5 of one colour make one card of the next colour up, rated (their average + 10) ──
 let tradeTier = 0, tradeSel = [];
-const TRADE_N = 5, TRADE_PACK = { n:'Trade-in', col:'#9b59ff', col2:'#dcc2ff' };
+const TRADE_PACK = { n:'Trade-in', col:'#9b59ff', col2:'#dcc2ff' };
 const spareOf = ti => G.cards.filter(c => tierIdx(c) === ti && !inUse(c.id)).sort((a, b) => ovrOf(a) - ovrOf(b));
 function doTrade(){
   if (tradeSel.length !== TRADE_N || tradeTier >= 5) return;
   const give = tradeSel.map(cardById).filter(Boolean);
   if (give.length !== TRADE_N || give.some(c => inUse(c.id) || tierIdx(c) !== tradeTier)){ tradeSel = []; return; }
-  G.cards = G.cards.filter(c => !tradeSel.includes(c.id));
-  const c = rollCard('bronze', tradeTier + 1);
-  OPEN = { kind:'trade', cards:[c], i:0, t:0, spin:null, revealed:[], from:'trade' };
-  tradeSel = []; menu = 'open'; save();
+  const c = makeCardAt(tradeRating(give));
+  G.cards = G.cards.filter(z => !tradeSel.includes(z.id));
+  tradeSel = []; startOpen({ kind:'trade', batches:[{ tier:null, cards:[c] }], from:'trade' }); save();
 }
 function drawTrade(){
   btns = [];
   uiBg();
   R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff');
   ptitle('TRADE IN', 10, 3, 10, '#ffffff', 'left');
-  text(`${TRADE_N} cards of one colour  →  1 random card of the next colour`, 110, 5, UI.ice, 7);
-  // one chip per colour: how many spare cards you have of it
+  text(`${TRADE_N} cards of one colour  =  1 card rated their average + 10`, 100, 5, UI.ice, 7, 'left', W - 108);
   TIERS.forEach((T, ti) => {
     const n = spareOf(ti).length, on = tradeTier === ti, x = 10 + ti * 56;
     R(x, 33, 52, 20, on ? mix(T.col, '#0b1018', .35) : '#131924');
@@ -4149,12 +4339,12 @@ function drawTrade(){
   });
   if (list.length > per * 2) text(`+${list.length - per * 2} more (lowest shown first)`, W / 2, H - 52, UI.ice, 6, 'center');
   const ready = tradeSel.length === TRADE_N && tradeTier < 5;
-  const nextName = tradeTier < 5 ? TIER_LABEL[tradeTier + 1] : '';
-  button(W / 2 - 100, H - 42, 200, 20, ready ? `TRADE ${TRADE_N} FOR 1 ${nextName}` : `PICK ${TRADE_N - tradeSel.length} MORE`,
+  const got = ready ? tradeRating(tradeSel.map(cardById).filter(Boolean)) : 0;
+  button(W / 2 - 100, H - 42, 200, 20, ready ? `TRADE ${TRADE_N} FOR A ${got}` : `PICK ${TRADE_N - tradeSel.length} MORE`,
     ready ? doTrade : () => {}, ready ? '#2a6a3a' : '#161b26', ready ? '#fff' : '#525c72', 8);
   button(W / 2 + 108, H - 42, 80, 20, 'AUTO PICK', () => { tradeSel = list.slice(0, TRADE_N).map(c => c.id); }, '#1a2030', '#fff', 7);
   button(10, H - 22, 70, 18, 'BACK', () => { menu = 'cards'; tradeSel = []; });
-  button(W - 86, H - 22, 76, 18, 'SHOP', () => { menu = 'shop'; tradeSel = []; }, '#2f6fe0');
+  button(W - 86, H - 22, 76, 18, 'SHOP', () => { menu = 'shop'; shopTab = 'packs'; tradeSel = []; }, '#2f6fe0');
 }
 
 // ── best lineup: put the strongest card at every spot in one tap ──────────────────────────────────
@@ -4234,7 +4424,7 @@ function drawLineup(){
 }
 const fmt = n => n >= 1000 ? (n / 1000).toFixed(n % 1000 ? 1 : 0) + 'k' : String(n);
 
-let menu = 'title', btns = [];
+let menu = 'title', btns = [], newSaveAsk = false;
 // ── the Retro Basket look: bright blue ground, dark-blue boxes with white edges, chunky yellow buttons ──────────────
 const UI = { blue:'#2f5fd8', blueD:'#2149b4', blueDD:'#17348a', navy:'#0f1f55', yellow:'#ffd23f', yellowD:'#c99a12', red:'#e24b3b', green:'#44c45d', ice:'#cfe0ff' };
 const uiBg = () => R(0, 0, W, H, UI.blue);
@@ -4311,6 +4501,15 @@ function drawMenu(){
       button(W / 2 - 34, 164, 68, 18, 'ROSTER', () => menu = 'roster');
       button(W / 2 + 40, 164, 68, 18, 'LEADERS', () => { menu = 'stats'; statsScroll = 0; }, '#2f6fe0', '#fff', 7);
       coinText(G.coins, W / 2, 192, 9, UI.yellow, 'center');
+      button(6, H - 24, 62, 16, 'NEW SAVE', () => { newSaveAsk = true; }, '#1a2030', '#fff', 7);
+      if (newSaveAsk){
+        btns = []; R(0, 0, W, H, 'rgba(8,12,30,.78)');
+        const bw = 220, bx = W / 2 - bw / 2, by = 70; uiBox(bx, by, bw, 92);
+        ptitle('START OVER?', W / 2, by + 10, 11, UI.yellow); text('THIS ERASES YOUR CURRENT SAVE.', W / 2, by + 34, UI.ice, 6.5, 'center', bw - 12);
+        text('A NEW SAVE STARTS WITH 37,500 COINS.', W / 2, by + 45, UI.ice, 6, 'center', bw - 12);
+        button(bx + 12, by + 62, 96, 20, 'YES, ERASE', () => { newSaveAsk = false; menu = 'pick'; }, '#4a2030', '#fff', 7);
+        button(bx + bw - 12 - 96, by + 62, 96, 20, 'NO', () => { newSaveAsk = false; }, '#2f6fe0', '#fff', 8);
+      }
     } else button(W / 2 - 70, 120, 140, 24, 'START', () => menu = 'pick', '#2f6fe0');
   }
   else if (menu === 'pick'){
@@ -4489,18 +4688,21 @@ function drawStats(){
     btns.push({ x:0, y:0, w:W, h:H, fn: () => statsMenu = false });
   }
 }
+const EARN_ROWS = [['single', 'SINGLE', 'SINGLES'], ['double', 'DOUBLE', 'DOUBLES'], ['triple', 'TRIPLE', 'TRIPLES'], ['hr', 'HOME RUN', 'HOME RUNS'], ['bb', 'WALK', 'WALKS'], ['rbi', 'RBI', 'RBI'], ['k', 'STRIKEOUT', 'STRIKEOUTS'], ['dp', 'DOUBLE PLAY', 'DOUBLE PLAYS']];
 function drawOver(){
   btns = [];
   R(0, 0, W, H, '#0b1018ee');
   const my = M.meHome ? M.score.home : M.score.away, ot = M.meHome ? M.score.away : M.score.home, won = my > ot;
-  const earned = Math.max(0, G.coins - (M.coins0 == null ? G.coins : M.coins0)), shut = ot === 0, bonus = (won ? 500 : 120) + (shut ? 500 : 0), play = Math.max(0, earned - bonus);
-  textb(won ? 'WIN' : 'LOSS', W / 2, 30, won ? '#54d67a' : '#ff6b5a', 24, 'center');
-  textb(`${M.away.ab} ${M.score.away}   -   ${M.home.ab} ${M.score.home}`, W / 2, 66, '#fff', 12, 'center');
-  const rows = [['HITS, HOME RUNS AND STRIKEOUTS', play], [won ? 'WIN BONUS' : 'PLAYED THE GAME', won ? 500 : 120]]; if (shut) rows.push(['SHUTOUT', 500]);
-  rows.forEach(([l, v], i) => { textb(l, W / 2 - 100, 92 + i * 12, UI.ice, 7, 'left'); textb('+' + v, W / 2 + 100, 92 + i * 12, '#ffffff', 7, 'right'); });
-  R(W / 2 - 100, 92 + rows.length * 12, 200, 1, '#2a5ba6');
-  textb('TOTAL EARNED', W / 2 - 100, 96 + rows.length * 12, '#ffd23f', 8, 'left'); textb('+' + earned + ' coins', W / 2 + 100, 96 + rows.length * 12, '#ffd23f', 9, 'right');
-  button(W / 2 - 50, 150, 100, 22, 'CONTINUE', () => { M = null; phase = 'menu'; menu = 'title'; }, '#2f6fe0');
+  const earned = Math.max(0, G.coins - (M.coins0 == null ? G.coins : M.coins0));
+  textb(won ? 'WIN' : 'LOSS', W / 2, 8, won ? '#54d67a' : '#ff6b5a', 20, 'center');
+  textb(`${M.away.ab} ${M.score.away}   -   ${M.home.ab} ${M.score.home}`, W / 2, 34, '#fff', 10, 'center');
+  const rows = EARN_ROWS.filter(r => M.earn && M.earn[r[0]]).map(r => { const e = M.earn[r[0]]; return [`${e.n} ${e.n === 1 ? r[1] : r[2]}`, e.c]; });
+  rows.push([won ? 'WIN BONUS' : 'PLAYED THE GAME', won ? 600 : 150]); if (M.shutBonus) rows.push(['SHUTOUT', 850]);
+  const sp = Math.min(12, Math.floor(112 / rows.length)), y0 = 52, lx = W / 2 - 110, rx = W / 2 + 110;
+  rows.forEach(([l, v], i) => { textb(l, lx, y0 + i * sp, UI.ice, 7, 'left'); textb('+' + v.toLocaleString(), rx, y0 + i * sp, '#ffffff', 7, 'right'); });
+  const ty = y0 + rows.length * sp + 3; R(lx, ty, 220, 1, '#2a5ba6');
+  textb('TOTAL EARNED', lx, ty + 4, '#ffd23f', 8, 'left'); textb('+' + earned.toLocaleString() + ' coins', rx, ty + 3, '#ffd23f', 9, 'right');
+  button(W / 2 - 50, Math.min(H - 30, ty + 24), 100, 22, 'CONTINUE', () => { M = null; phase = 'menu'; menu = 'title'; }, '#2f6fe0');
 }
 
 // in-game menu button (switch to sim / offense only / defense only)
@@ -4549,6 +4751,10 @@ function drawPitchPick(){
 
 // ── simulating ─────────────────────────────────────────────────────────────
 function simPitch(){
+  SIMMING = true; if (!weBat()) M.pitchSimmed = true;
+  try { return simPitchInner(); } finally { SIMMING = false; }
+}
+function simPitchInner(){
   // A quick at-bat with no animation. The base rates are the ones the user wants: about a
   // .300 average, one home run per team per game and 22% strikeouts. A player's ratings push
   // each rate up or down from there.
@@ -4609,6 +4815,7 @@ function down(e){
   if (M && M.inter && M.inter.t > 350 && phase !== 'menu'){ M.inter = null; return; }
   touch = { x0:p.x, y0:p.y, x:p.x, y:p.y, t:performance.now(), used:false };
   for (const b of btns) if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h){ b.fn(); touch.used = true; return; }
+  if (menu === 'open' && OPEN && openPointer('down', p)){ touch.used = true; touch.open = true; return; }
   if (P && P.state === 'inplay' && BALL && BALL.defManual){ const bi = defBaseAt(p); if (bi !== null){ defTap(bi); touch.used = true; return; } }
   if (P && P.state === 'inplay') for (const b of RUNBTN.filter(q => p.x >= q.x && p.x <= q.x + q.w && p.y >= q.y && p.y <= q.y + q.h).sort((a, c) => Math.hypot(p.x - a.cx, p.y - a.cy) - Math.hypot(p.x - c.cx, p.y - c.cy)).slice(0, 1)){
     const c = RUNCTL[b.key], now = performance.now();
@@ -4630,13 +4837,20 @@ function down(e){
   }
 }
 function move(e){ if (!touch) return; const p = toPix(e); touch.x = p.x; touch.y = p.y;
+  if (touch.open){ openPointer('move', p); return; }
+  if (Math.abs(p.y - touch.y0) > 6 || Math.abs(p.x - touch.x0) > 6) touch.dragged = true;
+  if (menu === 'shop' && shopTab === 'fuse' && phase === 'menu' && !touch.used && fuseRect && touch.x0 >= fuseRect.x && touch.y0 >= fuseRect.y && touch.dragged){ if (touch.f0 === undefined) touch.f0 = fuseScroll; fuseScroll = clamp(touch.f0 + (touch.y0 - touch.y), 0, fuseMax); }
   if (menu === 'stats' && phase === 'menu' && !statsMenu && !touch.used && touch.y0 > 50 && touch.y0 < H - 26){      // drag the list up and down
     if (touch.s0 === undefined) touch.s0 = statsScroll;
     statsScroll = clamp(touch.s0 + (touch.y0 - touch.y) / 11, 0, statsMax);
   }
   if (!touch.used && userBats() && P && P.state === 'flight' && touch.y0 - touch.y > 14){ doSwing(); touch.used = true; } }
-function up(){ touch = null; }
-cv.addEventListener('wheel', e => { if (menu === 'stats' && phase === 'menu' && !statsMenu){ e.preventDefault(); statsScroll = clamp(statsScroll + Math.sign(e.deltaY) * 3, 0, statsMax); } }, { passive:false });
+function up(){
+  if (OPEN) OPEN.drag = false;
+  if (touch && menu === 'shop' && shopTab === 'fuse' && !touch.dragged && !touch.used) for (const r of fuseRows) if (touch.x >= r.x && touch.x <= r.x + r.w && touch.y >= r.y && touch.y <= r.y + r.h){ r.fn(); break; }
+  touch = null;
+}
+cv.addEventListener('wheel', e => { if (menu === 'shop' && shopTab === 'fuse' && phase === 'menu'){ e.preventDefault(); fuseScroll = clamp(fuseScroll + Math.sign(e.deltaY) * 22, 0, fuseMax); } if (menu === 'stats' && phase === 'menu' && !statsMenu){ e.preventDefault(); statsScroll = clamp(statsScroll + Math.sign(e.deltaY) * 3, 0, statsMax); } }, { passive:false });
 cv.addEventListener('pointerdown', e => { e.preventDefault(); down(e); });
 cv.addEventListener('pointermove', e => { e.preventDefault(); move(e); });
 cv.addEventListener('pointerup', e => { e.preventDefault(); up(); });
@@ -4645,7 +4859,8 @@ addEventListener('keydown', e => {
 });
 // test hooks
 window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
-  buyPack, revealNext, rollCard, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
+  buyPack, buyPosPack, freePack, rollCard, makeCardAt, valueOf, sellPrice, upCost, upgradeCard, doFuse, canFuse, fuseGroups, fuseRating, bandOf, dealsToday, buyDeal, streakInfo, tradeRating, doTrade, startOpen, openPointer, openAdvance, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
+  get shopTab(){ return shopTab; }, set shopTab(v){ shopTab = v; }, get upStat(){ return upStat; }, set upStat(v){ upStat = v; }, set colSel(v){ colSel = v; }, set fuseMode(v){ fuseMode = v; }, get fuseSel(){ return fuseSel; }, set fuseSel(v){ fuseSel = v; }, tickOpen(ms){ openTick(ms); }, payPlay, earn, get SIMMING(){ return SIMMING; },
   get P(){ return P; }, get BALL(){ return BALL; }, get swing(){ return swing; }, get FLD(){ return FLD; },
   stepAtBat, doSwing, makeContact, planFielders, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
   set swing(v){ swing = v; },
