@@ -74,10 +74,11 @@ function paintGround(park, reg){
     const a = P(-120 + i * 9, 63.6 - 120), b = P(120 + i * 9, 63.6 + 120), c2 = P(120 + i * 9 + 9, 63.6 + 120), d2 = P(-120 + i * 9 + 9, 63.6 - 120);
     g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.lineTo(...c2); g.lineTo(...d2); g.closePath(); g.fillStyle = GRASS_C; g.fill(); }
   g.restore();
-  // warning track and the dirt apron under the wall, all the way round
-  const ring = []; for (let a = -178; a <= 178; a += 2){ const r = fenceR(park, a), t = a * D2R; ring.push([Math.sin(t) * r, Math.cos(t) * r]); }
-  const inner = []; for (let a = 178; a >= -178; a -= 2){ const r = fenceR(park, a) - 4, t = a * D2R; inner.push([Math.sin(t) * r, Math.cos(t) * r]); }
-  poly(ring.concat(inner), TRACK);
+  // the dirt edge: a strip of dirt exactly 20 ft wide that follows the stands and the outfield wall all the way round (outfield, foul ground, behind the plate).
+  // It is the wall's outline stroked 40 ft wide and clipped to the inside, so the width is the same everywhere, square to the wall, with sharp corners where the wall turns.
+  { const wp = []; for (let a = -180; a < 180; a += 1){ const r = fenceR(park, a), t = a * D2R; wp.push([Math.sin(t) * r, Math.cos(t) * r]); }
+    g.save(); g.beginPath(); wp.forEach((p, i) => { const q = P(p[0], p[1]); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); g.clip();
+    g.strokeStyle = TRACK; g.lineWidth = 40 * S; g.lineJoin = 'miter'; g.miterLimit = 6; g.stroke(); g.restore(); }
   // the infield dirt: a circle round the mound, a circle round the plate, and the base paths
   circ(0, 60.5, 95, DIRT);
   circ(0, 0, 14, DIRT2);
