@@ -35,22 +35,26 @@ function drawCardView(){
   ptitle('UPGRADE', x0 + 6, 33, 8.5, '#fff', 'left');
   text(`${c.pos}  OVERALL ${ovrOf(c)}  LEVEL ${c.lvl} OF 10`, x0 + 6, 46, colOf(ovrOf(c)), 6, 'left', pw - 10);
   const maxed = c.lvl >= 10;
-  statsOf(c).forEach(([lbl, key], i) => {
-    const y = 58 + i * 25, v = c[key], sel = !maxed && (upStat === i || (linkedStat(c, i) && linkedStat(c, upStat))), step = linkedStat(c, i) ? 1 : 2;
-    R(x0 + 5, y, pw - 10, 22, sel ? '#2c3f95' : UI.navy);
-    if (sel){ R(x0 + 5, y, pw - 10, 1, UI.yellow); R(x0 + 5, y + 21, pw - 10, 1, UI.yellow); R(x0 + 5, y, 1, 22, UI.yellow); R(x0 + pw - 6, y, 1, 22, UI.yellow); }
-    if (sel) text('>', x0 + 8, y + 7, UI.yellow, 8);
-    textb(lbl, x0 + 20, y + 7, '#fff', 7);
-    textb(String(v), x0 + 52, y + 5, colOf(v), 10);
-    const bx = x0 + 74, bw = Math.max(20, pw - 74 - 62);
-    R(bx, y + 8, bw, 6, '#1b2a66'); R(bx, y + 8, Math.round(bw * clamp((v - 55) / 65, 0, 1)), 6, sel ? UI.yellow : '#6f8de8');
-    text(sel && !maxed ? `${v} > ${Math.min(120, v + step)}` : `+${step}`, x0 + pw - 9, y + 7, sel ? UI.yellow : '#8aa0d0', 7, 'right');
-    if (!maxed) btns.push({ x:x0 + 5, y, w:pw - 10, h:22, fn: () => upStat = i });
+  // a hitter's speed IS his fielding, so they are one row; a pitcher has four
+  const rows = isPitcher(c) ? statsOf(c).map(([lbl, key], i) => ({ lbl, key, i })) : [{ lbl:'CON', key:'contact', i:0 }, { lbl:'POW', key:'power', i:1 }, { lbl:'SPD+FLD', key:'fielding', i:2, link:true }];
+  const RH = rows.length === 3 ? 33 : 25, RT = RH - 3;
+  rows.forEach((row, ri) => {
+    const y = 58 + ri * RH, v = c[row.key], sel = !maxed && (upStat === row.i || (row.link && linkedStat(c, upStat))), step = row.link ? 1 : 2;
+    R(x0 + 5, y, pw - 10, RT, sel ? '#2c3f95' : UI.navy);
+    if (sel){ R(x0 + 5, y, pw - 10, 1, UI.yellow); R(x0 + 5, y + RT - 1, pw - 10, 1, UI.yellow); R(x0 + 5, y, 1, RT, UI.yellow); R(x0 + pw - 6, y, 1, RT, UI.yellow); }
+    const ty = y + Math.round((RT - 8) / 2);
+    if (sel) text('>', x0 + 8, ty, UI.yellow, 8);
+    textb(row.lbl, x0 + 20, ty, '#fff', row.link ? 6.5 : 7);
+    textb(String(v), x0 + (row.link ? 62 : 52), ty - 2, colOf(v), 10);
+    const bx = x0 + 84, bw = Math.max(20, pw - 84 - 62);
+    R(bx, ty + 1, bw, 6, '#1b2a66'); R(bx, ty + 1, Math.round(bw * clamp((v - 55) / 65, 0, 1)), 6, sel ? UI.yellow : '#6f8de8');
+    text(sel && !maxed ? `${v} > ${Math.min(120, v + step)}` : `+${step}`, x0 + pw - 9, ty, sel ? UI.yellow : '#8aa0d0', 7, 'right');
+    if (!maxed) btns.push({ x:x0 + 5, y, w:pw - 10, h:RT, fn: () => upStat = row.i });
   });
   const by = 162;
   if (!maxed){
     const cost = upCost(c), can = G.coins >= cost;
-    button(x0 + 5, by, pw - 10 - (inUse(c.id) ? 0 : 74), 22, `UPGRADE ${statsOf(c)[upStat][0]}  ${cost.toLocaleString()}`, () => upgradeCard(c), can ? '#2f6fe0' : '#161b26', '#fff', 7);
+    button(x0 + 5, by, pw - 10 - (inUse(c.id) ? 0 : 74), 22, `UPGRADE ${isPitcher(c) ? statsOf(c)[upStat][0] : linkedStat(c, upStat) ? 'SPD+FLD' : statsOf(c)[upStat][0]}  ${cost.toLocaleString()}`, () => upgradeCard(c), can ? '#2f6fe0' : '#161b26', '#fff', 7);
   } else text('FULLY UPGRADED', x0 + 10, by + 7, '#7fd38f', 8);
   if (!inUse(c.id)) button(x0 + pw - 5 - 70, by, 70, 22, `SELL ${fmt(sellPrice(c))}`, () => { G.coins += sellPrice(c); G.cards = G.cards.filter(z => z.id !== c.id); menu = 'cards'; save(); }, '#4a2030', '#fff', 7);
   else text('IN YOUR LINEUP', x0 + pw - 10, by + 28, '#54d67a', 5.5, 'right');
