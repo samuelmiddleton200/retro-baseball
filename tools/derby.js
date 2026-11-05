@@ -102,10 +102,24 @@ function derbyHUD(){
   }
   if (G.derby && G.derby.best) tt('BEST ' + G.derby.best.toLocaleString(), x + w / 2, y + h + 8 * TU, 14, '#cfe0ff', 'center');
 }
+// the pitcher, the batter and the catcher stand where they do in the game's own high view (the same painted sprites, still)
+function derbyPeople(){
+  if (!(GPF.ready && GP.ready)) return;
+  const ft = fldTeam(), bt = batTeam(), b = M.batter, lefty = b.bats === 'L';
+  [{ k:'cat', d:-3.4, lat:0, bat:1, man:ft.lineup[7] || ft.lineup[0], team:ft },
+   { k:'bat', d:.7, lat: lefty ? 3 : -3, man:b, team:bt },
+   { k:'pit', d:60.5, lat:0, man:curPitcher(), team:ft }].forEach(o => {
+    const p = gxPerson(o.k, o.k, o.man, o.team, o.lat, -o.d, 0, null), q = derbyPt(o.d, o.lat, 0), hPx = Math.max(12, Math.round(6.2 * q.s * DH.hs * 1.05 / 3) * 3);
+    GPSK = p.skin || '';
+    if (o.bat) gpStamp(GP.batter[0], 'B0', p.cap, q.x, q.y, hPx / TU, false, .96);
+    else gpStamp(GPF.img[0], 'FD0', p.cap, q.x, q.y, hPx / TU, false, .96);
+  });
+}
 function drawDerbyHit(B){
   const D = M.derby, sc = H / DH.IH, x0 = W / 2 - DH.IW * sc / 2;
   g.fillStyle = '#05070b'; g.fillRect(0, 0, W, H); g.imageSmoothingEnabled = false;
   if (ready(DHIT)) g.drawImage(DHIT, x0, 0, DH.IW * sc, H);
+  derbyPeople();
   if (B.t < .05) DTRAIL = [];
   const gone = B.hr && B.hrG != null && B.t >= B.hrG, air = B.t < B.T && !gone;
   if (air){ DTRAIL.push([B.lat, B.h + .4, -B.d]); if (DTRAIL.length > 290) DTRAIL.shift(); }
