@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-07d"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-07e"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,8 +216,9 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-07d';
+const BUILD = '11-07e';
 const SAVE = 'retrobaseball.v1';
+const START_COINS = 1000000;                              // just for fun right now: the real start is 37,500
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
 
@@ -232,7 +233,7 @@ function newGame(teamAb){
     [...lineup, ...rot, ...pen].forEach(p => { p.num = ri(1, 72); });
     return { ...t, lineup, rot, pen, w:0, l:0, rs:0, ra:0 };
   });
-  G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:37500, gift25k:true, seen:{}, streak:{ day:0, last:'' }, seasonLen:25,
+  G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:START_COINS, gift25k:true, fun1m:true, seen:{}, streak:{ day:0, last:'' }, seasonLen:25,
         sched:[], rotIdx:0, cards:[], slots:{ lineup:[], rot:[], pen:[] }, freeAt:0 };
   // your own nine, five starters and five relievers all become cards you own
   const me = G.teams[G.team];
@@ -279,6 +280,7 @@ const load = () => {
       _cardId = Math.max(1, ...G.cards.map(c => c.id || 0)) + 1;
       G.cards.forEach(c => { c.st = c.st || newStat(); if (c.fielding != null) c.speed = c.fielding; });
       rebuildTeam();
+      if (!G.fun1m){ G.fun1m = true; G.coins = Math.max(G.coins, START_COINS); }              // the one-time top-up to a million, for fun
       if (!G.seen){ G.seen = {}; G.cards.forEach(c => { G.seen[c.name] = 1; }); }
       if (!G.streak) G.streak = { day:0, last:'' };
       G.cards.forEach(c => { if (c.fz == null) c.fz = 0; });
@@ -4514,7 +4516,7 @@ function drawMenu(){
         btns = []; R(0, 0, W, H, 'rgba(8,12,30,.78)');
         const bw = 220, bx = W / 2 - bw / 2, by = 70; uiBox(bx, by, bw, 92);
         ptitle('START OVER?', W / 2, by + 10, 11, UI.yellow); text('THIS ERASES YOUR CURRENT SAVE.', W / 2, by + 34, UI.ice, 6.5, 'center', bw - 12);
-        text('A NEW SAVE STARTS WITH 37,500 COINS.', W / 2, by + 45, UI.ice, 6, 'center', bw - 12);
+        text('A NEW SAVE STARTS WITH ' + START_COINS.toLocaleString() + ' COINS.', W / 2, by + 45, UI.ice, 6, 'center', bw - 12);
         button(bx + 12, by + 62, 96, 20, 'YES, ERASE', () => { newSaveAsk = false; menu = 'pick'; }, '#4a2030', '#fff', 7);
         button(bx + bw - 12 - 96, by + 62, 96, 20, 'NO', () => { newSaveAsk = false; }, '#2f6fe0', '#fff', 8);
       }
