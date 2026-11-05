@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11e"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11f"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11e';
+const BUILD = '11-11f';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1379,6 +1379,8 @@ function routeThrow(thrower, from, t0, tgt, tr, live){
   const mates = (FLD || []).filter(f => f !== thrower && ['1B', '2B', 'SS', '3B'].includes(f.pos) && !(bi0 >= 0 && bi0 < 3 && BAG_COVER[bi0].includes(f.pos)));      // the man on the bag is the catcher, never a relay
   let best = null;
   const leg = (a, b, ts, fps) => { const len = dist(a, b), t0r = ts + len * CFG.GLOVE_PER_FT; return { from:a, to:b, t0:t0r, t1:t0r + len / fps, len }; };      // released 0.1 s per 40 ft after he has it
+  const roles = BALL && BALL.land && !live ? outfieldRoles(BALL.land) : null;
+  let loose = false;                                                      // first try only the real cut-off man where he stands; a long throw then goes through anyone along the line
   const walk = (cur, rng, fps, tRel, legs, used, relays) => {
     if (dist(cur, tgt) <= rng){
       const L = legs.concat([leg(cur, tgt, tRel, fps)]);
@@ -1388,7 +1390,8 @@ function routeThrow(thrower, from, t0, tgt, tr, live){
     for (const m of mates){
       if (used.includes(m)) continue;
       const d0 = dist(cur, tgt), mr = throwRange(m.man.fielding), spots = [live ? (m.go ? [m.go.x, m.go.y] : [m.x, m.y]) : [m.d, m.lat]];
-      if (!live) for (const fr of [.5, .65, .8, .9, .98]){ const along = Math.min(rng * fr, d0 * .85), u = d0 > 0 ? along / d0 : 0; spots.push([cur[0] + (tgt[0] - cur[0]) * u, cur[1] + (tgt[1] - cur[1]) * u]); }
+      if (roles && m.pos === roles.cutPos) spots.push(roles.cut);
+      if (!live && loose) for (const fr of [.5, .65, .8, .9, .98]){ const along = Math.min(rng * fr, d0 * .85), u = d0 > 0 ? along / d0 : 0; spots.push([cur[0] + (tgt[0] - cur[0]) * u, cur[1] + (tgt[1] - cur[1]) * u]); }
       for (const sp of spots){
         if (dist(cur, sp) > rng || (dist(sp, tgt) > mr && used.length >= 1) || dist(sp, tgt) >= d0 - 8) continue;
         const l1 = leg(cur, sp, tRel, fps);
@@ -1399,6 +1402,7 @@ function routeThrow(thrower, from, t0, tgt, tr, live){
     }
   };
   walk(from, throwRange(thrower.man.fielding), thrower.armFps, t0 + tr, [], [], []);
+  if (!best && !live){ loose = true; walk(from, throwRange(thrower.man.fielding), thrower.armFps, t0 + tr, [], [], []); }
   if (!best){ const l = leg(from, tgt, t0 + tr, thrower.armFps); best = { legs:[l], arr:l.t1, relays:[] }; }
   // a base: the throw only counts once somebody is standing on it, and the closest man runs the ball there himself if that is quicker
   const bi = BASE_PTS4.findIndex(q => Math.abs(q[0] - tgt[0]) < 1 && Math.abs(q[1] - tgt[1]) < 1);
@@ -1427,6 +1431,10 @@ function routeThrow(thrower, from, t0, tgt, tr, live){
   }
   return best;
 }
+const outfieldRoles = land => {
+  const len = Math.hypot(land.d, land.lat) || 1, k = Math.min(len * .6, 138) / len, left = land.lat <= 0;
+  return { cutPos: left ? 'SS' : '2B', bagPos: left ? '2B' : 'SS', cut:[land.d * k, land.lat * k] };      // 138 ft out is where the infield dirt meets the outfield grass
+};
 const BAG_COVER = [['1B', '2B'], ['2B', 'SS'], ['3B', 'SS'], []];                       // who can stand on first, second, third (home is the catcher's)
 const mkThr = (rt, from, to) => ({ t0: rt.legs[0].t0, t1: Math.max(rt.legs[rt.legs.length - 1].t1, rt.arr || 0), from, to, len: rt.legs.reduce((a, l) => a + l.len, 0), legs: rt.legs, relays: rt.relays, catcher: rt.catcher || null, carry: !!rt.carry, carryF: rt.carryF || null });
 // where the ball is on a throw made of legs: flying along one, or waiting in the hands of the man who throws it on
@@ -1790,12 +1798,9 @@ function planCover(B, c){
   } else {
     // the ball is in the air or in the outfield
     ['LF', 'CF', 'RF'].forEach(p => { const o = byPos(p); if (o && o !== c){ const q = toward(o, land, .45); send(o, q[0], q[1], 0); } });   // back it up
-    const len = Math.hypot(land.d, land.lat) || 1, dir = { d:land.d / len, lat:land.lat / len };
-    const cut = { d:Math.min(len * .5, 125) * dir.d, lat:Math.min(len * .5, 125) * dir.lat };
-    const second = byPos('2B'), short = byPos('SS');
-    const cutMan = land.lat <= 10 ? short : second, other = cutMan === short ? second : short;
-    send(cutMan, cut.d, cut.lat, 0);                                                              // the cut-off man lines up with the throw
-    send(other, STAND[2][0] - 2, STAND[2][1] + (other === short ? 3 : -2), 2);                    // the other covers second
+    const rl = outfieldRoles(land), cutMan = byPos(rl.cutPos), bagMan = byPos(rl.bagPos);
+    send(cutMan, rl.cut[0], rl.cut[1], 0);                                                        // the cut-off man at the edge of the infield dirt, lined up with the throw
+    send(bagMan, STAND[2][0] - 2, STAND[2][1] + (bagMan === byPos('SS') ? 3 : -2), 2);            // the other takes second
     send(byPos('1B'), STAND[1][0], STAND[1][1], 1);
     send(byPos('3B'), STAND[3][0], STAND[3][1], 3);
   }
