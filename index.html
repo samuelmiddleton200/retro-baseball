@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11a"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11b"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11a';
+const BUILD = '11-11b';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -720,8 +720,8 @@ const ARTNAMES = ['swing1','swing2','swing3','swing4','pitch1','pitch2','pitch3'
   'catcher','infield','catch','run','pitcher_idle','fielder','walk','umpire'];
 const IMG = {}; let imgReady = 0;
 ARTNAMES.forEach(n => { const im = new Image(); im._n = n; im.onload = () => imgReady++; im.src = 'assets/' + n + '.png'; IMG[n] = im; });
-IMG.field = new Image(); IMG.field.onload = () => imgReady++; IMG.field.src = 'assets/fields/field_tone.png';
-IMG.aerial = new Image(); IMG.aerial.onload = () => imgReady++; IMG.aerial.src = 'assets/fields/aerial.png';
+IMG.field = new Image();                                       // the old flat field picture is gone (the painted parks replaced it); the vector field draws instead
+IMG.aerial = new Image();                                      // likewise the old aerial picture
 const ready = im => im && im.complete && im.naturalWidth > 0;
 // draw a loaded sprite so its feet sit at (cx, footY) in logical units, scaled to height h
 function blitImg(im, cx, footY, h, flip){
@@ -2889,7 +2889,7 @@ function gxPlayHud(B){
 // ── people stamped onto the painted field: each one is a 3D player baked into a small canvas at the picture's own pixel size ──
 const PIXK = .5;                                                   // bake pixels per target pixel (so one art pixel = 2 target pixels)
 const PLATE = new Image(); PLATE.onload = () => imgReady++; PLATE.src = 'assets/fields/plate_wide.png?b=11-05e';       // 1100 x 492 target pixels (stored at 2x): the old picture is the middle 756, new field fills both sides
-const EDGES = new Image(); EDGES.onload = () => { EDGES._ok = true; }; EDGES.src = 'assets/fields/edges.png?b=1';
+const EDGES = new Image();
 const IDLE = new Image(); IDLE.onload = () => imgReady++; IDLE.src = 'assets/fields/idle.png';        // the target picture itself, with the ball, its dotted path and the pill taken out
 const IDLE_BOX = { bat:[214,236,344,452], cat:[316,350,446,492], pit:[388,168,436,236] };
 const plateOK = () => ready(PLATE) && ready(IDLE) && !window.__noPlate && window.GL3D && GL3D.bakeInit && GL3D.bakeInit();
