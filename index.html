@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-07j"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-08b"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,22 +216,26 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-07j';
+const BUILD = '11-08b';
 const SAVE = 'retrobaseball.v1';
-const START_COINS = 1000000;                              // just for fun right now: the real start is 37,500
+const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
 
 function newGame(teamAb){
   try { localStorage.removeItem('retrobaseball.match.v1'); } catch (e){}
-  const lvl = () => 70 + bell() * 28;
   _cardId = 1;
+  // the league: every other club has its own level (a weak one averages about 86, a strong one about 100) with players of 80-105; you start with 60-75 cards, the worst team in the game
   const teams = TEAMS.map(t => {
-    const lineup = POS.map(p => makeHitter(lvl(), p));
-    const rot = [0,1,2,3,4].map(() => makePitcher(lvl(), 'SP'));
-    const pen = [0,1,2,3].map(() => makePitcher(lvl(), 'RP')).concat([makePitcher(lvl() + 6, 'CP')]);
+    const mine = t.ab === teamAb, q = rnd(101, 86);
+    const lv = () => mine ? rnd(75, 60) : clamp(q + (bell() - .5) * 16, 80, 105);
+    const hit = pos => { const L = lv(); return fitTo(makeHitter(L, pos), L); };
+    const arm = (role, plus) => { const L = clamp(lv() + plus, 60, 108); return fitTo(makePitcher(L, role), L); };
+    const lineup = POS.map(p => hit(p));
+    const rot = [0,1,2,3,4].map(() => arm('SP', 0));
+    const pen = [0,1,2,3].map(() => arm('RP', 0)).concat([arm('CP', 4)]);
     [...lineup, ...rot, ...pen].forEach(p => { p.num = ri(1, 72); });
-    return { ...t, lineup, rot, pen, w:0, l:0, rs:0, ra:0 };
+    return { ...t, lineup, rot, pen, w:0, l:0, rs:0, ra:0, q };
   });
   G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:START_COINS, gift25k:true, fun1m:true, seen:{}, streak:{ day:0, last:'' }, seasonLen:25,
         sched:[], rotIdx:0, cards:[], slots:{ lineup:[], rot:[], pen:[] }, freeAt:0 };
@@ -280,7 +284,6 @@ const load = () => {
       _cardId = Math.max(1, ...G.cards.map(c => c.id || 0)) + 1;
       G.cards.forEach(c => { c.st = c.st || newStat(); if (c.fielding != null) c.speed = c.fielding; });
       rebuildTeam();
-      if (!G.fun1m){ G.fun1m = true; G.coins = Math.max(G.coins, START_COINS); }              // the one-time top-up to a million, for fun
       if (!G.seen){ G.seen = {}; G.cards.forEach(c => { G.seen[c.name] = 1; }); }
       if (!G.streak) G.streak = { day:0, last:'' };
       G.cards.forEach(c => { if (c.fz == null) c.fz = 0; });
@@ -1159,10 +1162,11 @@ function setupAtBat(){
 }
 // what each pitcher has done in this game: pitches, runs, outs, and whether he has been in (a pitcher taken out cannot come back)
 const PG = new Map();
-const pg = p => PG.get(p) || (PG.set(p, { pc:0, r:0, po:0, used:false }), PG.get(p));
+const pg = p => PG.get(p) || (PG.set(p, { pc:0, sp:0, r:0, po:0, used:false, nT:0, nS:0, nB:0, nC:0 }), PG.get(p));       // pc = pitches thrown, sp = stamina spent; nT/nS/nB/nC = what the batters have seen from him this game
+const spOf = g => g.sp != null ? g.sp : g.pc;
 const stamCap = p => 60 + (clamp(p.stamina, 60, 120) - 60) * 2 / 3;               // 60 stamina = 60 pitches, 120 = 100, in a straight line
 // 0 fresh, 1 at his limit: he throws up to 20 mph slower and his circle grows up to 2x, both in a straight line
-function fatigue(){ const p = curPitcher(); return clamp(pg(p).pc / stamCap(p), 0, 1); }
+function fatigue(){ const p = curPitcher(); return clamp(spOf(pg(p)) / stamCap(p), 0, 1); }
 // the best reliever who has not pitched yet: the closer saves the 8th and 9th of a close game
 function pickReliever(t){
   const left = t.pen.filter(p => !pg(p).used);
@@ -1184,11 +1188,11 @@ function changePitcher(t, nx){
 function pullCheck(){
   const t = fldTeam(), p = curPitcher(), g = pg(p);
   if (g.po < 9) return;
-  if (g.pc >= stamCap(p) || g.r > g.pc / 10) changePitcher(t, pickReliever(t));
+  if (spOf(g) >= stamCap(p) || g.r > g.pc / 10) changePitcher(t, pickReliever(t));
 }
-// the circle the ball can land in, as a diameter in inches: 120 control = 5 in, 60 control = 10 in, straight line between.
-// Tiredness widens it in a straight line too: half his stamina gone = 1.5x (7.5 and 15 in), all of it = 2x
-function circleIn(p){ return lerp(10, 5, clamp((p.control - 60) / 60, 0, 1)) * (1 + fatigue()); }
+// the circle the ball can land in, as a diameter in inches: 120 control = 7 in, 60 control = 12 in, straight line between.
+// Tiredness widens it in a straight line too: half his stamina gone = 1.5x, all of it = 2x (14 and 24 in). A fastball costs 0.8 stamina, any other pitch 1.
+function circleIn(p){ return lerp(12, 7, clamp((p.control - 60) / 60, 0, 1)) * (1 + fatigue()); }
 /* ═══════════════════════════════════════════════════════════════════════════
    THE AT-BAT
    One state machine, stepped on a fixed clock, drives a pitch from the
@@ -1235,6 +1239,8 @@ const CFG = {
   BACK_PENALTY: 0.4,            // extra seconds to read and turn on a ball hit over his head
   DIVE_REACH: 1,                // ...and a ball rolling along the ground has to reach him too: within 1 ft, so it never looks like it rolled past
   TRANSFER_GROUND: 0.65, TRANSFER_AIR: 0.40,   // glove to release
+  READ_BREAK: 0.45,             // how far a breaking pitch's early path misleads a hitter about where it ends (a curve looks about 0.7 of the zone's half-height higher than it ends)
+  MID_BARREL: 0.025,            // the middle 4 x 4 inches of the plate: this share of hits there are barrelled (sized so there are about 20% more home runs from it)
   PIVOT: 0.55,                  // seconds for the man at second to catch it, turn and throw on to first
   THROW_EFFICIENCY: 0.85,       // every throw flies at 85% of the speed the rating says
   EXTRA_BASE_MARGIN: 0.30,      // a runner only takes the extra base if he beats the throw by this much
@@ -1530,9 +1536,11 @@ function throwPitch(type, ax, ay){
   P.br = [info.br[0] * lerp(.6, 1.3, (q - 60) / 60), info.br[1] * lerp(.6, 1.3, (q - 60) / 60)];
   P.quality = q;
   P.thrown = true; P.t = 0; P.state = 'flight';
-  pg(curPitcher()).pc++; if (M.top) M.pcHome++; else M.pcAway++;
-  // the computer's batter makes up its mind as the ball comes in
+  { const g0 = pg(curPitcher()); g0.sp = spOf(g0) + (type === 'FB' ? .8 : 1); g0.pc++; }
+  if (M.top) M.pcHome++; else M.pcAway++;
+  // the computer's batter makes up its mind as the ball comes in (from what he has seen from this pitcher so far); then this pitch goes in the book
   if (!userBats()) cpuDecide();
+  { const g0 = pg(curPitcher()), strike = Math.abs(P.tx) <= 1 && Math.abs(P.ty) <= 1; g0.nT = (g0.nT || 0) + 1; if (strike) g0.nS = (g0.nS || 0) + 1; else g0.nB = (g0.nB || 0) + 1; if (strike && Math.abs(P.tx) >= .5 && Math.abs(P.ty) >= .5) g0.nC = (g0.nC || 0) + 1; }
 }
 
 // where the ball is on screen at a point in its flight (0 = hand, 1 = plate)
@@ -1582,12 +1590,14 @@ function doSwing(){
 }
 // what the computer's batter decides to do with this pitch
 function cpuDecide(){
-  const b = M.batter;
+  const b = M.batter, g0 = pg(curPitcher());
   const con = clamp((b.contact - 60) / 60, 0, 1);
   const eye = clamp((b.contact * .6 + b.power * .4 - 60) / 60, 0, 1);
-  // he reads the location, but not perfectly
-  const blur = lerp(.62, .16, eye);
-  const seenX = P.tx + (bell() - .5) * 2 * blur, seenY = P.ty + (bell() - .5) * 2 * blur;
+  // He judges the pitch from the first half of its flight and assumes it keeps going straight. A fastball is what it looks like (and is read more exactly);
+  // a curve or slider looks like it ends somewhere else than it does: higher or wider, so it looks like a strike and then drops off.
+  const blur = lerp(.62, .16, eye) * (P.type === 'FB' ? .75 : 1);
+  const projX = P.tx - CFG.READ_BREAK * P.br[0] / 11, projY = P.ty - CFG.READ_BREAK * P.br[1] / 14;                // break is in the zone's own units (22 x 28), so half of it is 11 and 14
+  const seenX = projX + (bell() - .5) * 2 * blur, seenY = projY + (bell() - .5) * 2 * blur;
   const looksStrike = Math.abs(seenX) <= 1 && Math.abs(seenY) <= 1;
   const close = Math.abs(seenX) <= 1.45 && Math.abs(seenY) <= 1.45;
   // how eager he is, by count
@@ -1595,6 +1605,10 @@ function cpuDecide(){
   if (M.strikes === 2) want = looksStrike ? .93 : close ? .72 : .22;     // protect the plate
   if (M.balls === 3 && M.strikes < 2) want *= .62;                        // take the walk
   want *= lerp(.82, 1.12, clamp((b.power - 60) / 60, 0, 1));              // sluggers hack more
+  // what he has seen from this pitcher today: mostly strikes and they swing more (15% when strikes lead by one, 30% by two or more); mostly balls and they swing less, the same way
+  if ((g0.nT || 0) >= 6){ const d = (g0.nS || 0) - (g0.nB || 0), mag = Math.abs(d) >= 2 ? .30 : Math.abs(d) === 1 ? .15 : 0; want *= 1 + Math.sign(d) * mag; }
+  // and if most of them have been on the corners, they go after what is headed for a corner (up to 30% more)
+  if ((g0.nT || 0) >= 10 && Math.abs(seenX) >= .5 && Math.abs(seenY) >= .5 && Math.abs(seenX) <= 1.25 && Math.abs(seenY) <= 1.25) want *= 1 + clamp(((g0.nC || 0) / g0.nT - .35) / .35, 0, 1) * .30;
   if (!chance(clamp(want, .02, .97))) return;                             // he takes it
   // his timing is off by an amount that shrinks as contact goes up.
   // gauss() has real tails, so sometimes he is badly fooled.
@@ -1659,6 +1673,7 @@ function makeContact(qual, dErr){
   //  - otherwise a scattered angle, flat or high: the worse the hitter and the timing, the wider the scatter (line-drive outs and pop flies).
   const tq = clamp((qual - .26) / .74, 0, 1), cn = clamp((b.contact - 60) / 60, 0, 1);              // timing 0..1 (1 = perfect) and contact 0..1
   const skill = Math.pow(tq, 1.2) * (.55 + .45 * cn);
+  const mid = userPitches() && Math.abs(P.tx) <= 2 / IN_X && Math.abs(P.ty) <= 2 / IN_Y;        // a pitch right down the middle (4 x 4 inches) is easier to drive
   const pSweet = lerp(.03, .30, Math.pow(skill, 1.1));
   const pGround = clamp(.08 + .12 * cn + (1 - tq) * cn * .22, 0, .6);
   const dice = Math.random();
@@ -1671,7 +1686,8 @@ function makeContact(qual, dErr){
   // Exit speed runs between the slowest and the fastest ball his power can make: 60 power = 40-81 mph, 70 = 45-90, ... 120 = 70-133.
   // Where in that range depends on the swing: how well it was timed and met (qual) plus a roll of the dice.
   const t = clamp((qual - .26) / .74 * .6 + roll * .3 + .1, 0, 1);
-  const ev = lerp(evMin(b.power), evMax(b.power), t);
+  let ev = lerp(evMin(b.power), evMax(b.power), t);
+  if (mid && chance(CFG.MID_BARREL)){ la = rnd(30, 25); ev = Math.max(ev, lerp(evMin(b.power), evMax(b.power), .9)); }          // a mistake down the middle sometimes gets barrelled
   launchBall(ev, la, sa, qual);
   P.state = 'inplay'; P.playT = 0;
   planFielders();
@@ -3473,6 +3489,20 @@ const DEAL_PRICE = { 90:1525, 91:1800, 92:2100, 93:2475, 94:2900, 95:3425, 96:40
 const dealPrice = c => DEAL_PRICE[clamp(ovrOf(c), 90, 109)] || Math.round(valueOf(ovrOf(c)) * .85);
 
 // one new card at a rating: a random player, or at one position / with one face
+// move a card's ratings so his overall is exactly lvl (the three real hitter ratings carry the shift, since speed IS fielding)
+function fitTo(c, lvl){
+  lvl = clamp(Math.round(lvl), 60, 120);
+  const cur = ovrOf(c), d = lvl - cur;
+  if (c.fielding != null){
+    const k3 = ['contact', 'power', 'fielding'];
+    for (let n = 0; n < 6; n++){ c.speed = c.fielding; const dd = lvl - ovrOf(c); if (!dd) break; k3.forEach(k => c[k] = clamp(c[k] + dd, 60, 120)); }
+    c.speed = c.fielding;
+  } else {
+    statsOf(c).map(s => s[1]).forEach(k => c[k] = clamp(c[k] + d, 60, 120));
+    if (c.pitches) Object.keys(c.pitches).forEach(k => c.pitches[k] = clamp(c.pitches[k] + d, 60, 120));
+  }
+  c.ovr = ovrOf(c); return c;
+}
 function makeCardAt(lvl, o = {}){
   lvl = clamp(Math.round(lvl), 60, 120);
   const pitcher = o.pitcher != null ? o.pitcher : o.pos ? ['SP', 'RP', 'CP'].includes(o.pos) : chance(.26);
@@ -4792,7 +4822,7 @@ function drawPitchPick(){
   R(0, 0, W, H, '#0b1018f0');
   const mine = M.meHome ? M.home : M.away, cur = M.meHome ? M.pitcherHome : M.pitcherAway;
   textb('BRING IN A PITCHER', W / 2, 8, '#ffd23f', 10, 'center');
-  textb(`${cur.name} has thrown ${pg(cur).pc} pitches (limit ${Math.round(stamCap(cur))}). A pitcher who is taken out cannot come back.`, W / 2, 24, UI.ice, 6, 'center', W - 20);
+  textb(`${cur.name} has thrown ${pg(cur).pc} pitches, ${Math.round(100 * (1 - clamp(spOf(pg(cur)) / stamCap(cur), 0, 1)))}% stamina left. A pitcher who is taken out cannot come back.`, W / 2, 24, UI.ice, 6, 'center', W - 20);
   const list = mine.rot.concat(mine.pen).filter(p => p !== cur);
   list.forEach((p, i) => {
     const y = 36 + i * 15, x = W / 2 - 150, used = pg(p).used || mine.rot.includes(p), on = !used;
@@ -4816,7 +4846,7 @@ function simPitchInner(){
   // .300 average, one home run per team per game and 22% strikeouts. A player's ratings push
   // each rate up or down from there.
   const b = M.batter, p = curPitcher();
-  pg(p).pc += ri(3, 5);
+  { const g1 = pg(p), n1 = ri(3, 5); g1.pc += n1; g1.sp = spOf(g1) + n1 * .92; }
   // Ratings swing the result hard: a lineup of red cards (110+) should bury an average team,
   // and a green-card lineup (70s) should get buried. 85 is the middle of the league.
   const con = (b.contact - 85) / 30, pow = (b.power - 85) / 30, spd = (spdOf(b) - 85) / 30;
@@ -4917,7 +4947,7 @@ addEventListener('keydown', e => {
 // test hooks
 window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   buyPack, buyPosPack, freePack, rollCard, makeCardAt, valueOf, sellPrice, upCost, upgradeCard, doFuse, canFuse, fuseGroups, fuseRating, bandOf, dealsToday, buyDeal, streakInfo, tradeRating, doTrade, startOpen, openPointer, openAdvance, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
-  CFG, get shopTab(){ return shopTab; }, set shopTab(v){ shopTab = v; }, get upStat(){ return upStat; }, set upStat(v){ upStat = v; }, set colSel(v){ colSel = v; }, set fuseMode(v){ fuseMode = v; }, get fuseSel(){ return fuseSel; }, set fuseSel(v){ fuseSel = v; }, tickOpen(ms){ openTick(ms); }, payPlay, earn, get SIMMING(){ return SIMMING; },
+  CFG, get shopTab(){ return shopTab; }, makeContact2: makeContact, cpuDecide, set shopTab(v){ shopTab = v; }, get upStat(){ return upStat; }, set upStat(v){ upStat = v; }, set colSel(v){ colSel = v; }, set fuseMode(v){ fuseMode = v; }, get fuseSel(){ return fuseSel; }, set fuseSel(v){ fuseSel = v; }, tickOpen(ms){ openTick(ms); }, payPlay, earn, get SIMMING(){ return SIMMING; },
   get P(){ return P; }, get BALL(){ return BALL; }, get swing(){ return swing; }, get FLD(){ return FLD; },
   stepAtBat, doSwing, makeContact, planFielders, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
   set swing(v){ swing = v; },
