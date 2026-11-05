@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-07g"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-07h"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-07g';
+const BUILD = '11-07h';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 1000000;                              // just for fun right now: the real start is 37,500
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1235,7 +1235,7 @@ const CFG = {
   BACK_PENALTY: 0.4,            // extra seconds to read and turn on a ball hit over his head
   DIVE_REACH: 1,                // ...and a ball rolling along the ground has to reach him too: within 1 ft, so it never looks like it rolled past
   TRANSFER_GROUND: 0.65, TRANSFER_AIR: 0.40,   // glove to release
-  THROW_EFFICIENCY: 0.75,       // every throw flies at 75% of the speed the rating says
+  THROW_EFFICIENCY: 0.85,       // every throw flies at 85% of the speed the rating says
   EXTRA_BASE_MARGIN: 0.30,      // a runner only takes the extra base if he beats the throw by this much
   DEBUG: /[?&]debug/.test(location.search),
 };
