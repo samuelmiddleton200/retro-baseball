@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-09d"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-09f"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-09d';
+const BUILD = '11-09f';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1553,8 +1553,8 @@ function ballAt(f){
 }
 function releasePt(){
   // the ball leaves the hand of the painted pitcher: sprite pixel (28, 59) of the release frame, so it never pops in somewhere else
-  if (typeof GPP !== 'undefined' && GPP.ready && plateOK()){ const k = 80 * TU / (402 * .96); return { x: tx(412) - 160 * k + 28 * k, y: ty(232) - 402 * k + 59 * k }; }
-  const m = proj(60.5, 0); return { x: m.x + 7 * TU, y: m.y - 62 * TU };
+  if (typeof GPP !== 'undefined' && GPP.ready && plateOK()){ const k = 80 * TU / (402 * .96); const o = derbyMoundShift(); return { x: tx(412) - 160 * k + 28 * k + o.x, y: ty(232) - 402 * k + 59 * k + o.y }; }
+  const m = proj(60.5, 0), o = derbyMoundShift(); return { x: m.x + 7 * TU + o.x, y: m.y - 62 * TU + o.y };
 }
 const mittPt = () => ({ x: ZONE.x + ZONE.w / 2, y: ZONE.y + ZONE.h * .85 });
 // Zone units -> inches: the zone is the plate plus a ball's width (19.9 in) wide and 26.4 in tall, so one unit is 9.95 in across and 13.2 in up.
@@ -2968,10 +2968,11 @@ const PWARM = { k:'', n:0 };
 const GPP = { img: [], ready: false };
 for (let i = 0; i < 8; i++){ const im = new Image(); im.onload = () => { im._ok = true; GPP.ready = GPP.img.every(f => f._ok); }; im.onerror = () => {}; im.src = SRC(`assets/gp/pitcher${i}.png`); GPP.img.push(im); }
 function drawPitcherAt(xL, yL, u){
+  const so = derbyMoundShift();
   if (!plateOK()) return drawPitcherAtOld(xL, yL, u);
   if (GPP.ready){
     const pos = u < .70 ? (u / .70) * 5 : 5 + clamp((u - .70) / .16, 0, 1) * 2, f0 = Math.min(7, Math.floor(pos)), f1 = Math.min(7, f0 + 1), k = pos - f0, c1 = uni(fldTeam());
-    const X = tx(412), Y = ty(232); GPSK = skinHex(curPitcher());
+    const X = tx(412) + so.x, Y = ty(232) + so.y; GPSK = skinHex(curPitcher());
     gpStamp(GPP.img[f0], 'PT' + f0, c1, X, Y, 80, false, .96);
     if (k > .03 && f1 !== f0) gpStamp(GPP.img[f1], 'PT' + f1, c1, X, Y, 80, false, .96, k);
     return;
@@ -2979,8 +2980,8 @@ function drawPitcherAt(xL, yL, u){
   const ft = fldTeam(), p = curPitcher(), step = Math.round(clamp(u, 0, 1) * 16), o = gxPerson('pit', 'pitch', p, ft, 0, 0, 0, null, { glove:1, cap:'#2748b8', cap2:'#e8eef8', shirt:'#2f58d0', sleeve:'#f2f4f8', pants:'#f2f4f8' });   // the target's pitcher: royal blue and white
   // the 17 windup poses are baked on first use (about 100 ms each): bake one extra per frame, unseen, so no pitch ever hitches
   const wk = lookKey(p.look); PWARM.k !== wk && (PWARM.k = wk, PWARM.n = 0);
-  if (PWARM.n <= 16 && PWARM.n !== step){ const w = PWARM.n++; g.save(); g.globalAlpha = 0; bakeStamp('p', 'P' + wk + '|' + w, o, GL3D.posePitcher(w / 16), -.2, tx(412), ty(232), 74, false, 5.9); g.restore(); }
-  return bakeStamp('p', 'P' + wk + '|' + step, o, GL3D.posePitcher(step / 16), -.2, tx(412), ty(232), 74, false, 5.9);
+  if (PWARM.n <= 16 && PWARM.n !== step){ const w = PWARM.n++; g.save(); g.globalAlpha = 0; bakeStamp('p', 'P' + wk + '|' + w, o, GL3D.posePitcher(w / 16), -.2, tx(412) + so.x, ty(232) + so.y, 74, false, 5.9); g.restore(); }
+  return bakeStamp('p', 'P' + wk + '|' + step, o, GL3D.posePitcher(step / 16), -.2, tx(412) + so.x, ty(232) + so.y, 74, false, 5.9);
 }
 const BAT_H = 196 * 1.15;                              // the batter is drawn 15% bigger than before
 function drawBatter(p, swingT, idle, rel){
@@ -3066,7 +3067,8 @@ function drawBatterView(dt){
   let u = 0;
   if (P && P.thrown) u = clamp(.70 + (P.t / P.dur) * .44, 0, 1);
   else if (P) u = clamp((P.windup || 0) * .70, 0, .70);
-  drawPitcherAt(M0.x, M0.y - 14 * TU, u);
+  const dpo = derbyMoundShift();                                  // the derby picture's mound is a little left of and lower than the old picture's
+  drawPitcherAt(M0.x + dpo.x, M0.y - 14 * TU + dpo.y, u);
 
   // the batter waits, then swings; the catcher crouches with the umpire right in front of him
   { const sT = swing && swing.t >= 0 ? clamp(swing.t / (BAT_LAG / .46), 0, 1) : null;
@@ -4936,6 +4938,7 @@ function derbyStart(card){
   return true;
 }
 // every pitch: 70 mph, dead centre, no break
+const derbyMoundShift = () => M && M.derby ? { x:-21 * TU, y:H * .012 } : { x:0, y:0 };
 function derbyThrow(){
   P.type = 'FB'; P.tx = 0; P.ty = 0; P.br = [0, 0]; P.mph = DERBY_MPH; P.quality = 100;
   P.dur = CFG.MOUND_FT / (DERBY_MPH * CFG.MPH_TO_FPS) * 1000 / CFG.PITCH_TIME_SCALE;
