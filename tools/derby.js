@@ -138,9 +138,8 @@ function drawDerbyHit(B){
   if (!gone && !B.foul || (B.foul && B.t < B.tJudge)){
     const gq = derbyPt(B.d, B.lat, 0), q = derbyPt(B.d, B.lat, B.h);
     R(Math.round(gq.x - 2), Math.round(gq.y), 4, 1, 'rgba(20,14,6,.4)');
-    const r = clamp(q.s * 1.15, 1.4, 3.6);
     if (q.y < 4){ g.fillStyle = '#fff'; g.beginPath(); g.moveTo(q.x, 2); g.lineTo(q.x - 3, 7); g.lineTo(q.x + 3, 7); g.fill(); }
-    else drawBall(q.x, q.y, r);
+    else if (!ballPx(q.x, q.y, 3)) drawBall(q.x, q.y, 1.6);                // the same little pixel baseball as the normal hit view
   }
   if (B.judged && !B.hr && !B.foul){
     const pk = B.path[Math.min(B.path.length - 1, Math.floor(B.T * 120))], lp = derbyPt(pk[1], pk[0], 0), age = Math.min(1, (B.t - B.T) / .6);
