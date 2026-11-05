@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11b"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11c"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11b';
+const BUILD = '11-11c';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1228,23 +1228,23 @@ const CFG = {
   FB_BASE: 82, FB_SLOPE: 0.4,   // fastball mph = 82 + (rating - 60) * 0.4: 60 throws 82, 120 throws 106
   OFFSPEED_SLOW: { CV: 15, SL: 11, CH: 13 },
   SPRINT_BASE: 25, SPRINT_SLOPE: 0.09,   // top speed ft/s = 25 + (rating - 60) * 0.09  (25 to 30 ft/s: the MLB range)
-  ARM_BASE: 70, ARM_SLOPE: 0.5, // throw mph = 70 + (fielding - 60) * 0.5: 60 throws 70 mph, 120 throws 100 mph
+  ARM_BASE: 50, ARM_SLOPE: 1 / 3, // the ball flies at 50 + (fielding - 60) / 3 mph: 50 mph at 60 fielding, 70 mph at 120
   ARM_RANGE0: 200, ARM_RANGE_SLOPE: 200 / 60,   // furthest a man can throw it: 200 ft at 60 fielding, 400 ft at 120
   // fielders and runners
   REACT_SLOW: 0.4, REACT_FAST: 0.2,      // reaction delay, worst to best fielding
   FIELDER_ACCEL_T: 1.0,         // seconds to reach top speed
-  RUNNER_ACCEL_T: 1.2, RUN_START_DELAY: 0.2,   // 90 ft: ~3.8 s a 120, ~4.05 s a 90, ~4.4 s a 60 (MLB: 3.7 to 4.2 s)
+  RUNNER_ACCEL_T: 1.2, RUN_START_DELAY: 0.2, BATTER_EXTRA: 0.2,   // the batter's run to first starts 0.2 s later than a runner's: 4.6 s a 60, 3.96 s a 120;   // 90 ft: ~3.8 s a 120, ~4.05 s a 90, ~4.4 s a 60 (MLB: 3.7 to 4.2 s)
   CATCH_RADIUS: 1, CATCH_H: 7,   // the ball has to come to him: within 1 ft to his left or right when it reaches him, and no higher than 7 ft
   CATCH_MIN_H: 1,               // a ball under a foot off the ground when it gets to him is a ground ball, not a catch
   INFIELD_DIVE: 1,              // no free lunges: a low liner is also only caught within 1 ft of him
   ROUTE_EFF: 0.92,              // a fielder never runs the perfect straight line: 0.92 means about 9% more ground than the crow flies
   BACK_PENALTY: 0.4,            // extra seconds to read and turn on a ball hit over his head
   DIVE_REACH: 1,                // ...and a ball rolling along the ground has to reach him too: within 1 ft, so it never looks like it rolled past
-  TRANSFER_GROUND: 0.65, TRANSFER_AIR: 0.40,   // glove to release
+  TRANSFER_GROUND: 0.3, TRANSFER_AIR: 0, GLOVE_PER_FT: 0.1 / 40,   // glove to release: 0.3 s fielding it off the ground, nothing extra catching it in the air, plus 0.1 s for every 40 ft of the throw (relay men too)
   READ_BREAK: 0.45,             // how far a breaking pitch's early path misleads a hitter about where it ends (a curve looks about 0.7 of the zone's half-height higher than it ends)
   MID_BARREL: 0.025,            // the middle 4 x 4 inches of the plate: this share of hits there are barrelled (sized so there are about 20% more home runs from it)
   PIVOT: 0.55,                  // seconds for the man at second to catch it, turn and throw on to first
-  THROW_EFFICIENCY: 0.85,       // every throw flies at 85% of the speed the rating says
+  THROW_EFFICIENCY: 1,          // (the rating's speed is the speed the ball flies)
   EXTRA_BASE_MARGIN: 0.30,      // a runner only takes the extra base if he beats the throw by this much
   DEBUG: /[?&]debug/.test(location.search),
 };
@@ -1256,7 +1256,7 @@ const throwFps = r => (CFG.ARM_BASE + (r - 60) * CFG.ARM_SLOPE) * CFG.MPH_TO_FPS
 const BASE_PTS = [[0, 0], [63.64, 63.64], [127.28, 0], [63.64, -63.64], [0, 0]];     // [depth, lat] of home, 1B, 2B, 3B
 // how far along the base path (feet) a runner is, for a runner starting from rest tau seconds ago
 const runDist = (rate, tau) => { const a = CFG.RUNNER_ACCEL_T, v = sprintFps(rate); return tau <= 0 ? 0 : tau < a ? .5 * v / a * tau * tau : .5 * v * a + v * (tau - a); };
-const runTime = (rate, S) => { const a = CFG.RUNNER_ACCEL_T, v = sprintFps(rate); return CFG.RUN_START_DELAY + (S <= .5 * v * a ? Math.sqrt(2 * S * a / v) : a + (S - .5 * v * a) / v); };
+const runTime = (rate, S, batter) => { const a = CFG.RUNNER_ACCEL_T, v = sprintFps(rate); return CFG.RUN_START_DELAY + (batter ? CFG.BATTER_EXTRA : 0) + (S <= .5 * v * a ? Math.sqrt(2 * S * a / v) : a + (S - .5 * v * a) / v); };
 function basePathPos(S){                                           // S feet along home -> 1B -> 2B -> 3B -> home
   S = clamp(S, 0, 360); const k = Math.min(3, Math.floor(S / 90)), f = (S - k * 90) / 90;
   return { d: lerp(BASE_PTS[k][0], BASE_PTS[k + 1][0], f), lat: lerp(BASE_PTS[k][1], BASE_PTS[k + 1][1], f) };
@@ -1318,16 +1318,17 @@ function runPosCtl(key, man, s0, s1){
     // forced = he has to run because the runner behind him pushes him: the batter always; first base's runner always; second's if first is taken; third's if first and second are
     // On a hit that is not going to be an out, EVERY runner leaves with the batter and runs to the next base (red diamond: he stops there). That base is his to take, so it is never a tag play.
     const forced = !BALL.tagUp;                                              // tagging up on a caught fly: nobody is forced, everyone stands on his base until you send him
-    c = RUNCTL[key] = { te:0, last:BALL.t, cap: BALL.tagUp ? (key === 'runB' ? s1 : s0) : manual ? Math.min(360, s0 + 90) : s1, s0, s1, pos:s0, man, manual, forced, arr:{} };
+    c = RUNCTL[key] = { te:0, last:BALL.t, cap: BALL.tagUp ? (key === 'runB' ? s1 : s0) : manual ? Math.min(360, s0 + 90) : s1, s0, s1, pos:s0, man, manual, forced, arr:{}, bat: key === 'runB' };
   }
   const dt = BALL.t - c.last; c.last = BALL.t; c.s1 = s1;
   if (c.back){                                                                  // turned round: he runs back toward the base he left
     c.pos = Math.max(c.back.to, c.pos - sprintFps(spdOf(man)) * Math.max(0, dt));
-    if (c.pos <= c.back.to + .01){ c.pos = c.back.to; c.cap = c.back.to; c.te = runTime(spdOf(man), c.pos - s0); c.back = null; }
+    if (c.pos <= c.back.to + .01){ c.pos = c.back.to; c.cap = c.back.to; c.te = runTime(spdOf(man), c.pos - s0, c.bat); c.back = null; }
     return c.pos;
   }
-  if (dt > 0 && s0 + runDist(spdOf(man), c.te - CFG.RUN_START_DELAY) < c.cap - .01) c.te += dt;      // he only runs while he is short of the base he is held to
-  c.pos = Math.min(c.cap, s0 + runDist(spdOf(man), c.te - CFG.RUN_START_DELAY));
+  const dly0 = CFG.RUN_START_DELAY + (c.bat ? CFG.BATTER_EXTRA : 0);
+  if (dt > 0 && s0 + runDist(spdOf(man), c.te - dly0) < c.cap - .01) c.te += dt;      // he only runs while he is short of the base he is held to
+  c.pos = Math.min(c.cap, s0 + runDist(spdOf(man), c.te - dly0));
   for (let k = 1; k <= 4; k++) if (c.arr[k] == null && 90 * k > s0 && c.pos >= 90 * k - .05) c.arr[k] = BALL.t;   // when he got to each base
   return c.pos;
 }
@@ -1340,7 +1341,7 @@ function runBack(key){                                                         /
 function runToggle(key){
   const c = RUNCTL[key]; if (!c || !c.manual) return;
   if (BALL && BALL.tagUp && BALL.t < BALL.tf) return;                          // not until it is caught
-  if (c.back){ c.back = null; c.te = runTime(spdOf(c.man), c.pos - c.s0); c.cap = Math.min(360, Math.ceil((c.pos + .5) / 90) * 90); return; }     // changed his mind: forward again
+  if (c.back){ c.back = null; c.te = runTime(spdOf(c.man), c.pos - c.s0, c.bat); c.cap = Math.min(360, Math.ceil((c.pos + .5) / 90) * 90); return; }     // changed his mind: forward again
   const ah = runAhead(c);
   if (c.cap > ah) c.cap = Math.max(ah, c.pos);            // green -> red: stop at the base ahead
   else c.cap = Math.min(360, ah + 90);                    // red -> green: go on through it and stop at the next
@@ -1367,7 +1368,7 @@ function launchBall(ev, la, sa, qual){
   };
   return BALL;
 }
-const RELAY_TR = 0.55;                                     // an infielder catching it and throwing it on
+const RELAY_TR = 0;                                         // a relay man's glove time is the 0.1 s per 40 ft of his own throw, nothing flat
 const BASE_PTS4 = [[63.64, 63.64], [127.28, 0], [63.64, -63.64], [0, 0]];
 // The quickest way to get the ball from `from` to `tgt`. Straight there if he can reach (his range), otherwise through one or two infielders
 // (centre field to second, then home; right field to short or first, then third). Every leg is a throw at that man's own speed and range.
@@ -1376,7 +1377,7 @@ function routeThrow(thrower, from, t0, tgt, tr, live){
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
   const mates = (FLD || []).filter(f => f !== thrower && ['1B', '2B', 'SS', '3B'].includes(f.pos));
   let best = null;
-  const leg = (a, b, ts, fps) => { const len = dist(a, b); return { from:a, to:b, t0:ts, t1:ts + len / fps, len }; };
+  const leg = (a, b, ts, fps) => { const len = dist(a, b), t0r = ts + len * CFG.GLOVE_PER_FT; return { from:a, to:b, t0:t0r, t1:t0r + len / fps, len }; };      // released 0.1 s per 40 ft after he has it
   const walk = (cur, rng, fps, tRel, legs, used, relays) => {
     if (dist(cur, tgt) <= rng){
       const L = legs.concat([leg(cur, tgt, tRel, fps)]);
@@ -1825,12 +1826,12 @@ function planOutcomeAuto(B, c){
   if (inAir){
     B.isCatch = true; B.play = B.la > CFG.LINE_MAX_LA ? 'flyout' : 'lineout'; B.tJudge = tf; B.tEnd = tf + 1.0; B.runN = 0; tagOK(); return;
   }
-  const tr = Math.hypot(pf[0], pf[1]) < 150 && !B.hr ? CFG.TRANSFER_GROUND : CFG.TRANSFER_AIR;
+  const tr = CFG.TRANSFER_GROUND;                                    // fielded off the ground
   B.thrInfo = { tf, tr, pf, arm: c.armFps };                          // when and from where the throw can go: judges every extra-base try
   if (B.hr){ B.play = 'hr'; B.tJudge = Math.min(B.T, hrGoneTime(B) + .05); B.tEnd = B.tJudge + 3.6; B.runN = 4; return; }
   B.tJudge = tf;
   if (Math.hypot(pf[0], pf[1]) < 150){                              // fielded in the infield: a throw to first
-    const a1 = throwArr(1, tr), t1 = runTime(spd, 90);
+    const a1 = throwArr(1, tr), t1 = runTime(spd, 90, true);
     if (chance(.022 + (110 - c.man.fielding) / 1100)){ B.play = 'error'; B.tEnd = tf + 1.6; return; }
     if (M.bases[0] && M.outs < 2){
       // the lead forced runner decides where the first out is: second with first taken, third with first and second, home with the bases loaded
@@ -1855,10 +1856,10 @@ function planOutcomeAuto(B, c){
   }
   // a hit to the outfield: how many bases can he take before the throw arrives?
   let n = 1;
-  for (const k of [2, 3]) if (runTime(spd, 90 * k) + CFG.EXTRA_BASE_MARGIN < throwArr(k, tr)) n = k; else break;
+  for (const k of [2, 3]) if (runTime(spd, 90 * k, true) + CFG.EXTRA_BASE_MARGIN < throwArr(k, tr)) n = k; else break;
   throwTo(n + 1, tr);
   B.play = ['', 'single', 'double', 'triple'][n]; B.runN = n;
-  B.tEnd = Math.max(runTime(spd, 90 * n), tf) + .8;
+  B.tEnd = Math.max(runTime(spd, 90 * n, true), tf) + .8;
 }
 
 // the base each runner is heading for in the computer's plan (D = the base he ends on if nobody throws), with his own start and speed
@@ -1872,7 +1873,7 @@ function planOutcome(B, c){
   if (!userPitches() || B.hr || B.foul || B.isCatch || !['single', 'double', 'triple', 'error', 'groundout', 'dp', 'fc'].includes(B.play)) return;
   B.defManual = true; B.defKind = B.play; B.play = 'def'; B.thr = null;
   B.def = { queue:[], pass:null, outs:[], entries:defEntries(B), last:-1 };
-  const arrive = B.def.entries.map(e => runTime(spdOf(e.man), 90 * e.D - e.s0));
+  const arrive = B.def.entries.map(e => runTime(spdOf(e.man), 90 * e.D - e.s0, e.batter));
   B.tEnd = Math.max((B.tf || 0) + 1.5, ...arrive) + .7;
 }
 const DEF_BASES = [[63.64, 63.64], [127.28, 0], [63.64, -63.64], [0, 0]];                 // first, second, third, home: [depth, lat]
@@ -1895,7 +1896,7 @@ function defResolve(B, bi, ta){
   const nb = bi + 1, d = B.def;
   d.entries.forEach(e => {
     if (d.outs.includes(e.key) || 90 * nb <= e.s0 || nb > e.D) return;
-    if (ta < runTime(spdOf(e.man), 90 * nb - e.s0)){ d.outs.push(e.key); const c = RUNCTL[e.key]; if (c){ c.out = true; c.outT = B.t; } say(e.batter ? 'OUT AT ' + ['FIRST', 'SECOND', 'THIRD', 'HOME'][bi] + '!' : 'OUT!'); }
+    if (ta < runTime(spdOf(e.man), 90 * nb - e.s0, e.batter)){ d.outs.push(e.key); const c = RUNCTL[e.key]; if (c){ c.out = true; c.outT = B.t; } say(e.batter ? 'OUT AT ' + ['FIRST', 'SECOND', 'THIRD', 'HOME'][bi] + '!' : 'OUT!'); }
   });
 }
 // the ball after it is fielded: held, thrown where you tapped, caught, held again
@@ -2613,7 +2614,7 @@ function gxPlay(B){
     S.people.push(gxPerson(key, 'field', f.man, ft, X, Z, yaw, pose, { glove:1, sp }));
   });
   // the batter running it out, and the men on base
-  const dly = CFG.RUN_START_DELAY, runMarks = []; GX.runMarks = runMarks;
+  const dly0 = CFG.RUN_START_DELAY, runMarks = []; GX.runMarks = runMarks;
   if (!B.foul){
     const run = (key, man, s0, s1) => {
       const s = runPosCtl(key, man, s0, s1); let a = basePathPos(s), over = 0;
@@ -2626,7 +2627,7 @@ function gxPlay(B){
       }
       const X = a.lat, Z = -a.d, mv = gxMover(key, X, Z);
       if (RUNCTL[key] && RUNCTL[key].out && B.t > RUNCTL[key].outT + .9) return;       // thrown out: he walks off
-      const dirYaw = Math.atan2(a2.lat - a.lat, -(a2.d - a.d));
+      const dirYaw = Math.atan2(a2.lat - a.lat, -(a2.d - a.d)), dly = key === 'runB' ? dly0 + CFG.BATTER_EXTRA : dly0;
       const cc = RUNCTL[key], held = cc && s >= cc.cap - .05 && over < .3;
       S.people.push(gxPerson(key, 'run', man, bt, X, Z, dirYaw, B.t < dly ? GL3D.poseBatter(1, t) : (held ? GL3D.poseReady(t) : GL3D.poseRun(mv.ph, spdOf(man))), { sp: B.t < dly || held ? { f:0 } : runCycle(dirYaw, mv.ph, key) }));
       if (isManualPlay(B) && cc && cc.manual && !cc.out){ const q = toScr(X, paintOn() ? 16 : 26, Z, W, H); runMarks.push([key, q.x, q.y]); }
@@ -2638,8 +2639,8 @@ function gxPlay(B){
   // the ball and its white path
   ballHeld = (ballHeld && !B.inFlightThrow) || !!B.heldAfter;      // seen while it flies, rolls or is thrown; gone while it is in a hand
   const hi = hrState(B);
-  const LIFT = paintOn() ? BALL_LIFT : 0;                           // on the painted park the ball is drawn 3 ft higher than it is, so a ball just over the wall looks over it
-  S.ball = (ballHeld && !B.hr) || B.gone ? null : { x:B.lat, y:B.h + .4 + LIFT, z:-B.d, r:.95 };
+  const LIFT = paintOn() ? BALL_LIFT * clamp((B.h - .3) / 5, 0, 1) : 0;      // rolling on the ground it is not lifted                           // on the painted park the ball is drawn 3 ft higher than it is, so a ball just over the wall looks over it
+  S.ball = (ballHeld && !B.hr) || B.gone ? null : { x:B.lat, y:B.h + .4 + LIFT, z:-B.d, r:.95, ground: B.h < .6 };
   GX.bv = !!S.ball;
   if (B.t < .05) GX.trail = [];
   // the white trail only follows the ball while it is in the air: it stops the moment the ball touches the ground (or is caught), and a ring marks the spot
@@ -2709,7 +2710,7 @@ function gxOverlay(S){
   if (S.ball){
     const b = S.ball, gq = P(b.x, .05, b.z), q = P(b.x, b.y, b.z), hh = clamp(b.y / 60, 0, 1);
     const sw = hh > .5 ? 5 : 4;
-    R(Math.round(gq.x - sw / 2), Math.round(gq.y), sw, 1, 'rgba(20,14,6,.38)');                              // its shadow on the grass, a flat pixel bar
+    if (!b.ground) R(Math.round(gq.x - sw / 2), Math.round(gq.y), sw, 1, 'rgba(20,14,6,.38)');                // its shadow on the grass, a flat pixel bar (none while it rolls)
     if (ballPx(q.x, q.y, 3)) return;                                  // the supplied pixel baseball
     // fallback while it loads: a 5 x 5 pixel ball
     const x0 = Math.round(q.x) - 2, y0 = Math.round(q.y) - 2, spin = Math.floor((S.time || 0) * 8) % 2;
@@ -3482,7 +3483,7 @@ function drawAerial(B, bt){
   const pq = aerPt(60.5, 0); put(pq.x, pq.y, 'in_xs', false);               // the pitcher
   // the batter and the runners go along the base path at their own speeds
   const batS = B.foul ? 0 : B.isCatch ? 25 : 90 * (B.runN || 1);
-  const bp = basePathPos(Math.min(batS, runDist(spdOf(M.batter), B.t - CFG.RUN_START_DELAY)));
+  const bp = basePathPos(Math.min(batS, runDist(spdOf(M.batter), B.t - CFG.RUN_START_DELAY - CFG.BATTER_EXTRA)));
   const rb = aerPt(bp.d, bp.lat); put(rb.x, rb.y, 'run_away', false);
   M.bases.forEach((p2, i) => { if (!p2) return;
     const adv = B.foul ? 0 : runnerAdv(B, i);
@@ -5094,7 +5095,7 @@ function drawDerbyHit(B){
   derbyPeople();
   if (B.t < .05) DTRAIL = [];
   const gone = B.hr && B.hrG != null && B.t >= B.hrG, air = B.t < B.T && !gone;
-  if (air){ DTRAIL.push([B.lat, B.h + .4 + BALL_LIFT, -B.d]); if (DTRAIL.length > 290) DTRAIL.shift(); }
+  if (air){ DTRAIL.push([B.lat, B.h + .4 + BALL_LIFT * clamp((B.h - .3) / 5, 0, 1), -B.d]); if (DTRAIL.length > 290) DTRAIL.shift(); }
   const Pp = (x, y, z) => derbyPt(-z, x, y);
   if (DTRAIL.length > 1 && !B.hr){
     g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = .9; g.beginPath();
@@ -5108,8 +5109,8 @@ function drawDerbyHit(B){
   }
   // the ball and the spot it comes down
   if (!gone && !B.foul || (B.foul && B.t < B.tJudge)){
-    const gq = derbyPt(B.d, B.lat, 0), q = derbyPt(B.d, B.lat, B.h + BALL_LIFT);
-    R(Math.round(gq.x - 2), Math.round(gq.y), 4, 1, 'rgba(20,14,6,.4)');
+    const gq = derbyPt(B.d, B.lat, 0), q = derbyPt(B.d, B.lat, B.h + BALL_LIFT * clamp((B.h - .3) / 5, 0, 1));
+    if (B.h >= .6) R(Math.round(gq.x - 2), Math.round(gq.y), 4, 1, 'rgba(20,14,6,.4)');
     if (q.y < 4){ g.fillStyle = '#fff'; g.beginPath(); g.moveTo(q.x, 2); g.lineTo(q.x - 3, 7); g.lineTo(q.x + 3, 7); g.fill(); }
     else if (!ballPx(q.x, q.y, 3)) drawBall(q.x, q.y, 1.6);                // the same little pixel baseball as the normal hit view
   }
@@ -5266,7 +5267,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
   runToggle, runBack, drawPlay, simLeagueDay, simLeagueGame, inZone, defTap, defBaseAt, defHit, get BALL(){ return BALL; }, circleIn, padGeom, padAim, get W(){ return W; }, get SC(){ return SC; }, get OX(){ return OX; }, simPitch, simRest, PG, pg, stamCap, pullCheck, changePitcher, fatigue, fastballMph, get P(){ return P; }, ballAt, throwPitch, inZone, nextPitch, ZONE, get menu(){ return menu; }, set menu(v){ menu = v; }, get G(){ return G; }, statRows, STAT_COLS, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, get statsView(){ return statsView; }, set statsView(v){ statsView = v; }, snapMatch, resumeMatch, matchSnap, startGame2: startGame, evMin, HR_ANGLE, EVMAX, evMax, reachIn, outsideIn, hitsBatter, throwRange, throwFps, spdOf, routeThrow, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
-  derbyStart, derbyEnd, derbyPt, DHIT, DPITCH, derbyDist, DH, get DTRAIL(){ return DTRAIL; },
+  derbyStart, derbyEnd, derbyPt, DHIT, DPITCH, derbyDist, DH, runTime, sprintFps, get DTRAIL(){ return DTRAIL; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────

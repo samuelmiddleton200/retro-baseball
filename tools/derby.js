@@ -122,7 +122,7 @@ function drawDerbyHit(B){
   derbyPeople();
   if (B.t < .05) DTRAIL = [];
   const gone = B.hr && B.hrG != null && B.t >= B.hrG, air = B.t < B.T && !gone;
-  if (air){ DTRAIL.push([B.lat, B.h + .4 + BALL_LIFT, -B.d]); if (DTRAIL.length > 290) DTRAIL.shift(); }
+  if (air){ DTRAIL.push([B.lat, B.h + .4 + BALL_LIFT * clamp((B.h - .3) / 5, 0, 1), -B.d]); if (DTRAIL.length > 290) DTRAIL.shift(); }
   const Pp = (x, y, z) => derbyPt(-z, x, y);
   if (DTRAIL.length > 1 && !B.hr){
     g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = .9; g.beginPath();
@@ -136,8 +136,8 @@ function drawDerbyHit(B){
   }
   // the ball and the spot it comes down
   if (!gone && !B.foul || (B.foul && B.t < B.tJudge)){
-    const gq = derbyPt(B.d, B.lat, 0), q = derbyPt(B.d, B.lat, B.h + BALL_LIFT);
-    R(Math.round(gq.x - 2), Math.round(gq.y), 4, 1, 'rgba(20,14,6,.4)');
+    const gq = derbyPt(B.d, B.lat, 0), q = derbyPt(B.d, B.lat, B.h + BALL_LIFT * clamp((B.h - .3) / 5, 0, 1));
+    if (B.h >= .6) R(Math.round(gq.x - 2), Math.round(gq.y), 4, 1, 'rgba(20,14,6,.4)');
     if (q.y < 4){ g.fillStyle = '#fff'; g.beginPath(); g.moveTo(q.x, 2); g.lineTo(q.x - 3, 7); g.lineTo(q.x + 3, 7); g.fill(); }
     else if (!ballPx(q.x, q.y, 3)) drawBall(q.x, q.y, 1.6);                // the same little pixel baseball as the normal hit view
   }
