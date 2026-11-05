@@ -36,7 +36,7 @@ function derbyStart(card){
   return true;
 }
 // every pitch: 70 mph, dead centre, no break
-const derbyMoundShift = () => M && M.derby ? { x:-21 * TU, y:H * .012 } : { x:0, y:0 };
+const derbyMoundShift = () => { const st = curStadium(); return { x:st.shift[0] * TU, y:st.shift[1] * H }; };
 function derbyThrow(){
   P.type = 'FB'; P.tx = 0; P.ty = 0; P.br = [0, 0]; P.mph = DERBY_MPH; P.quality = 100;
   P.dur = CFG.MOUND_FT / (DERBY_MPH * CFG.MPH_TO_FPS) * 1000 / CFG.PITCH_TIME_SCALE;

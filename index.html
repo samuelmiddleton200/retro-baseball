@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-09h"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-10a"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-09h';
+const BUILD = '11-10a';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1065,6 +1065,7 @@ function startGame(oppIdx, home, opts = {}){
     park: makePark(home ? me : opp), msg:null, msgT:0, over:false, exc:0,
   };
   M.uni = pickUniforms(M.home, M.away);                          // who wears what, once, for the whole game
+  M.stad = (G.day || 0) % STADIUMS.length;                         // the three ballparks take turns
   M.coins0 = G.coins;                                            // what you had when it began: the game's total is worked out from this
   M.earn = {}; M.rep = {}; M.pitchSimmed = false;                 // what you earned for what you played, repeat bonuses, and whether any of your pitching was simmed
   M.pitcherHome.st.ip = M.pitcherHome.st.ip || 0;
@@ -2742,22 +2743,33 @@ function runCycle(yaw, ph, key){
   const right = sn > 0, a = Math.floor(ph * 2) % 2 === 0, hop = Math.abs(Math.sin(ph * Math.PI * 2));
   return right ? { f: a ? 2 : 3, flip: !a, bob: hop, lean: .07 } : { f: a ? 3 : 2, flip: !a, bob: hop, lean: -.07 };
 }
-// ── the painted hit view (ChatGPT's picture of the same park as the batter's view). Every figure and the ball are placed on it by feet from home plate. ──
-const HITP = new Image(); HITP.src = 'assets/fields/hit_painted.png?b=11-09g';
-// picture 1697 x 927: home plate at the bottom centre; depth -> picture row is a measured table, sideways feet shrink with distance (kx / (depth + c))
-const PH = { IW:1697, IH:927, px:848, YD:[[-10, 855], [0, 808], [60.5, 521], [127.3, 375], [233.3, 238], [400, 185], [700, 168]], kx:1186, c:130.5, hs:.85 };
-const paintOn = () => ready(HITP) && !window.__noPaint && !(M && M.derby);
+// ── the ballparks: every one is a matched pair of ChatGPT pictures, the batter's view and the high view, each with its own measured fit of feet on the field to picture pixels ──
+const HITP = new Image(); HITP.src = 'assets/fields/hit_painted.png?b=11-10a';
+const FPITCH = new Image(); FPITCH.src = 'assets/fields/fenway_pitch.png?b=11-10a';
+const FHIT = new Image(); FHIT.src = 'assets/fields/fenway_hit.png?b=11-10a';
+// PH: picture size, home plate's column, depth (ft) -> picture row as a measured table, sideways feet shrink with distance (kx / (depth + c)), height scale hs.
+// shift: how far the pitcher stands from where the old picture's mound was (in target pixels across, in screen heights down)
+const STADIUMS = [
+  { id:'classic', name:'THE BALLPARK', pitch:() => PLATE, hit:() => HITP, shift:[0, 0],
+    PH:{ IW:1697, IH:927, px:848, YD:[[-10, 855], [0, 808], [60.5, 521], [127.3, 375], [233.3, 238], [400, 185], [700, 168]], kx:1186, c:130.5, hs:.85 } },
+  { id:'fenway', name:'BOSTON', pitch:() => FPITCH, hit:() => FHIT, shift:[8.9, 0],
+    PH:{ IW:1697, IH:927, px:848, YD:[[-10, 870], [0, 824], [60.5, 548], [127.3, 406], [233.3, 268], [400, 241], [700, 225]], kx:1228, c:136.7, hs:.85 } },
+  { id:'bay', name:'THE BAY', pitch:() => DPITCH, hit:() => DHIT, shift:[-21, .012],
+    PH:{ IW:1873, IH:840, px:935, YD:[[-10, 872], [0, 805], [60.5, 563], [127.3, 446], [233.3, 358], [400, 295], [700, 248]], kx:1244, c:98, hs:.85 } },
+];
+const curStadium = () => STADIUMS[(M && M.stad) || 0] || STADIUMS[0];
+const paintOn = () => ready(curStadium().hit()) && !window.__noPaint && !(M && M.derby);
 function paintPt(d, lat, h){
-  const T = PH.YD; let y = T[T.length - 1][1];
+  const PHs = curStadium().PH, T = PHs.YD; let y = T[T.length - 1][1];
   for (let i = 1; i < T.length; i++) if (d <= T[i][0]){ const a = T[i - 1], b = T[i]; y = lerp(a[1], b[1], (d - a[0]) / (b[0] - a[0])); break; }
-  const s = PH.kx / (Math.max(d, -40) + PH.c), sc = H / PH.IH, sx = Math.max(sc, W / PH.IW), x0 = W / 2 - PH.IW * sx / 2;      // a wider phone stretches the picture sideways to fill it; a narrower one crops it
-  return { x: x0 + (PH.px + lat * s) * sx, y: (y - h * s * PH.hs) * sc, s: s * sc };
+  const s = PHs.kx / (Math.max(d, -40) + PHs.c), sc = H / PHs.IH, sx = Math.max(sc, W / PHs.IW), x0 = W / 2 - PHs.IW * sx / 2;      // a wider phone stretches the picture sideways to fill it; a narrower one crops it
+  return { x: x0 + (PHs.px + lat * s) * sx, y: (y - h * s * PHs.hs) * sc, s: s * sc };
 }
 const toScr = (x, y, z, w, h) => paintOn() ? paintPt(-z, x, y) : GL3D.toScreen(x, y, z, w, h);
 function drawPaintBG(){
-  const sc = H / PH.IH, sx = Math.max(sc, W / PH.IW), iw = PH.IW * sx;
+  const st = curStadium(), PHs = st.PH, sc = H / PHs.IH, sx = Math.max(sc, W / PHs.IW), iw = PHs.IW * sx;
   g.fillStyle = '#05070b'; g.fillRect(0, 0, W, H); g.imageSmoothingEnabled = false;
-  g.drawImage(HITP, W / 2 - iw / 2, 0, iw, H);
+  g.drawImage(st.hit(), W / 2 - iw / 2, 0, iw, H);
 }
 function gxSprites(list, B){
   GX.dbg = list.filter(p => p.sp).map(p => p.key + ':' + (p.sp.dir || '') + (p.sp.i != null ? p.sp.i : '') + (p.sp.f != null ? 'f' + p.sp.f : '') + (p.sp.flip ? 'F' : ''));
@@ -2849,7 +2861,7 @@ function drawPlateBG(){
   g.fillStyle = '#05070b'; g.fillRect(0, 0, W, H);
   // the picture is 1100 target pixels wide with the old 756-wide picture in the middle, so every position stays where it was.
   // A phone narrower than that crops the same amount off both sides; one wider (rare) shows a sliver of black at the edges.
-  g.drawImage(M && M.derby && ready(DPITCH) ? DPITCH : PLATE, W / 2 - 550 * s, 0, 1100 * s, H);          // the field with NO people in it: every figure is drawn live
+  g.drawImage(ready(curStadium().pitch()) ? curStadium().pitch() : PLATE, W / 2 - 550 * s, 0, 1100 * s, H);          // the field with NO people in it: every figure is drawn live
 }
 // paint the clean field back over one character's box so he can be redrawn moving
 function patchBox(k){
@@ -4946,7 +4958,7 @@ function derbyStart(card){
     pitcherHome: opp.rot[0], pitcherAway: me.rot[0], pcHome:0, pcAway:0, line:[], mode:'full',
     park: { wall:'#1c3b40', wallH:26, feature:'none', pad:0, lf:330, cf:400, rf:330, night:false, excite:0 }, msg:null, msgT:0, over:false, exc:0,
   };
-  M.uni = pickUniforms(M.home, M.away);
+  M.uni = pickUniforms(M.home, M.away); M.stad = 2;                  // the derby is always played in the bay
   M.coins0 = G.coins; M.earn = {}; M.rep = {}; M.pitchSimmed = false;
   M.batter = card; M.catcher = opp.lineup[0];
   M.derby = { card, outs:0, score:0, hr:0, dist:0, balls:0, longest:0, pop:null, fin:null, hrParty:[] };
@@ -4957,7 +4969,7 @@ function derbyStart(card){
   return true;
 }
 // every pitch: 70 mph, dead centre, no break
-const derbyMoundShift = () => M && M.derby ? { x:-21 * TU, y:H * .012 } : { x:0, y:0 };
+const derbyMoundShift = () => { const st = curStadium(); return { x:st.shift[0] * TU, y:st.shift[1] * H }; };      // each park's mound is a little off the old picture's
 function derbyThrow(){
   P.type = 'FB'; P.tx = 0; P.ty = 0; P.br = [0, 0]; P.mph = DERBY_MPH; P.quality = 100;
   P.dur = CFG.MOUND_FT / (DERBY_MPH * CFG.MPH_TO_FPS) * 1000 / CFG.PITCH_TIME_SCALE;
