@@ -110,10 +110,9 @@ function derbyPeople(){
   [{ k:'cat', d:-3.4, lat:0, bat:1, man:ft.lineup[7] || ft.lineup[0], team:ft },
    { k:'bat', d:.7, lat: lefty ? 3 : -3, man:b, team:bt },
    { k:'pit', d:60.5, lat:0, man:curPitcher(), team:ft }].forEach(o => {
-    const p = gxPerson(o.k, o.k, o.man, o.team, o.lat, -o.d, 0, null), q = derbyPt(o.d, o.lat, 0), hPx = Math.max(12, Math.round(6.2 * q.s * DH.hs * 1.05 / 3) * 3);
+    const p = gxPerson(o.k, o.k, o.man, o.team, o.lat, -o.d, 0, null), q = derbyPt(o.d, o.lat, 0), hPx = clamp(Math.round(6.2 * q.s * DH.hs * 1.05 * .85), 10, 13);
     GPSK = p.skin || '';
-    if (o.bat) gpStamp(GP.batter[0], 'B0', p.cap, q.x, q.y, hPx / TU, false, .96);
-    else gpStamp(GPF.img[0], 'FD0', p.cap, q.x, q.y, hPx / TU, false, .96);
+    gpStamp(GPF.img[0], 'FD0', p.cap, q.x, q.y, hPx / TU, false, .96);
   });
 }
 function drawDerbyHit(B){
