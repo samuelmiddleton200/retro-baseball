@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-10f"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-10h"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-10f';
+const BUILD = '11-10h';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1844,7 +1844,7 @@ function planOutcomeAuto(B, c){
           B.thr.legs.push({ from:bases[fb - 1], to:[63.64, 63.64], t0:af + .55, t1:a1b, len:legLen }); B.thr.t1 = a1b; B.thr.to = [63.64, 63.64];
           return;
         }
-        if (af + .3 < rf && chance(.55)){                                      // no double play, but he has the lead runner easily: the force out there, batter safe at first
+        if ((fb === 2 && (c.pos === 'SS' || c.pos === '2B')) || (af + .3 < rf && chance(.55))){      // no double play: a shortstop or second baseman always takes the sure out at second (a short throw); others when the lead runner is easily beaten. Batter safe at first
           B.play = 'fc'; B.dpBase = fb; throwTo(fb, tr); B.tEnd = af + .8; B.runN = 1; B.out = true; return;
         }
       }
@@ -2770,9 +2770,28 @@ const STADIUMS = [
 const curStadium = () => STADIUMS[(M && M.stad) || 0] || STADIUMS[0];
 const BALL_LIFT = 3;
 const paintOn = () => ready(curStadium().hit()) && !window.__noPaint && !(M && M.derby);
+// depth (ft) -> picture row: a smooth monotone curve through the measured table (straight pieces made a ball's path bend at every table point)
+function paintRow(PHs, d){
+  const T = PHs.YD, n = T.length;
+  if (!PHs._m){
+    const dl = [], m = new Array(n);
+    for (let i = 0; i < n - 1; i++) dl.push((T[i + 1][1] - T[i][1]) / (T[i + 1][0] - T[i][0]));
+    m[0] = dl[0]; m[n - 1] = dl[n - 2];
+    for (let i = 1; i < n - 1; i++){
+      if (dl[i - 1] * dl[i] <= 0) m[i] = 0;
+      else { const h0 = T[i][0] - T[i - 1][0], h1 = T[i + 1][0] - T[i][0], w1 = 2 * h1 + h0, w2 = h1 + 2 * h0; m[i] = (w1 + w2) / (w1 / dl[i - 1] + w2 / dl[i]); }
+    }
+    PHs._m = m;
+  }
+  const m = PHs._m;
+  if (d <= T[0][0]) return T[0][1] + m[0] * (d - T[0][0]);
+  if (d >= T[n - 1][0]) return T[n - 1][1] + m[n - 1] * (d - T[n - 1][0]);
+  let i = 0; while (d > T[i + 1][0]) i++;
+  const h = T[i + 1][0] - T[i][0], t = (d - T[i][0]) / h, t2 = t * t, t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * T[i][1] + (t3 - 2 * t2 + t) * h * m[i] + (-2 * t3 + 3 * t2) * T[i + 1][1] + (t3 - t2) * h * m[i + 1];
+}
 function paintPt(d, lat, h){
-  const PHs = curStadium().PH, T = PHs.YD; let y = T[T.length - 1][1];
-  for (let i = 1; i < T.length; i++) if (d <= T[i][0]){ const a = T[i - 1], b = T[i]; y = lerp(a[1], b[1], (d - a[0]) / (b[0] - a[0])); break; }
+  const PHs = curStadium().PH, y = paintRow(PHs, d);
   const s = PHs.kx / (Math.max(d, -40) + PHs.c), sc = H / PHs.IH, sx = Math.max(sc, W / PHs.IW), x0 = W / 2 - PHs.IW * sx / 2;      // a wider phone stretches the picture sideways to fill it; a narrower one crops it
   return { x: x0 + (PHs.px + lat * s) * sx, y: (y - h * s * PHs.hs) * sc, s: s * sc };
 }
