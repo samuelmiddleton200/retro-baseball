@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-10a"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-10b"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-10a';
+const BUILD = '11-10b';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -2620,12 +2620,13 @@ function gxPlay(B){
   // the ball and its white path
   ballHeld = (ballHeld && !B.inFlightThrow) || !!B.heldAfter;      // seen while it flies, rolls or is thrown; gone while it is in a hand
   const hi = hrState(B);
-  S.ball = (ballHeld && !B.hr) || B.gone ? null : { x:B.lat, y:B.h + .4, z:-B.d, r:.95 };
+  const LIFT = paintOn() ? BALL_LIFT : 0;                           // on the painted park the ball is drawn 3 ft higher than it is, so a ball just over the wall looks over it
+  S.ball = (ballHeld && !B.hr) || B.gone ? null : { x:B.lat, y:B.h + .4 + LIFT, z:-B.d, r:.95 };
   GX.bv = !!S.ball;
   if (B.t < .05) GX.trail = [];
   // the white trail only follows the ball while it is in the air: it stops the moment the ball touches the ground (or is caught), and a ring marks the spot
   const airborne = !B.hr ? (B.t < B.T && !(B.isCatch && B.tf != null && B.t >= B.tf)) : B.t < B.T;
-  if (airborne){ GX.trail.push([B.lat, B.h * 1.0 + .4, -B.d]); if (GX.trail.length > 290) GX.trail.shift(); GX.land = null; }
+  if (airborne){ GX.trail.push([B.lat, B.h * 1.0 + .4 + LIFT, -B.d]); if (GX.trail.length > 290) GX.trail.shift(); GX.land = null; }
   else if (!B.hr && !GX.land && GX.trail.length) GX.land = { x:GX.trail[GX.trail.length - 1][0], z:GX.trail[GX.trail.length - 1][2], t:performance.now(), caught:!!B.isCatch };
   S.land = GX.land;
   S.trail = B.gone ? [] : GX.trail.slice(); S.trailMode = 'line'; S.hr = !!B.hr; S.hrOut = !!(hi && hi.out); S.hrFar = (B.carry || 0) >= 450;
@@ -2758,6 +2759,7 @@ const STADIUMS = [
     PH:{ IW:1873, IH:840, px:935, YD:[[-10, 872], [0, 805], [60.5, 563], [127.3, 446], [233.3, 358], [400, 295], [700, 248]], kx:1244, c:98, hs:.85 } },
 ];
 const curStadium = () => STADIUMS[(M && M.stad) || 0] || STADIUMS[0];
+const BALL_LIFT = 3;
 const paintOn = () => ready(curStadium().hit()) && !window.__noPaint && !(M && M.derby);
 function paintPt(d, lat, h){
   const PHs = curStadium().PH, T = PHs.YD; let y = T[T.length - 1][1];
@@ -5056,7 +5058,7 @@ function drawDerbyHit(B){
   derbyPeople();
   if (B.t < .05) DTRAIL = [];
   const gone = B.hr && B.hrG != null && B.t >= B.hrG, air = B.t < B.T && !gone;
-  if (air){ DTRAIL.push([B.lat, B.h + .4, -B.d]); if (DTRAIL.length > 290) DTRAIL.shift(); }
+  if (air){ DTRAIL.push([B.lat, B.h + .4 + BALL_LIFT, -B.d]); if (DTRAIL.length > 290) DTRAIL.shift(); }
   const Pp = (x, y, z) => derbyPt(-z, x, y);
   if (DTRAIL.length > 1 && !B.hr){
     g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = .9; g.beginPath();
@@ -5070,7 +5072,7 @@ function drawDerbyHit(B){
   }
   // the ball and the spot it comes down
   if (!gone && !B.foul || (B.foul && B.t < B.tJudge)){
-    const gq = derbyPt(B.d, B.lat, 0), q = derbyPt(B.d, B.lat, B.h);
+    const gq = derbyPt(B.d, B.lat, 0), q = derbyPt(B.d, B.lat, B.h + BALL_LIFT);
     R(Math.round(gq.x - 2), Math.round(gq.y), 4, 1, 'rgba(20,14,6,.4)');
     if (q.y < 4){ g.fillStyle = '#fff'; g.beginPath(); g.moveTo(q.x, 2); g.lineTo(q.x - 3, 7); g.lineTo(q.x + 3, 7); g.fill(); }
     else if (!ballPx(q.x, q.y, 3)) drawBall(q.x, q.y, 1.6);                // the same little pixel baseball as the normal hit view
