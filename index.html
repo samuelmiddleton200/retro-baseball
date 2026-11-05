@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11g"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11h"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11g';
+const BUILD = '11-11h';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1872,18 +1872,29 @@ function planOutcomeAuto(B, c){
         if (stepOn){ B.thr = mkThr({ legs:[{ from:pf, to:bases[2], t0:tf, t1:af, len:dS }], arr:af, relays:[] }, pf, bases[2]); B.thr.stepOn = true; B.thr.catcher = null; }
         else throwTo(fb, tr);
       };
-      if (af < rf){
-        const legLen = fb === 3 ? 127.28 : 90;
-        const pv = stepOn ? c : route(fb, tr).catcher, pvArm = pv ? pv.armFps : c.armFps, pvT0 = af + (stepOn ? CFG.PIVOT * .5 : CFG.PIVOT) + legLen * CFG.GLOVE_PER_FT, a1b = pvT0 + legLen / pvArm;                         // the pivot man's throw on to first, leaving .55 s after the ball gets to him
-        if (a1b < t1){                                                        // that base, then on to first: a double play (the relay is drawn as a second leg)
-          B.play = 'dp'; B.dpBase = fb; putOut(); B.tEnd = a1b + .6; B.runN = 1; B.out = true;
-          B.thr.legs.push({ from:bases[fb - 1], to:[63.64, 63.64], t0:pvT0, t1:a1b, len:legLen }); B.thr.t1 = a1b; B.thr.to = [63.64, 63.64];
-          B.thr.pivot = pv;                                                    // he is at the force base, the man at first is the one who catches the second throw
-          B.thr.catcher = FLD.filter(f => f !== c && f !== pv && BAG_COVER[0].includes(f.pos)).sort((x, y) => Math.hypot(x.d - 63.64, x.lat - 63.64) - Math.hypot(y.d - 63.64, y.lat - 63.64))[0] || null;
-          return;
+      if (af < rf){                                                              // the force at the lead base can be made: always try for two
+        const pv = stepOn ? c : route(fb, tr).catcher, here = bases[fb - 1];
+        const pvArm = pv ? pv.armFps : (fb === 4 ? throwFps(((fldTeam().lineup[7]) || c.man).fielding) : c.armFps);
+        const pvGo = af + (stepOn ? CFG.PIVOT * .5 : CFG.PIVOT);                // the pivot man catches it, turns and throws
+        let pick = null;
+        for (const n of [1, 2, 3]){                                              // the other forced men: the batter at first, the runners on the way to second / third
+          if (n >= fb && n !== 1) continue;
+          let rn = n === 1 ? t1 : null;
+          if (n > 1){ if (!M.bases.slice(0, n - 1).every(Boolean)) continue; rn = runTime(spdOf(M.bases[n - 2]), 90); }      // forced: everybody behind him is on
+          const len = Math.hypot(here[0] - bases[n - 1][0], here[1] - bases[n - 1][1]), t0 = pvGo + len * CFG.GLOVE_PER_FT;
+          const men = (FLD || []).filter(f => f !== c && f !== pv && BAG_COVER[n - 1].includes(f.pos));
+          let catcher = null, ct = 99;
+          men.forEach(f => { const D = Math.max(0, Math.hypot(f.d - STAND[n][0], f.lat - STAND[n][1]) - .5), tt = fldReach(f, D) + .12; if (tt < ct){ ct = tt; catcher = f; } });
+          if (!catcher) continue;
+          const arr = Math.max(t0 + len / pvArm, ct);
+          if (!pick || rn - arr > pick.margin) pick = { n, arr, t0, len, margin: rn - arr, catcher };      // whoever he has the better chance of getting
         }
-        if ((fb === 2 && (c.pos === 'SS' || c.pos === '2B')) || (af + .3 < rf && chance(.55))){      // no double play: a shortstop or second baseman always takes the sure out at second (a short throw); others when the lead runner is easily beaten. Batter safe at first
-          B.play = 'fc'; B.dpBase = fb; putOut(); B.tEnd = af + .8; B.runN = 1; B.out = true; return;
+        if (pick){
+          B.dpBase = fb; B.dp2 = pick.n; putOut(); B.runN = 1; B.out = true;
+          B.thr.legs.push({ from:here, to:bases[pick.n - 1], t0:Math.min(pick.t0, pick.arr), t1:pick.arr, len:pick.len }); B.thr.t1 = pick.arr; B.thr.to = bases[pick.n - 1];
+          B.thr.pivot = pv; B.thr.catcher = pick.catcher;
+          B.play = pick.margin > 0 ? 'dp' : 'fc'; B.tEnd = pick.arr + .6;
+          return;
         }
       }
     }
@@ -2233,13 +2244,20 @@ function applyPlay(res){
       else if (M.bases[0] && !M.bases[1] && chance(.28)){ M.bases[1] = M.bases[0]; M.bases[0] = null; }
       runs += advance(1); st.rbi += runs; txt = 'BASE HIT'; M.exc = .6; break; }
     case 'error':  st.ab++; runs = advance(1); txt = 'ERROR!'; break;
-    case 'dp':     st.ab++; out = 2; { const b = M.bases, fb = (BALL && BALL.dpBase) || 2;
-      if (fb === 4){ b[2] = b[1]; b[1] = b[0]; b[0] = null; }                                  // out at home and at first: the others move up
-      else if (fb === 3){ if (b[2] && M.outs + 2 < 3){ score(b[2]); runs++; } b[2] = b[1]; b[1] = b[0]; b[0] = null; }                                          // out at third and at first
-      else { b[0] = null; if (b[1]){ if (b[2] && M.outs + 2 < 3){ score(b[2]); runs++; } b[2] = b[1]; b[1] = null; } } } txt = 'DOUBLE PLAY'; break;      // the forced runners move up
-    case 'fc':     { st.ab++; out = 1; const b = M.bases, fb = (BALL && BALL.dpBase) || 2;
-      if (fb === 4){ b[2] = b[1]; b[1] = b[0]; b[0] = M.batter; } else if (fb === 3){ if (b[2]){ score(b[2]); runs++; } b[2] = b[1]; b[1] = b[0]; b[0] = M.batter; } else b[0] = M.batter;
-      txt = "FIELDER'S CHOICE"; break; }                  // the runner is forced out at second, the batter is on first
+    case 'dp': case 'fc': { st.ab++;
+      const fb = (BALL && BALL.dpBase) || 2, outBags = res === 'dp' ? [fb, (BALL && BALL.dp2) || 1] : [fb];      // the bags (1 = the batter at first) where somebody was put out
+      out = outBags.length;
+      const bs = M.bases, nb = [null, null, null], tot = M.outs + out; let chain = true;
+      for (let i = 0; i < 3; i++){
+        if (!bs[i]){ chain = false; continue; }
+        if (!chain){ nb[i] = bs[i]; continue; }                                                           // not forced: he stays
+        const bag = i + 2;
+        if (outBags.includes(bag)) continue;
+        if (bag >= 4){ if (tot < 3){ score(bs[i]); runs++; } } else nb[bag - 1] = bs[i];
+      }
+      if (!outBags.includes(1)) nb[0] = M.batter;
+      M.bases = nb;
+      txt = res === 'dp' ? 'DOUBLE PLAY' : "FIELDER'S CHOICE"; break; }
     case 'groundout': case 'flyout': case 'lineout':
       st.ab++; out = 1;
       if (res === 'flyout' && BALL && BALL.tagUp){
