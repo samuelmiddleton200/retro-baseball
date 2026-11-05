@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-10h"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11a"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-10h';
+const BUILD = '11-11a';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1289,7 +1289,7 @@ function simFlight(x, y, z, vx, vy, vz, wall){
     if (wall && !hr){
       const r = Math.hypot(x, y), ang = Math.atan2(x, y) * 180 / Math.PI;
       if (Math.abs(ang) <= 45 && r >= wallDist(ang)){
-        if (z > CFG.FENCE_H) hr = true;
+        if (z > fenceH(ang)) hr = true;
         else {                                                     // it hits the wall and comes back
           const ux = x / r, uy = y / r, vr = vx * ux + vy * uy;
           if (vr > 0){ vx -= (1 + CFG.WALL_BOUNCE) * vr * ux; vy -= (1 + CFG.WALL_BOUNCE) * vr * uy; }
@@ -2035,6 +2035,7 @@ function hrGoneTime(B){
   for (let k = 0; k < p.length; k++){
     const r = Math.hypot(p[k][0], p[k][1]), now = r - wallDist(Math.atan2(p[k][0], p[k][1]) * 180 / Math.PI);
     if (now > 0 && (p[k][2] <= standH(now) || now >= 100)) return k / 120;
+    if ((paintOn() || (M && M.derby)) && now > 0 && p[k][2] + BALL_LIFT < fenceH(Math.atan2(p[k][0], p[k][1]) * 180 / Math.PI) - 3.5) return k / 120;
   }
   return B.T;
 }
@@ -2047,8 +2048,16 @@ function hrState(B){
   if (!B.gone){                                                         // once it hits the seats or leaves the park it is not drawn any more
     const r = Math.hypot(B.d, B.lat), now = r - wallDist(Math.atan2(B.lat, B.d) * 180 / Math.PI);
     if (now > 0 && (B.h <= standH(now) || now >= 100)) B.gone = true;
+    else if ((paintOn() || (M && M.derby)) && now > 0 && B.h + BALL_LIFT < fenceH(Math.atan2(B.lat, B.d) * 180 / Math.PI) - 3.5) B.gone = true;
   }
   return B.hrInfo;
+}
+// how high (ft) a ball has to be where it crosses the wall to be a home run, by the angle it goes: set per park so it looks over the painted wall
+// (that includes the 3 ft the ball is drawn higher than it is). Angles run -45 (left-field line) to +45 (right-field line).
+function fenceH(ang){
+  const T = curStadium().fence, a = clamp(ang, T[0][0], T[T.length - 1][0]);
+  for (let i = 1; i < T.length; i++) if (a <= T[i][0]){ const p = T[i - 1], q = T[i]; return lerp(p[1], q[1], (a - p[0]) / (q[0] - p[0])); }
+  return T[T.length - 1][1];
 }
 function wallDist(angle){
   const p = M.park, a = clamp(angle, -45, 45);
@@ -2760,11 +2769,11 @@ const FHIT = new Image(); FHIT.src = 'assets/fields/fenway_hit.png?b=11-10a';
 // PH: picture size, home plate's column, depth (ft) -> picture row as a measured table, sideways feet shrink with distance (kx / (depth + c)), height scale hs.
 // shift: how far the pitcher stands from where the old picture's mound was (in target pixels across, in screen heights down)
 const STADIUMS = [
-  { id:'classic', name:'THE BALLPARK', pitch:() => PLATE, hit:() => HITP, shift:[0, 0],
+  { id:'classic', name:'THE BALLPARK', pitch:() => PLATE, hit:() => HITP, shift:[0, 0], fence:[[-45, 18], [45, 18]],
     PH:{ IW:1697, IH:927, px:848, YD:[[-10, 855], [0, 808], [60.5, 521], [127.3, 375], [233.3, 238], [400, 185], [700, 168]], kx:1186, c:130.5, hs:.85 } },
-  { id:'fenway', name:'BOSTON', pitch:() => FPITCH, hit:() => FHIT, shift:[8.9, 0],
+  { id:'fenway', name:'BOSTON', pitch:() => FPITCH, hit:() => FHIT, shift:[8.9, 0], fence:[[-45, 40], [-41, 40], [-39, 41], [-36, 42], [-28, 45], [-8.5, 45], [-7.5, 15], [45, 15]],      // the Green Monster (37 ft) to about 8 degrees left of centre, then a normal wall
     PH:{ IW:1697, IH:927, px:848, YD:[[-10, 870], [0, 824], [60.5, 548], [127.3, 406], [233.3, 268], [400, 241], [700, 225]], kx:1228, c:136.7, hs:.85 } },
-  { id:'bay', name:'THE BAY', pitch:() => DPITCH, hit:() => DHIT, shift:[-21, .012],
+  { id:'bay', name:'THE BAY', pitch:() => DPITCH, hit:() => DHIT, shift:[-21, .012], fence:[[-45, 15], [5, 15], [10.2, 19], [21.6, 29], [31.2, 29], [41.2, 25], [45, 25]],      // a normal wall, then the tall tan wall in right
     PH:{ IW:1873, IH:840, px:935, YD:[[-10, 872], [0, 805], [60.5, 563], [127.3, 446], [233.3, 358], [400, 295], [700, 248]], kx:1244, c:98, hs:.85 } },
 ];
 const curStadium = () => STADIUMS[(M && M.stad) || 0] || STADIUMS[0];
