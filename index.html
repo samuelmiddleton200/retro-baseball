@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-09b"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-09c"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-09b';
+const BUILD = '11-09c';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -2652,7 +2652,7 @@ function hrFire(S, P){
   while (pts.length < 125) pts.push(pts[pts.length - 1]);
   const h = pts[0], tm = performance.now() / 1000, far = !!S.hrFar;
   const clampf = (x, a, b) => Math.max(a, Math.min(b, x));
-  const PT = (x, y, s, c, a) => { g.globalAlpha = clampf(a == null ? 1 : a, 0, 1); const sz = Math.max(1, Math.round(s)); R(Math.round(x - sz / 2), Math.round(y - sz / 2), sz, sz, c); };
+  const PT = (x, y, s, c, a) => { g.globalAlpha = clampf((a == null ? 1 : a) * (S.fade == null ? 1 : S.fade), 0, 1); const sz = Math.max(1, Math.round(s)); R(Math.round(x - sz / 2), Math.round(y - sz / 2), sz, sz, c); };
   let seed = (Math.floor(tm * 18) * 9301 + 49297) % 233280; const rr = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
   const pal = far ? ['#f0ffff', '#9be9ff', '#2f9bff', '#1d4fd0', '#142a70'] : ['#fffbd0', '#ffd23f', '#ff8a1c', '#d93a14', '#6a1a10'];
   const ramp = u => pal[Math.min(pal.length - 1, Math.max(0, Math.floor(u * pal.length)))];
@@ -5028,7 +5028,12 @@ function drawDerbyHit(B){
     g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = .9; g.beginPath();
     DTRAIL.forEach((t, i) => { const q = Pp(...t); i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y); }); g.stroke();
   }
-  if (B.hr && DTRAIL.length > 3) hrFire({ trail: DTRAIL, hrFar: (B.carry || 0) >= 450 }, Pp);
+  if (gone && !B.endPt && DTRAIL.length) B.endPt = DTRAIL[DTRAIL.length - 1];
+  if (gone){ DTRAIL.splice(0, 5); }                                       // in the seats: the tail catches up and the fire burns out
+  if (B.hr && DTRAIL.length > 3){
+    const fade = gone ? clamp(1 - (B.t - B.hrG) / .75, 0, 1) : 1;
+    if (fade > 0) hrFire({ trail: DTRAIL, hrFar: (B.carry || 0) >= 450, fade }, Pp);
+  }
   // the ball and the spot it comes down
   if (!gone && !B.foul || (B.foul && B.t < B.tJudge)){
     const gq = derbyPt(B.d, B.lat, 0), q = derbyPt(B.d, B.lat, B.h);
@@ -5044,7 +5049,7 @@ function drawDerbyHit(B){
   // a burst where a home run reaches the seats
   if (B.hr && B.hrG != null && B.t >= B.hrG){
     const a = B.t - B.hrG, e = D.pop, far = e && e.far, k = Math.min(1, a / 1.2);
-    const pe = DTRAIL.length ? DTRAIL[DTRAIL.length - 1] : null;
+    const pe = B.endPt || (DTRAIL.length ? DTRAIL[DTRAIL.length - 1] : null);
     if (pe && a < 1.3){
       const q = derbyPt(-pe[2], pe[0], pe[1]), cols = far ? ['#fff6c0', '#ffd23f', '#ff8a1c'] : ['#ffffff', '#9be9ff', '#ffd23f'];
       for (let i = 0; i < (far ? 26 : 16); i++){ const an = i * 2.4 + 1, rr = 4 + k * (far ? 34 : 22) * (.6 + (i % 5) * .12);
@@ -5190,7 +5195,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   newGame, startGame, doSwing, throwPitch, simRest, simPitch, menu: m => menu = m, btns: () => btns,
   setCol(id){ colSel = id; cardFlip = false; menu = 'card'; }, bestLineup, doTrade, get tradeSel(){ return tradeSel; }, set tradeSel(v){ tradeSel = v; }, set tradeTier(v){ tradeTier = v; },
   runToggle, runBack, drawPlay, simLeagueDay, simLeagueGame, inZone, defTap, defBaseAt, defHit, get BALL(){ return BALL; }, circleIn, padGeom, padAim, get W(){ return W; }, get SC(){ return SC; }, get OX(){ return OX; }, simPitch, simRest, PG, pg, stamCap, pullCheck, changePitcher, fatigue, fastballMph, get P(){ return P; }, ballAt, throwPitch, inZone, nextPitch, ZONE, get menu(){ return menu; }, set menu(v){ menu = v; }, get G(){ return G; }, statRows, STAT_COLS, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, get statsView(){ return statsView; }, set statsView(v){ statsView = v; }, snapMatch, resumeMatch, matchSnap, startGame2: startGame, evMin, HR_ANGLE, EVMAX, evMax, reachIn, outsideIn, hitsBatter, throwRange, throwFps, spdOf, routeThrow, skinHex, gpTint, get GPSK(){ return GPSK; }, set GPSK(v){ GPSK = v; }, GP, get benchSel(){ return benchSel; }, get RUNCTL(){ return RUNCTL; }, get dbg(){ return GX.dbg; }, get ballVis(){ return GX.bv; }, get pos(){ return GX.pos; },
-  derbyStart, derbyEnd, derbyPt, DHIT, DPITCH, derbyDist, DH,
+  derbyStart, derbyEnd, derbyPt, DHIT, DPITCH, derbyDist, DH, get DTRAIL(){ return DTRAIL; },
   tap: (x, y) => { for (const b of btns) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.fn(), true; return false; } };
 
 // ───────────────────────────────────────────────────────────────────────────

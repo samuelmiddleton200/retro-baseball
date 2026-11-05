@@ -128,7 +128,12 @@ function drawDerbyHit(B){
     g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = .9; g.beginPath();
     DTRAIL.forEach((t, i) => { const q = Pp(...t); i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y); }); g.stroke();
   }
-  if (B.hr && DTRAIL.length > 3) hrFire({ trail: DTRAIL, hrFar: (B.carry || 0) >= 450 }, Pp);
+  if (gone && !B.endPt && DTRAIL.length) B.endPt = DTRAIL[DTRAIL.length - 1];
+  if (gone){ DTRAIL.splice(0, 5); }                                       // in the seats: the tail catches up and the fire burns out
+  if (B.hr && DTRAIL.length > 3){
+    const fade = gone ? clamp(1 - (B.t - B.hrG) / .75, 0, 1) : 1;
+    if (fade > 0) hrFire({ trail: DTRAIL, hrFar: (B.carry || 0) >= 450, fade }, Pp);
+  }
   // the ball and the spot it comes down
   if (!gone && !B.foul || (B.foul && B.t < B.tJudge)){
     const gq = derbyPt(B.d, B.lat, 0), q = derbyPt(B.d, B.lat, B.h);
@@ -144,7 +149,7 @@ function drawDerbyHit(B){
   // a burst where a home run reaches the seats
   if (B.hr && B.hrG != null && B.t >= B.hrG){
     const a = B.t - B.hrG, e = D.pop, far = e && e.far, k = Math.min(1, a / 1.2);
-    const pe = DTRAIL.length ? DTRAIL[DTRAIL.length - 1] : null;
+    const pe = B.endPt || (DTRAIL.length ? DTRAIL[DTRAIL.length - 1] : null);
     if (pe && a < 1.3){
       const q = derbyPt(-pe[2], pe[0], pe[1]), cols = far ? ['#fff6c0', '#ffd23f', '#ff8a1c'] : ['#ffffff', '#9be9ff', '#ffd23f'];
       for (let i = 0; i < (far ? 26 : 16); i++){ const an = i * 2.4 + 1, rr = 4 + k * (far ? 34 : 22) * (.6 + (i % 5) * .12);
