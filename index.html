@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11d"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11e"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11d';
+const BUILD = '11-11e';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1387,12 +1387,12 @@ function routeThrow(thrower, from, t0, tgt, tr, live){
     if (used.length >= 2) return;
     for (const m of mates){
       if (used.includes(m)) continue;
-      const d0 = dist(cur, tgt), mr = throwRange(m.man.fielding), spots = [live ? [m.x, m.y] : [m.d, m.lat]];
-      for (const fr of [.5, .65, .8, .9, .98]){ const along = Math.min(rng * fr, d0 * .85), u = d0 > 0 ? along / d0 : 0; spots.push([cur[0] + (tgt[0] - cur[0]) * u, cur[1] + (tgt[1] - cur[1]) * u]); }
+      const d0 = dist(cur, tgt), mr = throwRange(m.man.fielding), spots = [live ? (m.go ? [m.go.x, m.go.y] : [m.x, m.y]) : [m.d, m.lat]];
+      if (!live) for (const fr of [.5, .65, .8, .9, .98]){ const along = Math.min(rng * fr, d0 * .85), u = d0 > 0 ? along / d0 : 0; spots.push([cur[0] + (tgt[0] - cur[0]) * u, cur[1] + (tgt[1] - cur[1]) * u]); }
       for (const sp of spots){
         if (dist(cur, sp) > rng || (dist(sp, tgt) > mr && used.length >= 1) || dist(sp, tgt) >= d0 - 8) continue;
         const l1 = leg(cur, sp, tRel, fps);
-        const reach = live ? BALL.t + dist([m.x, m.y], sp) / (m.speed * CFG.ROUTE_EFF) : fldReach(m, dist([m.d, m.lat], sp));
+        const reach = live ? BALL.t + dist([m.x, m.y], sp) / (m.speed * CFG.ROUTE_EFF) + .12 : fldReach(m, dist([m.d, m.lat], sp));
         if (reach + .25 > l1.t1) continue;                                          // he cannot get there before the ball does
         walk(sp, mr, m.armFps, l1.t1 + RELAY_TR, legs.concat([l1]), used.concat([m]), relays.concat([{ f:m, spot:sp }]));
       }
@@ -1764,7 +1764,8 @@ function planCover(B, c){
   const send = (f, x, y, bag) => { if (f && f !== c && !f.go) f.go = { x, y, bag: bag || 0, dist: Math.hypot(x - f.d, y - f.lat) }; };
   const infield = c.d < 150 && !B.isCatch;
   const toward = (f, t, k) => [f.d + (t.d - f.d) * k, f.lat + (t.lat - f.lat) * k];
-  if (B.thr && B.thr.catcher){ const bi = [[63.64, 63.64], [127.28, 0], [63.64, -63.64]].findIndex(q => Math.abs(q[0] - B.thr.to[0]) < 1 && Math.abs(q[1] - B.thr.to[1]) < 1); if (bi >= 0) send(B.thr.catcher, STAND[bi + 1][0], STAND[bi + 1][1], bi + 1); }
+  const pthr = B.thr || B.autoThr;
+  if (pthr && pthr.catcher){ const bi = [[63.64, 63.64], [127.28, 0], [63.64, -63.64]].findIndex(q => Math.abs(q[0] - pthr.to[0]) < 1 && Math.abs(q[1] - pthr.to[1]) < 1); if (bi >= 0) send(pthr.catcher, STAND[bi + 1][0], STAND[bi + 1][1], bi + 1); }
   if (infield){
     // 1) the throw is going to a bag: the nearest man who is not fielding it covers that bag
     let covering = null;
@@ -1777,13 +1778,14 @@ function planCover(B, c){
         if (cand[0]){ covering = cand[0]; send(covering, STAND[bi + 1][0], STAND[bi + 1][1], bi + 1); }
       }
     }
-    // 2) the standing assignments
+    // 2) the standing assignments: the man who fields it, everybody else goes to his own bag
     const first = byPos('1B'), second = byPos('2B'), short = byPos('SS'), third = byPos('3B');
-    if (first !== c) send(first, STAND[1][0], STAND[1][1], 1);                                   // 1B to the bag
-    if (second !== c) send(second, STAND[2][0], STAND[2][1], 2);                                 // 2B to second, in case the runner goes past first
-    if (c === second || c === first) send(short, STAND[2][0] - 3, STAND[2][1] + 3, 2);           // SS covers second when the right side fields it
-    else if (short !== c){ const p = toward(short, { d:STAND[2][0], lat:0 }, .5); send(short, p[0], p[1], 0); }   // SS steps in, ready for a short throw
-    if (third !== c && third !== covering){ const p = toward(third, land, .25); send(third, p[0], p[1], 0); }
+    const bag = (f, n) => send(f, STAND[n][0], STAND[n][1], n);
+    if (c === first){ bag(second, 1); bag(short, 2); bag(third, 3); }                            // down the first-base line: 1B fields it (and may run it to the bag), 2B covers first, SS second
+    else if (c === second){ bag(first, 1); bag(short, 2); bag(third, 3); }                       // between first and second: 2B fields it, SS to second, 1B to first
+    else if (c === short){ bag(first, 1); bag(second, 2); bag(third, 3); }                       // the hole: SS fields it, 2B to second
+    else if (c === third){ bag(first, 1); bag(second, 2); bag(short, 3); }                       // down the third-base line: 3B fields it, SS covers third
+    else { bag(first, 1); bag(second, 2); bag(third, 3); if (short){ const p = toward(short, { d:STAND[2][0], lat:0 }, .5); send(short, p[0], p[1], 0); } }
     ['LF', 'CF', 'RF'].forEach(p => { const o = byPos(p); if (o){ const q = toward(o, { d:60, lat:o.lat * .6 }, .22); send(o, q[0], q[1], 0); } });   // outfielders step in to back up
   } else {
     // the ball is in the air or in the outfield
@@ -1797,7 +1799,7 @@ function planCover(B, c){
     send(byPos('1B'), STAND[1][0], STAND[1][1], 1);
     send(byPos('3B'), STAND[3][0], STAND[3][1], 3);
   }
-  if (B.thr && B.thr.relays) B.thr.relays.forEach(r => { r.f.go = { x:r.spot[0], y:r.spot[1], bag:0, dist:Math.hypot(r.spot[0] - r.f.d, r.spot[1] - r.f.lat) }; r.f.relay = true; });      // a relay man stands where the long throw will find him
+  if (pthr && pthr.relays) pthr.relays.forEach(r => { r.f.go = { x:r.spot[0], y:r.spot[1], bag:0, dist:Math.hypot(r.spot[0] - r.f.d, r.spot[1] - r.f.lat) }; r.f.relay = true; });      // a relay man stands where the long throw will find him
 }
 
 // who is where right now
@@ -1880,7 +1882,7 @@ function defEntries(B){
 function planOutcome(B, c){
   planOutcomeAuto(B, c);
   if (!userPitches() || B.hr || B.foul || B.isCatch || !['single', 'double', 'triple', 'error', 'groundout', 'dp', 'fc'].includes(B.play)) return;
-  B.defManual = true; B.defKind = B.play; B.play = 'def'; B.thr = null;
+  B.defManual = true; B.defKind = B.play; B.play = 'def'; B.autoThr = B.thr; B.thr = null;
   B.def = { queue:[], pass:null, outs:[], entries:defEntries(B), last:-1 };
   const arrive = B.def.entries.map(e => runTime(spdOf(e.man), 90 * e.D - e.s0, e.batter));
   B.tEnd = Math.max((B.tf || 0) + 1.5, ...arrive) + .7;
