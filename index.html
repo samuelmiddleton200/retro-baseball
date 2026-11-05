@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11c"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11d"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11c';
+const BUILD = '11-11d';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1375,7 +1375,8 @@ const BASE_PTS4 = [[63.64, 63.64], [127.28, 0], [63.64, -63.64], [0, 0]];
 // live: the fielders are where they are now (a play in progress); otherwise it is the plan made as the ball is hit.
 function routeThrow(thrower, from, t0, tgt, tr, live){
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
-  const mates = (FLD || []).filter(f => f !== thrower && ['1B', '2B', 'SS', '3B'].includes(f.pos));
+  const bi0 = BASE_PTS4.findIndex(q => Math.abs(q[0] - tgt[0]) < 1 && Math.abs(q[1] - tgt[1]) < 1);
+  const mates = (FLD || []).filter(f => f !== thrower && ['1B', '2B', 'SS', '3B'].includes(f.pos) && !(bi0 >= 0 && bi0 < 3 && BAG_COVER[bi0].includes(f.pos)));      // the man on the bag is the catcher, never a relay
   let best = null;
   const leg = (a, b, ts, fps) => { const len = dist(a, b), t0r = ts + len * CFG.GLOVE_PER_FT; return { from:a, to:b, t0:t0r, t1:t0r + len / fps, len }; };      // released 0.1 s per 40 ft after he has it
   const walk = (cur, rng, fps, tRel, legs, used, relays) => {
@@ -1392,7 +1393,7 @@ function routeThrow(thrower, from, t0, tgt, tr, live){
         if (dist(cur, sp) > rng || (dist(sp, tgt) > mr && used.length >= 1) || dist(sp, tgt) >= d0 - 8) continue;
         const l1 = leg(cur, sp, tRel, fps);
         const reach = live ? BALL.t + dist([m.x, m.y], sp) / (m.speed * CFG.ROUTE_EFF) : fldReach(m, dist([m.d, m.lat], sp));
-        if (reach > l1.t1) continue;                                          // he cannot get there before the ball does
+        if (reach + .25 > l1.t1) continue;                                          // he cannot get there before the ball does
         walk(sp, mr, m.armFps, l1.t1 + RELAY_TR, legs.concat([l1]), used.concat([m]), relays.concat([{ f:m, spot:sp }]));
       }
     }
@@ -1402,15 +1403,22 @@ function routeThrow(thrower, from, t0, tgt, tr, live){
   // a base: the throw only counts once somebody is standing on it, and the closest man runs the ball there himself if that is quicker
   const bi = BASE_PTS4.findIndex(q => Math.abs(q[0] - tgt[0]) < 1 && Math.abs(q[1] - tgt[1]) < 1);
   if (bi >= 0){
-    let cover = bi === 3 ? 0 : Infinity;                                                    // the catcher is always at the plate
-    (FLD || []).forEach(f => {
-      if (f === thrower || !BAG_COVER[bi] || !BAG_COVER[bi].includes(f.pos)) return;
-      const D = Math.max(0, dist(live ? [f.x, f.y] : [f.d, f.lat], tgt) - 1.5);
-      cover = Math.min(cover, live ? BALL.t + D / (f.speed * CFG.ROUTE_EFF) : fldReach(f, D));
-    });
+    let cover = bi === 3 ? 0 : Infinity, catcher = null;                                    // the catcher is always at the plate
+    if (bi < 3){
+      const glove = STAND[bi + 1], isRelay = f => best.relays.some(r => r.f === f);
+      const pick = list => list.forEach(f => {
+        const D = Math.max(0, dist(live ? [f.x, f.y] : [f.d, f.lat], glove) - .5);
+        const tt = (live ? BALL.t + D / (f.speed * CFG.ROUTE_EFF) : fldReach(f, D)) + .12;     // the same walk stepFielders draws
+        if (tt < cover){ cover = tt; catcher = f; }
+      });
+      pick((FLD || []).filter(f => f !== thrower && BAG_COVER[bi].includes(f.pos) && !isRelay(f)));
+      if (!catcher) pick((FLD || []).filter(f => f !== thrower && BAG_COVER[bi].includes(f.pos)));
+    }
     const dBall = Math.max(0, dist(from, tgt) - 1.5);
     const closest = bi < 3 && (FLD || []).every(f => f === thrower || dist(live ? [f.x, f.y] : [f.d, f.lat], tgt) >= dBall - .01);
     const throwArr = Math.max(best.arr, Math.min(cover, 99));
+    best.catcher = catcher;
+    { const l = best.legs[best.legs.length - 1], late = throwArr - l.t1; if (late > .001){ l.t0 += late; l.t1 += late; } }      // the throw is held until the man on the bag is there, so the ball is caught exactly when the out is judged
     if (closest && dBall < 70){
       const fps = sprintFps(spdOf(thrower.man)) * .92, ts = t0 + .2, ca = ts + dBall / fps;
       if (ca < throwArr) return { legs:[{ from, to:tgt, t0:ts, t1:ts + dist(from, tgt) / fps, len:dist(from, tgt) }], arr:ca, relays:[], carry:true, carryF:thrower };
@@ -1420,7 +1428,7 @@ function routeThrow(thrower, from, t0, tgt, tr, live){
   return best;
 }
 const BAG_COVER = [['1B', '2B'], ['2B', 'SS'], ['3B', 'SS'], []];                       // who can stand on first, second, third (home is the catcher's)
-const mkThr = (rt, from, to) => ({ t0: rt.legs[0].t0, t1: Math.max(rt.legs[rt.legs.length - 1].t1, rt.arr || 0), from, to, len: rt.legs.reduce((a, l) => a + l.len, 0), legs: rt.legs, relays: rt.relays, carry: !!rt.carry, carryF: rt.carryF || null });
+const mkThr = (rt, from, to) => ({ t0: rt.legs[0].t0, t1: Math.max(rt.legs[rt.legs.length - 1].t1, rt.arr || 0), from, to, len: rt.legs.reduce((a, l) => a + l.len, 0), legs: rt.legs, relays: rt.relays, catcher: rt.catcher || null, carry: !!rt.carry, carryF: rt.carryF || null });
 // where the ball is on a throw made of legs: flying along one, or waiting in the hands of the man who throws it on
 function thrPos(thr, t){
   const L = thr.legs;
@@ -1756,6 +1764,7 @@ function planCover(B, c){
   const send = (f, x, y, bag) => { if (f && f !== c && !f.go) f.go = { x, y, bag: bag || 0, dist: Math.hypot(x - f.d, y - f.lat) }; };
   const infield = c.d < 150 && !B.isCatch;
   const toward = (f, t, k) => [f.d + (t.d - f.d) * k, f.lat + (t.lat - f.lat) * k];
+  if (B.thr && B.thr.catcher){ const bi = [[63.64, 63.64], [127.28, 0], [63.64, -63.64]].findIndex(q => Math.abs(q[0] - B.thr.to[0]) < 1 && Math.abs(q[1] - B.thr.to[1]) < 1); if (bi >= 0) send(B.thr.catcher, STAND[bi + 1][0], STAND[bi + 1][1], bi + 1); }
   if (infield){
     // 1) the throw is going to a bag: the nearest man who is not fielding it covers that bag
     let covering = null;
@@ -1839,10 +1848,10 @@ function planOutcomeAuto(B, c){
       const af = throwArr(fb, tr), rf = runTime(spdOf(fr), 90);
       if (af < rf){
         const legLen = fb === 3 ? 127.28 : 90;
-        const a1b = af + CFG.PIVOT + legLen / (c.armFps * .9);                         // the pivot man's throw on to first, leaving .55 s after the ball gets to him
+        const pv = route(fb, tr).catcher, pvArm = pv ? pv.armFps : c.armFps, pvT0 = af + CFG.PIVOT + legLen * CFG.GLOVE_PER_FT, a1b = pvT0 + legLen / pvArm;                         // the pivot man's throw on to first, leaving .55 s after the ball gets to him
         if (a1b < t1){                                                        // that base, then on to first: a double play (the relay is drawn as a second leg)
           B.play = 'dp'; B.dpBase = fb; throwTo(fb, tr); B.tEnd = a1b + .6; B.runN = 1; B.out = true;
-          B.thr.legs.push({ from:bases[fb - 1], to:[63.64, 63.64], t0:af + .55, t1:a1b, len:legLen }); B.thr.t1 = a1b; B.thr.to = [63.64, 63.64];
+          B.thr.legs.push({ from:bases[fb - 1], to:[63.64, 63.64], t0:pvT0, t1:a1b, len:legLen }); B.thr.t1 = a1b; B.thr.to = [63.64, 63.64];
           return;
         }
         if ((fb === 2 && (c.pos === 'SS' || c.pos === '2B')) || (af + .3 < rf && chance(.55))){      // no double play: a shortstop or second baseman always takes the sure out at second (a short throw); others when the lead runner is easily beaten. Batter safe at first
@@ -5258,7 +5267,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   buyPack, buyPosPack, freePack, rollCard, makeCardAt, valueOf, sellPrice, upCost, upgradeCard, doFuse, canFuse, fuseGroups, fuseRating, bandOf, dealsToday, buyDeal, streakInfo, tradeRating, doTrade, startOpen, openPointer, openAdvance, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
   CFG, get shopTab(){ return shopTab; }, makeContact2: makeContact, cpuDecide, set shopTab(v){ shopTab = v; }, get upStat(){ return upStat; }, set upStat(v){ upStat = v; }, set colSel(v){ colSel = v; }, set fuseMode(v){ fuseMode = v; }, get fuseSel(){ return fuseSel; }, set fuseSel(v){ fuseSel = v; }, tickOpen(ms){ openTick(ms); }, payPlay, earn, get SIMMING(){ return SIMMING; },
   get P(){ return P; }, get BALL(){ return BALL; }, get swing(){ return swing; }, get FLD(){ return FLD; },
-  stepAtBat, doSwing, makeContact, planFielders, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
+  stepAtBat, doSwing, makeContact, planFielders, stepFielders, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
   set swing(v){ swing = v; },
   // schedule a swing so the bat arrives at a chosen point in the pitch
   swingAt(ms){ swing = { start: ms - BAT_LAG, contactAt: ms, t:0, resolved:false, cpu:false }; },
