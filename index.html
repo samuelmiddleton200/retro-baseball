@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11w"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11x"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11w';
+const BUILD = '11-11x';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1102,14 +1102,15 @@ addEventListener('resize', fit); fit();
 addEventListener('keydown', e => { if (e.key === 'd' || e.key === 'D') CFG.DEBUG = !CFG.DEBUG; });
 let M = null;                                      // the match in progress
 
+const myStarter = me => { const c = G.starter != null ? cardById(G.starter) : null; return c && isPitcher(c) && (me.rot.includes(c) || me.pen.includes(c)) ? c : me.rot[G.rotIdx % 5]; };
 function startGame(oppIdx, home, opts = {}){
   const me = myTeam(), opp = G.teams[oppIdx];
   M = {
     home: home ? me : opp, away: home ? opp : me, meHome: home,
     inning:1, top:true, outs:0, bases:[null,null,null], score:{ home:0, away:0 },
     balls:0, strikes:0, lineHome:0, lineAway:0, ls:{ away:[], home:[] }, H:{ away:0, home:0 }, E:{ away:0, home:0 },
-    pitcherHome: home ? me.rot[G.rotIdx % 5] : opp.rot[ri(0,4)],
-    pitcherAway: home ? opp.rot[ri(0,4)] : me.rot[G.rotIdx % 5],
+    pitcherHome: home ? myStarter(me) : opp.rot[ri(0,4)],
+    pitcherAway: home ? opp.rot[ri(0,4)] : myStarter(me),
     pcHome:0, pcAway:0, line:[], mode: opts.mode || 'full', playoff: !!opts.playoff,       // full | offense | defense
     park: makePark(home ? me : opp), msg:null, msgT:0, over:false, exc:0,
   };
@@ -1216,9 +1217,16 @@ function setupAtBat(){
 }
 // what each pitcher has done in this game: pitches, runs, outs, and whether he has been in (a pitcher taken out cannot come back)
 const PG = new Map();
-const pg = p => PG.get(p) || (PG.set(p, { pc:0, sp:0, r:0, po:0, used:false, nT:0, nS:0, nB:0, nC:0 }), PG.get(p));       // pc = pitches thrown, sp = stamina spent; nT/nS/nB/nC = what the batters have seen from him this game
+const pg = p => PG.get(p) || (PG.set(p, { pc:0, sp:(p.stam != null && p.stam < 1 ? (1 - p.stam) * stamCap(p) : 0), r:0, po:0, used:false, nT:0, nS:0, nB:0, nC:0 }), PG.get(p));       // pc = pitches thrown, sp = stamina spent; nT/nS/nB/nC = what the batters have seen from him this game
 const spOf = g => g.sp != null ? g.sp : g.pc;
-const stamCap = p => 60 + (clamp(p.stamina, 60, 120) - 60) * 2 / 3;               // 60 stamina = 60 pitches, 120 = 100, in a straight line
+const stamCap = p => { const t = (clamp(p.stamina, 60, 120) - 60) / 60; return p.pos === 'CP' ? lerp(25, 35, t) : p.pos === 'RP' ? lerp(40, 60, t) : lerp(50, 85, t); };      // pitches he has in him at STA 60 to 120: a starter 50-85, a reliever 40-60, a closer 25-35
+// how much is left in the tank (0-1): in a game it is what he has left right now; outside one it is what he carries into the next game
+const stamPct = (p, live) => live ? 1 - clamp(spOf(pg(p)) / stamCap(p), 0, 1) : (p.stam == null ? 1 : p.stam);
+const stamHue = pct => 120 * clamp(pct, 0, 1);                                      // green > greenish yellow > yellow > orange > red, smoothly
+function stamBar(x, y, w, h, pct){ R(x, y, w, h, '#0a0d16'); R(x, y, Math.max(0, Math.round(w * clamp(pct, 0, 1))), h, `hsl(${stamHue(pct).toFixed(0)},88%,50%)`); R(x, y, w, 1, 'rgba(255,255,255,.22)'); }
+// what he gets back between games: a starter 20%, a reliever 25%, a closer 40% (a pitcher who is not used rests the same)
+const restRate = p => p.pos === 'CP' ? .40 : p.pos === 'RP' ? .25 : .20;
+function restPitchers(){ G.cards.filter(isPitcher).forEach(p => { const g = PG.get(p), left = g && g.used ? 1 - clamp(spOf(g) / stamCap(p), 0, 1) : stamPct(p, false); p.stam = clamp(left + restRate(p), 0, 1); }); }
 // 0 fresh, 1 at his limit: he throws up to 20 mph slower and his circle grows up to 2x, both in a straight line
 function fatigue(){ const p = curPitcher(); return clamp(spOf(pg(p)) / stamCap(p), 0, 1); }
 // the best reliever who has not pitched yet: the closer saves the 8th and 9th of a close game
@@ -1241,8 +1249,7 @@ function changePitcher(t, nx){
 // he is taken out once he has gone at least 3 innings and then reaches his limit, or has given up more runs than his pitches / 10
 function pullCheck(){
   const t = fldTeam(), p = curPitcher(), g = pg(p);
-  if (g.po < 9) return;
-  if (spOf(g) >= stamCap(p) || g.r > g.pc / 10) changePitcher(t, pickReliever(t));
+  if (spOf(g) >= stamCap(p) || (g.po >= 9 && g.r > g.pc / 10)) changePitcher(t, pickReliever(t));       // out of gas, or getting hit hard after at least 3 innings
 }
 // the circle the ball can land in, as a diameter in inches: 120 control = 7 in, 60 control = 12 in, straight line between.
 // Tiredness widens it in a straight line too: half his stamina gone = 1.5x, all of it = 2x (14 and 24 in). A fastball costs 0.8 stamina, any other pitch 1.
@@ -1624,7 +1631,7 @@ function aiPitch(){
 // how fast this pitcher throws this pitch right now (tiredness included); every throw lands within 3% of it
 function pitchMph(p, type){
   const fbNow = fastballMph(p.velocity) - fatigue() * 20;
-  return type === 'FB' ? fbNow : type === 'CH' ? fbNow * .85 : type === 'SL' ? fbNow * .90 : fbNow - (CFG.OFFSPEED_SLOW[type] || 12);      // change-up 85% of his fastball right now, slider 90%
+  return type === 'FB' ? fbNow : type === 'CH' ? fbNow * .85 - (p.pos === 'CP' ? 5 : 0) : type === 'SL' ? fbNow * .90 : fbNow - (CFG.OFFSPEED_SLOW[type] || 12);      // change-up 85% of his fastball right now, slider 90%
 }
 function throwPitch(type, ax, ay){
   const p = curPitcher(), info = PITCHES[type], q = p.pitches[type] || 70;
@@ -1637,10 +1644,11 @@ function throwPitch(type, ax, ay){
   P.mph = Math.round(supposed * (1 + rnd(.03, -.03)));                                           // every pitch lands within 3% of it (rnd takes the larger bound first)
   if (type === 'FB'){ const ps = curPitcher().st; ps.fbn = (ps.fbn || 0) + 1; ps.fbs = (ps.fbs || 0) + P.mph; }      // for his average fastball
   P.dur = CFG.MOUND_FT / (P.mph * CFG.MPH_TO_FPS) * 1000 / CFG.PITCH_TIME_SCALE;   // 60.5 ft at its real speed, slowed by PITCH_TIME_SCALE
-  P.br = [info.br[0] * lerp(.6, 1.3, (q - 60) / 60), info.br[1] * lerp(.6, 1.3, (q - 60) / 60)];
+  const bk = p.pos === 'CP' && (type === 'CV' || type === 'SL') ? 1.5 : 1;                      // a closer's curveball and slider break half as much again
+  P.br = [info.br[0] * lerp(.6, 1.3, (q - 60) / 60) * bk, info.br[1] * lerp(.6, 1.3, (q - 60) / 60) * bk];
   P.quality = q;
   P.thrown = true; P.t = 0; P.state = 'flight';
-  { const g0 = pg(curPitcher()); g0.sp = spOf(g0) + (type === 'FB' ? .8 : 1); g0.pc++; }
+  { const g0 = pg(curPitcher()); g0.sp = spOf(g0) + 1; g0.pc++; }
   if (M.top) M.pcHome++; else M.pcAway++;
   // the computer's batter makes up its mind as the ball comes in (from what he has seen from this pitcher so far); then this pitch goes in the book
   if (!userBats()) cpuDecide();
@@ -2492,7 +2500,7 @@ function gameOver(){
   }
   clearMatchSnap();
   M.over = true; phase = 'over';
-  giveDecisions();
+  giveDecisions(); restPitchers();                                                  // your pitchers get their rest back
   const me = myTeam(), myRuns = M.meHome ? M.score.home : M.score.away, oth = M.meHome ? M.score.away : M.score.home;
   const won = myRuns > oth;
   if (!M.playoff){ me[won ? 'w' : 'l']++; me.rs += myRuns; me.ra += oth; }
@@ -4731,6 +4739,7 @@ function drawLineup(){
     if (c){
       textb(c.name.split(' ').pop(), x + 19, y + 5, '#ffffff', 7, 'left', SW - 19 - 24);
       textb(String(ovrOf(c)), x + SW - 5, y + 4, colOf(ovrOf(c)), 8, 'right');
+      if (where !== 'lineup') stamBar(x + 3, y + 12, SW - 6, 2, stamPct(c, false));            // what he has left in the tank
     } else textb('empty', x + 19, y + 5, UI.ice, 7);
     btns.push({ x, y, w:SW, h:16, fn: () => lineSel = { where, i } });
   };
@@ -4838,12 +4847,12 @@ function drawMenu(){
       if (snap){
         const nm = `${snap.top ? 'TOP' : 'BOT'} ${snap.inning}  ${snap.score.away}-${snap.score.home}`;
         button(W / 2 - 162, 108, 225, 33, `RESUME ${nm}`, () => { if (!resumeMatch()) clearMatchSnap(); }, '#2f6fe0', '#fff', 12);
-        button(W / 2 + 69, 108, 90, 33, 'RESTART', () => { clearMatchSnap(); if (G.day < G.seasonLen){ const s = G.sched[G.day]; startGame(s.opp, s.home); } }, '#2a1a1a', '#fff', 10);
+        button(W / 2 + 69, 108, 90, 33, 'RESTART', () => { clearMatchSnap(); if (G.day < G.seasonLen){ const s = G.sched[G.day]; pickStarter(() => startGame(s.opp, s.home)); } }, '#2a1a1a', '#fff', 10);
       } else if (G.day < G.seasonLen) button(W / 2 - 105, 108, 210, 33, `PLAY GAME ${G.day + 1}/${G.seasonLen}`, () => {
-        const sg = G.sched[G.day]; startGame(sg.opp, sg.home);
+        const sg = G.sched[G.day]; pickStarter(() => startGame(sg.opp, sg.home));
       }, '#2f6fe0', '#fff', 12);
       else if (!G.po) button(W / 2 - 105, 108, 210, 33, 'START PLAYOFFS', () => { startPlayoffs(); menu = 'playoffs'; }, '#2f6fe0', '#fff', 12);
-      else if (poUserGame()) { const ug = poUserGame(); button(W / 2 - 105, 108, 210, 33, 'PLAY ' + PO_ROUNDS[G.po.round], () => { startGame(ug.a === G.team ? ug.b : ug.a, ug.a === G.team, { playoff:true }); }, '#2f6fe0', '#fff', 12); }
+      else if (poUserGame()) { const ug = poUserGame(); button(W / 2 - 105, 108, 210, 33, 'PLAY ' + PO_ROUNDS[G.po.round], () => { pickStarter(() => startGame(ug.a === G.team ? ug.b : ug.a, ug.a === G.team, { playoff:true })); }, '#2f6fe0', '#fff', 12); }
       else button(W / 2 - 105, 108, 210, 33, 'NEW SEASON', () => newSeason(), '#2f6fe0', '#fff', 12);
       button(W / 2 - 159, 145, 102, 27, 'MY CARDS', () => menu = 'cards', '#1a2230', '#fff', 11);
       button(W / 2 - 51, 145, 102, 27, 'SHOP', () => menu = 'shop', '#1a2230', '#fff', 11);
@@ -4906,6 +4915,7 @@ function drawMenu(){
   else if (menu === 'open'){ drawOpen(); return; }
   else if (menu === 'trade'){ drawTrade(); return; }
   else if (menu === 'stats'){ drawStats(); return; }
+  else if (menu === 'startpick'){ drawStartPick(); return; }
   else if (menu === 'playoffs'){ drawPlayoffs(); return; }
   else if (menu === 'stand'){
     R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff'); ptitle('STANDINGS', 10, 3, 9, '#ffffff', 'left');
@@ -4966,7 +4976,7 @@ function poUserDone(won){
 }
 function newSeason(){
   G.teams.forEach(t => { t.w = t.l = t.rs = t.ra = 0; [...t.lineup, ...t.rot, ...t.pen].forEach(p => { p.st = newStat(); }); });
-  G.cards.forEach(p => { p.st = newStat(); });
+  G.cards.forEach(p => { p.st = newStat(); p.stam = 1; });
   G.day = 0; G.seasonLen = 24; G.po = null; G.season = (G.season || 1) + 1; makeSchedule(); save();
 }
 // ── the playoff picture: the top 6 of each league. 4 v 5 and 3 v 6 play a wild-card game; the winners play the 1 and 2 seeds; then the league series and the World Series ──
@@ -5211,28 +5221,46 @@ function drawGameMenu(){
     if ((m === 'offense' && !weBat()) || (m === 'defense' && weBat())){ simHalfIfNeeded(); if (!M.over && phase === 'atbat' && !P) nextPitch(); }   // the half you just skipped plays out now
     else nextPitch();
   }, M.mode === m ? '#2f6fe0' : '#1a2230', '#fff', fs));                                                // the mode you are in is lit
-  const mine = M.meHome ? M.home : M.away, open = !(P && P.thrown) && mine.pen.some(p => !pg(p).used);
+  const mine = M.meHome ? M.home : M.away, cur0 = M.meHome ? M.pitcherHome : M.pitcherAway, open = !(P && P.thrown) && mine.rot.concat(mine.pen).some(p => p !== cur0 && !pg(p).used);
   button(xs(1), ys(0), bw, bh, 'SIM INNING', () => simInning(), '#1a2230', '#fff', fs);
   button(xs(1), ys(1), bw, bh, 'SIM FULL GAME', () => simRest(), '#1a2230', '#fff', fs);
   button(xs(1), ys(2), bw, bh, 'CHANGE PITCHER', () => { if (open) phase = 'pitchpick'; }, open ? '#1a2230' : '#161b26', '#fff', fs);
   button(xs(0), ys(3), 2 * bw + gp, bh, 'SAVE AND EXIT', () => { saveEverything(); M = null; P = null; BALL = null; phase = 'menu'; menu = 'title'; }, '#1a2230', '#fff', 8);      // the game is written down where it stands; RESUME on the main menu picks it up
 }
-// pick a reliever: only pitchers who have not been in yet
+function pitcherRow(p, x, y, w, on, live, tag, note, fn){
+  R(x, y, w, 13, on ? '#1b3e78' : '#1a2030');
+  textb(tag, x + 4, y + 3, on ? UI.yellow : '#667', 6);
+  textb(p.name, x + 20, y + 3, on ? '#ffffff' : '#667', 7, 'left', 92);
+  [['VEL', p.velocity], ['CTL', p.control], ['STA', p.stamina]].forEach(([l, v], j) => textb(l + ' ' + v, x + 116 + j * 38, y + 3, on ? '#cfe0ff' : '#667', 6));
+  const pct = stamPct(p, live), bx = x + 232, bw = w - 232 - 34;
+  stamBar(bx, y + 4, bw, 5, pct);
+  textb(note || Math.round(pct * 100) + '%', x + w - 4, y + 3, note ? '#ff8a7a' : (on ? '#cfe0ff' : '#667'), 6, 'right');
+  if (on && fn) btns.push({ x, y, w, h:13, fn });
+}
+// who starts: any pitcher, in any order; the number is what he has in the tank
+let startCb = null;
+function pickStarter(cb){ startCb = cb; menu = 'startpick'; }
+function drawStartPick(){
+  btns = [];
+  uiBg();
+  R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff'); ptitle('WHO STARTS?', 10, 3, 9, '#ffffff', 'left');
+  const me = myTeam(), list = me.rot.concat(me.pen), rw = Math.min(344, W - 16), x = W / 2 - rw / 2;
+  textb('Pick any pitcher. His bar is what he has left from his last game.', W / 2, 22, UI.ice, 6, 'center', W - 16);
+  list.forEach((p, i) => pitcherRow(p, x, 34 + i * 15, rw, true, false, me.rot.includes(p) ? 'SP' : p === me.pen[me.pen.length - 1] ? 'CP' : 'RP', null, () => { G.starter = p.id; save(); const cb = startCb; startCb = null; if (cb) cb(); }));
+  button(10, H - 22, 70, 18, 'BACK', () => { menu = 'title'; startCb = null; });
+}
+// pick a pitcher to bring in: anyone who has not pitched yet
 function drawPitchPick(){
   btns = [];
   R(0, 0, W, H, '#0b1018f0');
   const mine = M.meHome ? M.home : M.away, cur = M.meHome ? M.pitcherHome : M.pitcherAway;
   textb('BRING IN A PITCHER', W / 2, 8, '#ffd23f', 10, 'center');
-  textb(`${cur.name} has thrown ${pg(cur).pc} pitches, ${Math.round(100 * (1 - clamp(spOf(pg(cur)) / stamCap(cur), 0, 1)))}% stamina left. A pitcher who is taken out cannot come back.`, W / 2, 24, UI.ice, 6, 'center', W - 20);
-  const list = mine.rot.concat(mine.pen).filter(p => p !== cur);
+  textb(`${cur.name} has thrown ${pg(cur).pc} pitches, ${Math.round(100 * stamPct(cur, true))}% stamina left. A pitcher who is taken out cannot come back.`, W / 2, 24, UI.ice, 6, 'center', W - 20);
+  const list = mine.rot.concat(mine.pen).filter(p => p !== cur), rw = Math.min(344, W - 16), x = W / 2 - rw / 2;
   list.forEach((p, i) => {
-    const y = 36 + i * 15, x = W / 2 - 150, used = pg(p).used || mine.rot.includes(p), on = !used;
-    R(x, y, 300, 13, on ? '#1b3e78' : '#1a2030');
-    textb(mine.rot.includes(p) ? 'SP' : p === mine.pen[mine.pen.length - 1] ? 'CP' : 'RP', x + 4, y + 3, on ? UI.yellow : '#667', 6);
-    textb(p.name, x + 24, y + 3, on ? '#ffffff' : '#667', 7, 'left', 130);
-    [['VEL', p.velocity], ['CTL', p.control], ['STA', p.stamina]].forEach(([l, v], j) => textb(l + ' ' + v, x + 162 + j * 44, y + 3, on ? '#cfe0ff' : '#667', 6));
-    if (pg(p).used) textb('USED', x + 296, y + 3, '#ff8a7a', 6, 'right');
-    if (on) btns.push({ x, y, w:300, h:13, fn: () => { changePitcher(mine, p); phase = userPitches() ? 'pitching' : 'atbat'; nextPitch(); } });
+    const on = !pg(p).used;
+    pitcherRow(p, x, 36 + i * 15, rw, on, true, mine.rot.includes(p) ? 'SP' : p === mine.pen[mine.pen.length - 1] ? 'CP' : 'RP', pg(p).used ? 'USED' : null,
+      () => { changePitcher(mine, p); phase = userPitches() ? 'pitching' : 'atbat'; nextPitch(); });
   });
   button(W / 2 - 40, H - 22, 80, 16, 'BACK', () => phase = 'gmenu');
 }
@@ -5247,7 +5275,7 @@ function simPitchInner(){
   // .300 average, one home run per team per game and 22% strikeouts. A player's ratings push
   // each rate up or down from there.
   const b = M.batter, p = curPitcher();
-  { const g1 = pg(p), n1 = ri(3, 5); g1.pc += n1; g1.sp = spOf(g1) + n1 * .92; }
+  { const g1 = pg(p), n1 = ri(3, 5); g1.pc += n1; g1.sp = spOf(g1) + n1; }
   // Ratings swing the result hard: a lineup of red cards (110+) should bury an average team,
   // and a green-card lineup (70s) should get buried. 85 is the middle of the league.
   const con = (b.contact - 85) / 30, pow = (b.power - 85) / 30, spd = (spdOf(b) - 85) / 30;
@@ -5578,7 +5606,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   buyPack, buyPosPack, freePack, rollCard, makeCardAt, valueOf, sellPrice, upCost, upgradeCard, doFuse, canFuse, fuseGroups, fuseRating, bandOf, dealsToday, buyDeal, streakInfo, tradeRating, doTrade, startOpen, openPointer, openAdvance, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
   CFG, get shopTab(){ return shopTab; }, makeContact2: makeContact, cpuDecide, set shopTab(v){ shopTab = v; }, get upStat(){ return upStat; }, set upStat(v){ upStat = v; }, set colSel(v){ colSel = v; }, set fuseMode(v){ fuseMode = v; }, get fuseSel(){ return fuseSel; }, set fuseSel(v){ fuseSel = v; }, tickOpen(ms){ openTick(ms); }, payPlay, earn, get SIMMING(){ return SIMMING; },
   get P(){ return P; }, get BALL(){ return BALL; }, get swing(){ return swing; }, get FLD(){ return FLD; },
-  get menu(){ return menu; }, set menu(v){ menu = v; }, simInning, saveEverything, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
+  get menu(){ return menu; }, set menu(v){ menu = v; }, stamCap, stamPct, restPitchers, pg, simRest, simInning, saveEverything, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
   set swing(v){ swing = v; },
   // schedule a swing so the bat arrives at a chosen point in the pitch
   swingAt(ms){ swing = { start: ms - BAT_LAG, contactAt: ms, t:0, resolved:false, cpu:false }; },
