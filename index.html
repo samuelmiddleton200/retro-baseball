@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11m"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11o"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11m';
+const BUILD = '11-11o';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -237,7 +237,7 @@ function newGame(teamAb){
     [...lineup, ...rot, ...pen].forEach(p => { p.num = ri(1, 72); });
     return { ...t, lineup, rot, pen, w:0, l:0, rs:0, ra:0, q };
   });
-  G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:START_COINS, gift25k:true, fun1m:true, seen:{}, streak:{ day:0, last:'' }, seasonLen:25,
+  G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:START_COINS, gift25k:true, fun1m:true, seen:{}, streak:{ day:0, last:'' }, seasonLen:24,
         sched:[], rotIdx:0, cards:[], slots:{ lineup:[], rot:[], pen:[] }, freeAt:0 };
   // your own nine, five starters and five relievers all become cards you own
   const me = G.teams[G.team];
@@ -256,13 +256,53 @@ function rebuildTeam(){
   me.rot = G.slots.rot.map(get);
   me.pen = G.slots.pen.map(get);
 }
+function makeLeagueSchedule(){
+  const N = G.teams.length, shuf = a => { for (let i = a.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const divOf = i => G.teams[i].lg + G.teams[i].div, divs = {};
+  G.teams.forEach((t, i) => (divs[divOf(i)] = divs[divOf(i)] || []).push(i));
+  const key = (x, y) => x < y ? x + '-' + y : y + '-' + x, seen = new Set(), dk = Object.keys(divs);
+  // each division: 5 teams, 5 rounds of two series (one team sits out each round)
+  const rr = {};
+  dk.forEach(k => {
+    const arr = [-1].concat(shuf(divs[k].slice())), rounds = [];
+    for (let r = 0; r < 5; r++){
+      const rot = arr.slice(1), a = [arr[0]].concat(rot.map((_, i) => rot[(i - r + 5) % 5])), pairs = []; let bye = -1;
+      for (let i = 0; i < 3; i++){ const x = a[i], y = a[5 - i]; if (x === -1) bye = y; else if (y === -1) bye = x; else pairs.push([x, y]); }
+      rounds.push({ pairs, bye });
+    }
+    rr[k] = shuf(rounds);
+  });
+  const divSlots = shuf([0, 1, 2, 3, 4, 5, 6, 7]).slice(0, 5).sort((p, q) => p - q), rounds = [];
+  for (let slot = 0; slot < 8; slot++){
+    const pairs = []; const j = divSlots.indexOf(slot);
+    if (j >= 0){
+      dk.forEach(k => rr[k][j].pairs.forEach(p => pairs.push(p.slice())));
+      let byes; for (let tryN = 0; tryN < 60; tryN++){ byes = shuf(dk.map(k => rr[k][j].bye)); if (byes.every((_, i) => i % 2 || !seen.has(key(byes[i], byes[i + 1])))) break; }
+      for (let i = 0; i < byes.length; i += 2){ pairs.push([byes[i], byes[i + 1]]); seen.add(key(byes[i], byes[i + 1])); }   // the idle clubs play each other
+    } else {
+      for (let tryN = 0; tryN < 400; tryN++){                                         // everybody plays a club from another division, nobody twice
+        const ids = shuf(Array.from({ length:N }, (_, i) => i)), used = new Set(), out = []; let ok = true;
+        for (const i of ids){
+          if (used.has(i)) continue;
+          const o = ids.find(q => q !== i && !used.has(q) && divOf(q) !== divOf(i) && !seen.has(key(i, q)));
+          if (o === undefined){ ok = false; break; }
+          used.add(i); used.add(o); out.push([i, o]);
+        }
+        if (ok){ out.forEach(p => { pairs.push(p); seen.add(key(p[0], p[1])); }); break; }
+      }
+    }
+    pairs.forEach(p => { if (Math.random() < .5) p.reverse(); });                    // who is home in games 1 and 3
+    rounds.push(pairs);
+  }
+  return rounds;
+}
 function makeSchedule(){
-  // every day our team plays somebody; opponents rotate through the league
-  const me = G.team, others = G.teams.map((_, i) => i).filter(i => i !== me);
+  G.rounds = makeLeagueSchedule();
   G.sched = [];
   for (let d = 0; d < G.seasonLen; d++){
-    const opp = others[(d * 7 + 3) % others.length];
-    G.sched.push({ opp, home: d % 2 === 0, done:false, rs:0, ra:0 });
+    const pair = (G.rounds[Math.floor(d / 3)] || []).find(p => p.includes(G.team)), k = d % 3;
+    const opp = pair ? (pair[0] === G.team ? pair[1] : pair[0]) : (G.team + 1) % G.teams.length, first = !pair || pair[0] === G.team;
+    G.sched.push({ opp, home: k === 1 ? !first : first, done:false, rs:0, ra:0 });
   }
 }
 const save = () => {
@@ -1061,7 +1101,7 @@ function startGame(oppIdx, home, opts = {}){
     balls:0, strikes:0, lineHome:0, lineAway:0, ls:{ away:[], home:[] }, H:{ away:0, home:0 }, E:{ away:0, home:0 },
     pitcherHome: home ? me.rot[G.rotIdx % 5] : opp.rot[ri(0,4)],
     pitcherAway: home ? opp.rot[ri(0,4)] : me.rot[G.rotIdx % 5],
-    pcHome:0, pcAway:0, line:[], mode: opts.mode || 'full',       // full | offense | defense
+    pcHome:0, pcAway:0, line:[], mode: opts.mode || 'full', playoff: !!opts.playoff,       // full | offense | defense
     park: makePark(home ? me : opp), msg:null, msgT:0, over:false, exc:0,
   };
   M.uni = pickUniforms(M.home, M.away);                          // who wears what, once, for the whole game
@@ -1243,7 +1283,7 @@ const CFG = {
   TRANSFER_GROUND: 0.3, TRANSFER_AIR: 0, GLOVE_PER_FT: 0.1 / 40,   // glove to release: 0.3 s fielding it off the ground, nothing extra catching it in the air, plus 0.1 s for every 40 ft of the throw (relay men too)
   READ_BREAK: 0.45,             // how far a breaking pitch's early path misleads a hitter about where it ends (a curve looks about 0.7 of the zone's half-height higher than it ends)
   MID_BARREL: 0.025,            // the middle 4 x 4 inches of the plate: this share of hits there are barrelled (sized so there are about 20% more home runs from it)
-  PIVOT: 0.55,                  // seconds for the man at second to catch it, turn and throw on to first
+  PIVOT: 0,                     // the man at second is a relay man like any other: his glove time is only 0.1 s per 40 ft of his throw (0.225 s for 90 ft)
   THROW_EFFICIENCY: 1,          // (the rating's speed is the speed the ball flies)
   EXTRA_BASE_MARGIN: 0.30,      // a runner only takes the extra base if he beats the throw by this much
   DEBUG: /[?&]debug/.test(location.search),
@@ -1529,7 +1569,7 @@ function manualThrow(B){
     const c = P.run.c;
     // the runner changed his mind (turned back, or turned forward again): the ball is no use waiting at that base, it goes after the base he is heading for now
     if (!!c.back !== !!P.run.back || (!c.back && c.cap !== P.run.nb)){ B.pass = { ph:'hold', x:P.x, y:P.y, t0:B.t + .35 }; return; }
-    if (c.back ? c.pos <= P.run.nb + .05 : c.pos >= P.run.nb - .05){ c.out = true; c.back = null; c.cap = c.pos; c.outT = B.t; say('TAGGED OUT!'); B.pass = { ph:'hold', x:P.x, y:P.y, t0:B.t + .5 }; }
+    if (c.back ? c.pos <= P.run.nb + .05 : c.pos >= P.run.nb - .05){ c.out = true; c.back = null; c.cap = c.pos; c.outT = B.t; say('TAGGED OUT!'); B.pass = { ph:'hold', x:P.x, y:P.y, t0:B.t }; }
     return;
   }
   const tp = thrPos(P.thr, B.t); P.fl = tp.flying;
@@ -1539,7 +1579,7 @@ function manualThrow(B){
     // a FORCE play: the runner has to go and nobody who pushes him has been put out, so the out is made the moment the man on the bag has the ball. No waiting, and he can turn it
     const behind = Object.keys(RUNCTL).filter(k => k !== P.run.key && (k === 'runB' || RUNCTL[k].s0 < c.s0));
     if (isGPlay(B) && !c.back && !c.out && c.forced && P.run.nb === c.s0 + 90 && c.pos < P.run.nb - .05 && behind.every(k => !RUNCTL[k].out)){
-      c.out = true; c.cap = c.pos; c.v = 0; c.outT = B.t; say('OUT!'); B.pass = { ph:'hold', x:P.to[0], y:P.to[1], t0:B.t + .45 }; return;
+      c.out = true; c.cap = c.pos; c.v = 0; c.outT = B.t; say('OUT!'); B.pass = { ph:'hold', x:P.to[0], y:P.to[1], t0:B.t }; return;
     }
     const extra = c.back || isGPlay(B) || P.run.nb > c.s0 + (c.forced ? 90 : 0) + .5;   // only a base beyond the one he has to take can be lost; going back is always a tag play
     if (extra && !c.out && (c.back ? c.pos > P.run.nb + .05 : c.pos < P.run.nb - .05)){ B.pass = { ph:'wait', x:P.to[0], y:P.to[1], run:P.run }; return; }
@@ -2401,22 +2441,30 @@ function giveDecisions(){
   if (lp) lp.st.l = (lp.st.l || 0) + 1;
 }
 // one game between two other clubs, played pitch by pitch with the same rules and stats as yours, then put away without a trace on the game you are in
-function simLeagueGame(hi, ai){
+function simLeagueGame(hi, ai, po){
+  let homeWon = true;
   const keep = { M, P, BALL, swing, phase, pitchSel }, pgKeep = new Map(PG); PG.clear();
   try {
     const home = G.teams[hi], away = G.teams[ai]; home._bi = 0; away._bi = 0;
     M = { home, away, meHome:false, league:true, inning:1, top:true, outs:0, bases:[null, null, null], score:{ home:0, away:0 }, balls:0, strikes:0, lineHome:0, lineAway:0,
           ls:{ away:[], home:[] }, H:{ away:0, home:0 }, E:{ away:0, home:0 }, pitcherHome:home.rot[(G.day + hi) % 5], pitcherAway:away.rot[(G.day + ai) % 5],
-          pcHome:0, pcAway:0, line:[], mode:'sim', park:{}, msg:null, msgT:0, over:false, exc:0 };
+          pcHome:0, pcAway:0, line:[], mode:'sim', park:{}, msg:null, msgT:0, over:false, exc:0, po:!!po };
     pg(M.pitcherHome).used = true; pg(M.pitcherAway).used = true;
     setupAtBat();
     let guard = 0; while (!M.over && guard++ < 4000) simPitch();
     if (!M.over) gameOver();
+    homeWon = M.score.home > M.score.away;
   } catch (e){ console.error(e); }
   finally { M = keep.M; P = keep.P; BALL = keep.BALL; swing = keep.swing; phase = keep.phase; pitchSel = keep.pitchSel; PG.clear(); pgKeep.forEach((v, k) => PG.set(k, v)); }
+  return { homeWon };
 }
 // the other 28 clubs: paired off at random every day (the same pairs on a reload of the same day)
 function simLeagueDay(day, oppIdx){
+  if (G.rounds && G.rounds[Math.floor(day / 3)]){
+    const k = day % 3;
+    G.rounds[Math.floor(day / 3)].forEach(([x, y]) => { if (x === G.team || y === G.team) return; k === 1 ? simLeagueGame(y, x) : simLeagueGame(x, y); });
+    return;
+  }
   let seed = (day + 1) * 7919 + 13; const rnd2 = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const ids = G.teams.map((_, i) => i).filter(i => i !== G.team && i !== oppIdx);
   for (let i = ids.length - 1; i > 0; i--){ const j = Math.floor(rnd2() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
@@ -2425,6 +2473,7 @@ function simLeagueDay(day, oppIdx){
 function gameOver(){
   if (M.league){                                                         // a game between two other clubs: decisions, the standings, nothing else
     M.over = true; giveDecisions();
+    if (M.po) return;                                                    // a playoff game: no standings
     const hw = M.score.home > M.score.away; M.home[hw ? 'w' : 'l']++; M.away[hw ? 'l' : 'w']++; M.home.rs += M.score.home; M.home.ra += M.score.away; M.away.rs += M.score.away; M.away.ra += M.score.home;
     return;
   }
@@ -2433,10 +2482,11 @@ function gameOver(){
   giveDecisions();
   const me = myTeam(), myRuns = M.meHome ? M.score.home : M.score.away, oth = M.meHome ? M.score.away : M.score.home;
   const won = myRuns > oth;
-  me[won ? 'w' : 'l']++; me.rs += myRuns; me.ra += oth;
+  if (!M.playoff){ me[won ? 'w' : 'l']++; me.rs += myRuns; me.ra += oth; }
   G.coins += won ? 600 : 150;
   M.shutBonus = oth === 0 && !M.pitchSimmed;                                 // a shutout pays only if you pitched every inning yourself
   if (M.shutBonus) G.coins += 850;
+  if (M.playoff){ poUserDone(won); G.rotIdx++; save(); return; }
   const sg = G.sched[G.day]; if (sg){ sg.done = true; sg.rs = myRuns; sg.ra = oth; }
   simLeagueDay(G.day, sg ? sg.opp : -1);                                  // everybody else plays today too, and their players get stats
   G.day++; G.rotIdx++;
@@ -4750,10 +4800,12 @@ function drawMenu(){
         const nm = `${snap.top ? 'TOP' : 'BOT'} ${snap.inning}  ${snap.score.away}-${snap.score.home}`;
         button(W / 2 - 108, 116, 150, 22, `RESUME ${nm}`, () => { if (!resumeMatch()) clearMatchSnap(); }, '#2f6fe0');
         button(W / 2 + 48, 116, 60, 22, 'RESTART', () => { clearMatchSnap(); if (G.day < G.seasonLen){ const s = G.sched[G.day]; startGame(s.opp, s.home); } }, '#2a1a1a', '#fff', 7);
-      } else button(W / 2 - 70, 116, 140, 22, G.day < G.seasonLen ? `PLAY GAME ${G.day + 1}/${G.seasonLen}` : 'SEASON DONE', () => {
-        if (G.day >= G.seasonLen) return;
-        const s = G.sched[G.day]; startGame(s.opp, s.home);
+      } else if (G.day < G.seasonLen) button(W / 2 - 70, 116, 140, 22, `PLAY GAME ${G.day + 1}/${G.seasonLen}`, () => {
+        const sg = G.sched[G.day]; startGame(sg.opp, sg.home);
       }, '#2f6fe0');
+      else if (!G.po) button(W / 2 - 70, 116, 140, 22, 'START PLAYOFFS', () => { startPlayoffs(); menu = 'playoffs'; }, '#2f6fe0');
+      else if (poUserGame()) { const ug = poUserGame(); button(W / 2 - 70, 116, 140, 22, 'PLAY ' + PO_ROUNDS[G.po.round], () => { startGame(ug.a === G.team ? ug.b : ug.a, ug.a === G.team, { playoff:true }); }, '#2f6fe0'); }
+      else button(W / 2 - 70, 116, 140, 22, 'NEW SEASON', () => newSeason(), '#2f6fe0');
       button(W / 2 - 108, 142, 68, 18, 'MY CARDS', () => menu = 'cards');
       button(W / 2 - 34, 142, 68, 18, 'SHOP', () => menu = 'shop');
       button(W / 2 + 40, 142, 68, 18, 'LINEUP', () => menu = 'lineup');
@@ -4841,7 +4893,43 @@ function drawMenu(){
     button(W - 58, H - 20, 50, 16, 'BACK', () => menu = 'title');
   }
 }
-// ── the playoff picture: the top 6 of each league, as the standings have it today. 4 v 5 and 3 v 6 play a wild-card game; the winners play the 1 and 2 seeds; then the league series and the World Series ──
+// ── the playoffs ──
+const PO_ROUNDS = ['WILD CARD', 'DIVISION SERIES', 'LEAGUE SERIES', 'WORLD SERIES'];
+function poPct(i){ const t = G.teams[i]; return (t.w + t.l) ? t.w / (t.w + t.l) : 0; }
+function poBuildRound(){
+  const P = G.po, r = P.round, S = P.seeds, out = [], seedOf = (lg, i) => S[lg].indexOf(i);
+  const best = (lg, x, y) => seedOf(lg, x) < seedOf(lg, y) ? [x, y] : [y, x];
+  if (r === 0) ['AL', 'NL'].forEach(lg => { const s6 = S[lg]; out.push({ lg, a:s6[3], b:s6[4], w:-1 }); out.push({ lg, a:s6[2], b:s6[5], w:-1 }); });
+  else if (r === 1) ['AL', 'NL'].forEach(lg => { const w0 = P.g[0].filter(x => x.lg === lg); out.push({ lg, a:S[lg][0], b:w0[0].w, w:-1 }); out.push({ lg, a:S[lg][1], b:w0[1].w, w:-1 }); });
+  else if (r === 2) ['AL', 'NL'].forEach(lg => { const w1 = P.g[1].filter(x => x.lg === lg), [h, v] = best(lg, w1[0].w, w1[1].w); out.push({ lg, a:h, b:v, w:-1 }); });
+  else { const al = P.g[2].find(x => x.lg === 'AL').w, nl = P.g[2].find(x => x.lg === 'NL').w, h = poPct(al) >= poPct(nl) ? [al, nl] : [nl, al]; out.push({ lg:'WS', a:h[0], b:h[1], w:-1 }); }
+  P.g[r] = out;
+}
+const poUserGame = () => { const P = G.po; if (!P || P.champ >= 0) return null; return (P.g[P.round] || []).find(x => x.w < 0 && (x.a === G.team || x.b === G.team)) || null; };
+function poAdvance(){                                                      // simulate every game that is not yours; stop when it is your turn
+  const P = G.po; let guard = 0;
+  while (P.champ < 0 && guard++ < 10){
+    (P.g[P.round] || []).forEach(gm => { if (gm.w >= 0 || gm.a === G.team || gm.b === G.team) return; gm.w = simLeagueGame(gm.a, gm.b, true).homeWon ? gm.a : gm.b; });
+    if (poUserGame()) return;
+    if (P.round >= 3){ P.champ = P.g[3][0].w; G.champs = (G.champs || 0) + (P.champ === G.team ? 1 : 0); return; }
+    P.round++; poBuildRound();
+  }
+}
+function startPlayoffs(){
+  G.po = { round:0, seeds:{ AL:playoffSeeds('AL').slice(0, 6).map(o => o.i), NL:playoffSeeds('NL').slice(0, 6).map(o => o.i) }, g:[[], [], [], []], champ:-1 };
+  poBuildRound(); poAdvance(); save();
+}
+function poUserDone(won){
+  const gm = poUserGame(); if (!gm) return;
+  gm.w = won ? G.team : (gm.a === G.team ? gm.b : gm.a);
+  poAdvance();
+}
+function newSeason(){
+  G.teams.forEach(t => { t.w = t.l = t.rs = t.ra = 0; [...t.lineup, ...t.rot, ...t.pen].forEach(p => { p.st = newStat(); }); });
+  G.cards.forEach(p => { p.st = newStat(); });
+  G.day = 0; G.seasonLen = 24; G.po = null; G.season = (G.season || 1) + 1; makeSchedule(); save();
+}
+// ── the playoff picture: the top 6 of each league. 4 v 5 and 3 v 6 play a wild-card game; the winners play the 1 and 2 seeds; then the league series and the World Series ──
 function playoffSeeds(lg){
   const pctOf = t => (t.w + t.l) ? t.w / (t.w + t.l) : 0;
   return G.teams.map((t, i) => ({ t, i })).filter(o => o.t.lg === lg).sort((a, b) => pctOf(b.t) - pctOf(a.t) || b.t.w - a.t.w || a.i - b.i);
@@ -4849,7 +4937,8 @@ function playoffSeeds(lg){
 function drawPlayoffs(){
   uiBg();
   R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff'); ptitle('PLAYOFFS', 10, 3, 9, '#ffffff', 'left');
-  textb('IF THE SEASON ENDED TODAY', W - 8, 5, UI.ice, 6, 'right');
+  const PO = G.po, tm = i => i >= 0 ? { t:G.teams[i], i } : null;
+  textb(PO ? (PO.champ >= 0 ? 'CHAMPIONS: ' + G.teams[PO.champ].nick.toUpperCase() : PO_ROUNDS[PO.round] + ' ROUND') : 'IF THE SEASON ENDED TODAY', W - 8, 5, PO && PO.champ >= 0 ? UI.yellow : UI.ice, 6, 'right');
   const bh = 16, cx = W / 2, wsW = 56, avail = cx - wsW / 2 - 6, gap = 5, cw = Math.floor((avail - 2 * gap - 4) / 3), top = 36;
   const lum = c => { const n = parseInt(c.slice(1), 16); return ((n >> 16) * .3 + ((n >> 8) & 255) * .59 + (n & 255) * .11); };
   const mine = G.team;
@@ -4864,7 +4953,9 @@ function drawPlayoffs(){
   const pill = (x, w, label) => { R(x, 24, w, 9, UI.blueD); R(x, 24, w, 1, 'rgba(255,255,255,.4)'); textb(label, x + w / 2, 26, '#ffffff', 6, 'center'); };
   const bot = H - 28, mirrorY = y => top + bot - y - bh;                      // the bottom half is the top half turned over
   ['AL', 'NL'].forEach((lg, side) => {
-    const L = playoffSeeds(lg).slice(0, 6), sd = k => L[k - 1] || null, dir = side === 0 ? 1 : -1;
+    const L = PO ? PO.seeds[lg].map(tm) : playoffSeeds(lg).slice(0, 6), sd = k => L[k - 1] || null, dir = side === 0 ? 1 : -1;
+    const gl = r => PO ? PO.g[r].filter(x => x.lg === lg) : [], won = (r, k) => gl(r)[k] && gl(r)[k].w >= 0 ? tm(gl(r)[k].w) : null;     // who won a game of this league
+    const wcW = [won(0, 0), won(0, 1)], dsW = [won(1, 0), won(1, 1)];
     // x of each column, outer to inner (the NL is the AL turned round)
     const col = n => side === 0 ? 4 + n * (cw + gap) : W - 4 - cw - n * (cw + gap);
     const edgeOut = n => side === 0 ? col(n) + cw : col(n), edgeIn = n => side === 0 ? col(n) : col(n) + cw;
@@ -4875,11 +4966,11 @@ function drawPlayoffs(){
     tile(col(0), yWC[0], sd(4), 4); tile(col(0), yWC[1], sd(5), 5);
     tile(col(0), yB(yWC[1]), sd(3), 3); tile(col(0), yB(yWC[0]), sd(6), 6);
     // division series: the 1 seed and the 4/5 winner; the 2 seed and the 3/6 winner
-    tile(col(1), yDS[0], null, 0, 'WC WINNER'); tile(col(1), yDS[1], sd(1), 1);
-    tile(col(1), yB(yDS[1]), sd(2), 2); tile(col(1), yB(yDS[0]), null, 0, 'WC WINNER');
+    tile(col(1), yDS[0], wcW[0], 0, 'WC WINNER'); tile(col(1), yDS[1], sd(1), 1);
+    tile(col(1), yB(yDS[1]), sd(2), 2); tile(col(1), yB(yDS[0]), wcW[1], 0, 'WC WINNER');
     // league series
     const yL = [ymid + 2, yB(ymid + 2)];
-    tile(col(2), yL[0], null, 0, 'TBD'); tile(col(2), yL[1], null, 0, 'TBD');
+    tile(col(2), yL[0], dsW[0], 0, 'TBD'); tile(col(2), yL[1], dsW[1], 0, 'TBD');
     // the lines: wild card pair -> its winner box; the winner box and the 1 seed -> the league series
     [[yWC[0], yWC[1], yDS[0]], [yB(yWC[1]), yB(yWC[0]), yB(yDS[0])]].forEach(([a, b, d]) => {
       const x0 = edgeOut(0) + dir * 3, ya = a + bh / 2, yb = b + bh / 2, yd = d + bh / 2;
@@ -4899,7 +4990,9 @@ function drawPlayoffs(){
     R(xs, yL[0] + bh / 2, 1, yL[1] - yL[0] + 1, '#9fb8ff');
     R(Math.min(xs, side === 0 ? cx - wsW / 2 : cx + wsW / 2), yc, Math.abs((side === 0 ? cx - wsW / 2 : cx + wsW / 2) - xs) + 1, 1, '#9fb8ff');
     // your place in this league
-    if (G.team >= 0 && G.teams[G.team].lg === lg){
+    if (PO && G.teams[G.team].lg === lg){
+      const sk = PO.seeds[lg].indexOf(G.team); G._poNote = PO.champ >= 0 ? (PO.champ === G.team ? 'YOUR TEAM WON THE WORLD SERIES!' : 'THE PLAYOFFS ARE OVER') : sk < 0 ? 'YOUR TEAM MISSED THE PLAYOFFS' : poUserGame() ? 'YOU ARE THE ' + lg + ' #' + (sk + 1) + ' SEED: YOUR GAME IS NEXT' : 'YOUR SEASON IS OVER';
+    } else if (G.team >= 0 && G.teams[G.team].lg === lg){
       const all = playoffSeeds(lg), rank = all.findIndex(o => o.i === G.team) + 1, six = all[5].t, me = G.teams[G.team];
       const gb = ((six.w - me.w) + (me.l - six.l)) / 2;
       G._poNote = rank <= 6 ? `YOU ARE THE ${lg} #${rank} SEED` : `${rank}TH IN THE ${lg}: ${gb.toFixed(1)} GB OF THE LAST SPOT`;
@@ -4909,7 +5002,9 @@ function drawPlayoffs(){
   const cyMid = (top + bot) / 2;
   textb('AMERICAN LEAGUE', 6, cyMid - 3, '#ffffff', 8, 'left'); textb('NATIONAL LEAGUE', W - 6, cyMid - 3, '#ffffff', 8, 'right');
   R(cx - wsW / 2, cyMid - 9, wsW, 18, '#ffffff'); R(cx - wsW / 2 + 1, cyMid - 8, wsW - 2, 16, UI.blueDD);
+  const wsg = PO && PO.g[3][0], wsT = wsg ? [wsg.a, wsg.b].map(i => G.teams[i].ab).join(' v ') : '', chp = PO && PO.champ >= 0 ? G.teams[PO.champ] : null;
   textb('WORLD', cx, cyMid - 7, UI.yellow, 6, 'center'); textb('SERIES', cx, cyMid + 1, UI.yellow, 6, 'center');
+  if (chp){ R(cx - wsW / 2, cyMid + 11, wsW, 11, UI.yellow); textb(chp.ab, cx, cyMid + 13, UI.navy, 7, 'center'); } else if (wsT) textb(wsT, cx, cyMid + 12, UI.ice, 6, 'center');
   textb(G._poNote || '', 8, H - 17, UI.yellow, 6, 'left', W - 76);
   button(W - 58, H - 20, 50, 16, 'BACK', () => menu = 'stand');
 }
@@ -5428,7 +5523,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   buyPack, buyPosPack, freePack, rollCard, makeCardAt, valueOf, sellPrice, upCost, upgradeCard, doFuse, canFuse, fuseGroups, fuseRating, bandOf, dealsToday, buyDeal, streakInfo, tradeRating, doTrade, startOpen, openPointer, openAdvance, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
   CFG, get shopTab(){ return shopTab; }, makeContact2: makeContact, cpuDecide, set shopTab(v){ shopTab = v; }, get upStat(){ return upStat; }, set upStat(v){ upStat = v; }, set colSel(v){ colSel = v; }, set fuseMode(v){ fuseMode = v; }, get fuseSel(){ return fuseSel; }, set fuseSel(v){ fuseSel = v; }, tickOpen(ms){ openTick(ms); }, payPlay, earn, get SIMMING(){ return SIMMING; },
   get P(){ return P; }, get BALL(){ return BALL; }, get swing(){ return swing; }, get FLD(){ return FLD; },
-  get menu(){ return menu; }, set menu(v){ menu = v; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
+  get menu(){ return menu; }, set menu(v){ menu = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
   set swing(v){ swing = v; },
   // schedule a swing so the bat arrives at a chosen point in the pitch
   swingAt(ms){ swing = { start: ms - BAT_LAG, contactAt: ms, t:0, resolved:false, cpu:false }; },
