@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11v"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11w"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11v';
+const BUILD = '11-11w';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -253,6 +253,8 @@ function rebuildTeam(){
   const me = G.teams[G.team];
   const get = id => cardById(id) || me.lineup[0];
   me.lineup = G.slots.lineup.map(get);
+  if (!G.slots.order || G.slots.order.length !== 9) G.slots.order = IDENT9.slice();
+  me.order = G.slots.order;
   me.rot = G.slots.rot.map(get);
   me.pen = G.slots.pen.map(get);
 }
@@ -1080,7 +1082,7 @@ function drawFielders(team){
   FIELDERS.forEach(([d, lat, pos], i) => {
     const p = proj(d, lat);
     if (drawFielderSprite(p.x, p.y, pos)) return;
-    drawMini(p.x, p.y, (team.lineup[i] || team.lineup[0]).look, team.c1, team.c2, p.s * 2.4);
+    drawMini(p.x, p.y, posMan(team, pos).look, team.c1, team.c2, p.s * 2.4);
   });
 }
 
@@ -1188,9 +1190,12 @@ const weBat = () => (M.top && !M.meHome) || (!M.top && M.meHome);
 const userBats = () => weBat() && (M.mode === 'full' || M.mode === 'offense');
 const userPitches = () => !weBat() && (M.mode === 'full' || M.mode === 'defense');
 
+const posMan = (t, pos) => t.lineup[POS.indexOf(pos)] || t.lineup[0];       // who plays a position: the card in that position's slot
 function lineupOf(team){ return team.lineup; }
 function batterIdx(team){ team._bi = team._bi || 0; return team._bi; }
-function curBatter(){ const t = batTeam(); return t.lineup[batterIdx(t) % 9]; }
+const IDENT9 = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+const orderOf = t => { const o = G && G.slots && G.teams[G.team] === t && G.slots.order ? G.slots.order : t.order; return o && o.length === 9 ? o : IDENT9; };      // batting order: slot numbers, first to ninth (yours is read straight from your saved lineup)
+function curBatter(){ const t = batTeam(); return t.lineup[orderOf(t)[batterIdx(t) % 9]]; }
 function nextBatter(){ const t = batTeam(); t._bi = (batterIdx(t) + 1) % 9; }
 
 // ── one pitch ──────────────────────────────────────────────────────────────
@@ -1801,7 +1806,7 @@ function planFielders(){
   const B = BALL, ft = fldTeam();
   const last = B.path[B.path.length - 1], tEnd = (B.path.length - 1) / 120;
   FLD = FIELDERS.map(([d, lat, pos], i) => {
-    const man = ft.lineup[i] || ft.lineup[0];
+    const man = posMan(ft, pos);
     const fld = clamp((man.fielding - 60) / 60, 0, 1);
     return { i, man, pos, d, lat, x:d, y:lat, speed: sprintFps(spdOf(man)), react: lerp(CFG.REACT_SLOW, CFG.REACT_FAST, fld), fld,
              armFps: throwFps(man.fielding), arm: CFG.ARM_BASE + (man.fielding - 60) * CFG.ARM_SLOPE,
@@ -1954,7 +1959,7 @@ function planOutcomeAuto(B, c){
       };
       if (af < rf){                                                              // the force at the lead base can be made: always try for two
         const pv = stepOn ? c : route(fb, tr).catcher, here = bases[fb - 1];
-        const pvArm = pv ? pv.armFps : (fb === 4 ? throwFps(((fldTeam().lineup[7]) || c.man).fielding) : c.armFps);
+        const pvArm = pv ? pv.armFps : (fb === 4 ? throwFps((posMan(fldTeam(), 'C') || c.man).fielding) : c.armFps);
         const pvGo = af + (stepOn ? CFG.PIVOT * .5 : CFG.PIVOT);                // the pivot man catches it, turns and throws
         let pick = null;
         for (const n of [1, 2, 3]){                                              // the other forced men: the batter at first, the runners on the way to second / third
@@ -2692,10 +2697,10 @@ function gxBat(dt){
   S.people.push(gxPerson('bat', 'bat', b, bt, lefty ? 3.0 : -3.0, -.7, lefty ? -BAT_YAW : BAT_YAW, bp));
   // the catcher sets his glove where the pitch is going; the umpire stands behind him
   const gx = P && P.thrown ? clamp(-P.tx * .5, -1.2, 1.2) : 0, gy = P && P.thrown ? clamp(2.5 - P.ty, 1.3, 3.8) : 2.4;
-  const cm = ft.lineup[7] || ft.lineup[0];
+  const cm = posMan(ft, 'C');
   S.people.push(gxPerson('cat', 'catch', cm, ft, 0, 3.4, Math.PI, GL3D.poseCatcher(gx, gy, t), { glove:1, cap2:'#2f56c4', helm:'#2547a8' }));
   S.people.push(gxPerson('ump', 'ump', { look:{ skin:'#c88e5e', hair:'#1d1510' } }, { c1:'#16191f', c2:'#16191f' }, .2, 8.8, Math.PI, GL3D.poseUmp(t), { pants:'#3a3f4c' }));
-  FIELDERS.forEach(([d, lat, pos], i) => S.people.push(gxPerson('f' + i, 'field', ft.lineup[i] || ft.lineup[0], ft, lat, -d, 0, GL3D.poseReady(t + i * .7), { glove:1, scale:gxFar(d) })));
+  FIELDERS.forEach(([d, lat, pos], i) => S.people.push(gxPerson('f' + i, 'field', posMan(ft, pos), ft, lat, -d, 0, GL3D.poseReady(t + i * .7), { glove:1, scale:gxFar(d) })));
   // the ball
   if (P && P.thrown && P.state === 'flight' && P.t < P.dur){
     const f = clamp(P.t / P.dur, 0, 1), p = gxPitchBall(f);
@@ -2733,7 +2738,7 @@ function gxPlay(B){
   const face = (x, z) => Math.atan2(bx - x, bz - z);
   let ballHeld = false;                                              // the ball is in a glove: it is hidden from the moment he reaches for it until he throws
   S.people.push(gxPerson('pit', 'pitch', pit, ft, 0, -60.5, face(0, -60.5), GL3D.poseReady(t), { y:.9, glove:1, sp:{ f:0 } }));
-  S.people.push(gxPerson('cat', 'catch', ft.lineup[7] || ft.lineup[0], ft, 0, 3.4, Math.PI, GL3D.poseCatcher(0, 2.4, t), { glove:1, cap2:ft.c1, sp: paintOn() ? { f:0 } : { bat:1 } }));
+  S.people.push(gxPerson('cat', 'catch', posMan(ft, 'C'), ft, 0, 3.4, Math.PI, GL3D.poseCatcher(0, 2.4, t), { glove:1, cap2:ft.c1, sp: paintOn() ? { f:0 } : { bat:1 } }));
   (FLD || []).forEach(f => {
     const X = f.y, Z = -f.x, key = 'f' + f.i;
     let pose, yaw = face(X, Z), sp = { f: ((frame + f.i * 41) % 170) < 100 ? 0 : 1 };
@@ -3182,10 +3187,10 @@ function drawFielderSprite(xL, yL, pos, grab, hOver){
   if (!plateOK()) return drawFielderSpriteOld(xL, yL, pos, grab);
   if (GPF.ready){
     const i = Math.max(0, FIELDERS.findIndex(f => f[2] === pos)), f = ((frame + i * 37) % 150) < 90 ? 0 : 1;      // he shifts his weight every couple of seconds
-    GPSK = skinHex(fldTeam().lineup[i]);
+    GPSK = skinHex(posMan(fldTeam(), pos));
     return gpStamp(GPF.img[f], 'FD' + f, uni(fldTeam()), xL, yL, (hOver || figH(yL / TU)) * 1.55, pos === '1B' || pos === '2B' || pos === 'RF', .96);
   }
-  const ft = fldTeam(), i = Math.max(0, FIELDERS.findIndex(f => f[2] === pos)), man = ft.lineup[i] || ft.lineup[0], hT = hOver || figH(yL / TU);
+  const ft = fldTeam(), i = Math.max(0, FIELDERS.findIndex(f => f[2] === pos)), man = posMan(ft, pos), hT = hOver || figH(yL / TU);
   const st = phaseStep(frame / 60 + i * .37, 6), o = gxPerson('f' + i, 'field', man, ft, 0, 0, 0, null, { glove:1 });
   return bakeStamp('f', 'F' + i + lookKey(man.look) + ft.c1 + '|' + st, o, GL3D.poseReady(st / 6 * 4), 0, xL, yL, hT, pos === '1B' || pos === '2B' || pos === 'RF', 4.55);
 }
@@ -3231,7 +3236,7 @@ function drawBatter(p, swingT, idle, rel){
 }
 function drawBehindPlate(){
   if (!plateOK()) return drawBehindPlateOld();
-  const ft = fldTeam(), cm = ft.lineup[7] || ft.lineup[0];
+  const ft = fldTeam(), cm = posMan(ft, 'C');
   const oc = gxPerson('cat', 'catch', cm, ft, 0, 0, 0, null, { glove:1, cap2:uni2(ft), helm:uni(ft) });
   bakeStamp('c', 'C' + lookKey(cm.look) + uni(ft) + uni2(ft), oc, GL3D.poseCatcher(0, 2.4, 0), Math.PI, tx(386), ty(520), 225, false);
   const ou = gxPerson('ump', 'ump', { look:{ skin:'#c88e5e', hair:'#1d1510' } }, { c1:'#16191f', c2:'#16191f', ab:'U' }, 0, 0, 0, null, { pants:'#3a3f4c' });
@@ -4686,6 +4691,7 @@ function bestLineup(){
   const pen = [0, 1, 2, 3].map(() => take(p => p.pos === 'RP') || take(() => true));
   const keep = (arr, old) => arr.map((c, i) => c ? c.id : old[i]);
   G.slots.lineup = keep(spot, G.slots.lineup); G.slots.rot = keep(rot, G.slots.rot); G.slots.pen = keep(pen.concat([cp]), G.slots.pen);
+  { const bat = i => { const c = cardById(G.slots.lineup[i]); return c ? c.contact * .4 + c.power * .4 + spdOf(c) * .2 : 0; }; G.slots.order = IDENT9.slice().sort((a, b) => bat(b) - bat(a)); }
   rebuildTeam(); save();
   const all = [...G.slots.lineup, ...G.slots.rot, ...G.slots.pen].map(cardById).filter(Boolean);
   lineMsg = `Best lineup set: team overall ${Math.round(all.reduce((s, c) => s + ovrOf(c), 0) / all.length)}`;
@@ -4729,19 +4735,37 @@ function drawLineup(){
     btns.push({ x, y, w:SW, h:16, fn: () => lineSel = { where, i } });
   };
   textb('BATTING ORDER', 10, 24, UI.ice, 7);
-  G.slots.lineup.forEach((id, i) => slot('lineup', i, String(i + 1), 10, 34 + i * 19));
-  textb('ROTATION', 92, 24, UI.ice, 7);
-  G.slots.rot.forEach((id, i) => slot('rot', i, 'SP', 92, 34 + i * 19));
-  textb('BULLPEN', 174, 24, UI.ice, 7);
-  G.slots.pen.forEach((id, i) => slot('pen', i, i === 4 ? 'CP' : 'RP', 174, 34 + i * 19));
+  if (!G.slots.order || G.slots.order.length !== 9) G.slots.order = IDENT9.slice();
+  const BW = 120, ord = G.slots.order;
+  ord.forEach((idx, k) => {                                            // the order he bats in; the label is the position he plays
+    const x = 10, y = 34 + k * 19, c = cardById(G.slots.lineup[idx]);
+    uiBox(x, y, BW, 16);
+    textb(POS[idx], x + 5, y + 5, UI.yellow, 7);
+    if (c){ textb(c.name.split(' ').pop(), x + 23, y + 5, '#ffffff', 7, 'left', BW - 23 - 44); textb(String(ovrOf(c)), x + BW - 29, y + 4, colOf(ovrOf(c)), 8, 'right'); }
+    else textb('empty', x + 23, y + 5, UI.ice, 7);
+    btns.push({ x, y, w:BW - 26, h:16, fn: () => lineSel = { where:'lineup', i:idx } });
+    const arrow = (ax, up, on) => {                                      // a small triangle: move up / down the order
+      g.fillStyle = on ? UI.yellow : 'rgba(255,255,255,.25)'; g.beginPath();
+      if (up){ g.moveTo(ax + 5, y + 5); g.lineTo(ax + 10, y + 11); g.lineTo(ax, y + 11); } else { g.moveTo(ax, y + 5); g.lineTo(ax + 10, y + 5); g.lineTo(ax + 5, y + 11); }
+      g.closePath(); g.fill();
+      if (on) btns.push({ x:ax - 2, y, w:14, h:16, fn: () => { const j = k + (up ? -1 : 1); [ord[k], ord[j]] = [ord[j], ord[k]]; rebuildTeam(); save(); } });
+    };
+    arrow(x + BW - 26, true, k > 0); arrow(x + BW - 13, false, k < 8);
+  });
+  textb('ROTATION', 138, 24, UI.ice, 7);
+  G.slots.rot.forEach((id, i) => slot('rot', i, 'SP', 138, 34 + i * 19));
+  textb('BULLPEN', 220, 24, UI.ice, 7);
+  G.slots.pen.forEach((id, i) => slot('pen', i, i === 4 ? 'CP' : 'RP', 220, 34 + i * 19));
   // what the whole roster averages out to
   const all = [...G.slots.lineup, ...G.slots.rot, ...G.slots.pen].map(cardById).filter(Boolean);
   const team = all.length ? Math.round(all.reduce((s, c) => s + ovrOf(c), 0) / all.length) : 0;
-  textb('TEAM', 262, 24, UI.ice, 7);
-  ptitle(String(team), 262, 34, 22, UI.yellow, 'left');
-  textb('overall', 262, 62, UI.ice, 7);
-  textb('Tap a spot to swap in', 262, 82, '#ffffff', 7);
-  textb('any spare card.', 262, 92, '#ffffff', 7);
+  textb('TEAM', 306, 24, UI.ice, 7);
+  ptitle(String(team), 306, 34, 22, UI.yellow, 'left');
+  textb('overall', 306, 62, UI.ice, 7);
+  textb('Tap a spot to swap in', 306, 82, '#ffffff', 7, 'left', W - 312);
+  textb('any spare card.', 306, 92, '#ffffff', 7, 'left', W - 312);
+  textb('Arrows move a batter', 306, 108, '#ffffff', 7, 'left', W - 312);
+  textb('up or down the order.', 306, 118, '#ffffff', 7, 'left', W - 312);
   button(W / 2 - 55, H - 22, 110, 18, 'BEST LINEUP', bestLineup, '#2a6a3a', '#fff', 8);
   if (lineMsgT > 0){ lineMsgT -= 16; textb(lineMsg, W / 2, H - 36, '#9af0ae', 7, 'center'); }
   button(10, H - 22, 70, 18, 'BACK', () => menu = 'cards');
@@ -5178,19 +5202,20 @@ function drawGameMenu(){
   if (M.derby) return drawDerbyPause();
   btns = [];
   R(0, 0, W, H, '#0b1018e8');
-  textb('WHAT DO YOU WANT TO PLAY?', W / 2, 30, '#ffd23f', 10, 'center');
-  const bw = 106, bh = 27, gp = 6, x0 = W / 2 - (3 * bw + 2 * gp) / 2, xs = i => x0 + i * (bw + gp), y1 = 54, y2 = y1 + bh + gp + 2, y3 = y2 + bh + gp + 2, fs = 7;
+  textb('WHAT DO YOU WANT TO PLAY?', W / 2, 16, '#ffd23f', 10, 'center');
+  // two columns of three, and SAVE AND EXIT along the bottom of both
+  const bw = 106, bh = 27, gp = 6, x0 = W / 2 - (2 * bw + gp) / 2, xs = i => x0 + i * (bw + gp), ys = r => 38 + r * (bh + gp), fs = 7;
   const modes = [['PLAY EVERYTHING', 'full'], ['BATTING ONLY', 'offense'], ['PITCHING ONLY', 'defense']];
-  modes.forEach(([l, m], i) => button(xs(i), y1, bw, bh, l, () => {
+  modes.forEach(([l, m], r) => button(xs(0), ys(r), bw, bh, l, () => {
     M.mode = m; phase = 'atbat';
     if ((m === 'offense' && !weBat()) || (m === 'defense' && weBat())){ simHalfIfNeeded(); if (!M.over && phase === 'atbat' && !P) nextPitch(); }   // the half you just skipped plays out now
     else nextPitch();
-  }, M.mode === m ? '#2f6fe0' : '#1a2230', M.mode === m ? '#fff' : '#fff', fs));                       // the mode you are in is lit
+  }, M.mode === m ? '#2f6fe0' : '#1a2230', '#fff', fs));                                                // the mode you are in is lit
   const mine = M.meHome ? M.home : M.away, open = !(P && P.thrown) && mine.pen.some(p => !pg(p).used);
-  button(xs(0), y2, bw, bh, 'SIM INNING', () => simInning(), '#1a2230', '#fff', fs);
-  button(xs(1), y2, bw, bh, 'SIM FULL GAME', () => simRest(), '#1a2230', '#fff', fs);
-  button(xs(2), y2, bw, bh, 'CHANGE PITCHER', () => { if (open) phase = 'pitchpick'; }, open ? '#1a2230' : '#161b26', '#fff', fs);
-  button(xs(0), y3, 3 * bw + 2 * gp, bh, 'SAVE AND EXIT', () => { saveEverything(); M = null; P = null; BALL = null; phase = 'menu'; menu = 'title'; }, '#1a2230', '#fff', 8);      // the game is written down where it stands; RESUME on the main menu picks it up
+  button(xs(1), ys(0), bw, bh, 'SIM INNING', () => simInning(), '#1a2230', '#fff', fs);
+  button(xs(1), ys(1), bw, bh, 'SIM FULL GAME', () => simRest(), '#1a2230', '#fff', fs);
+  button(xs(1), ys(2), bw, bh, 'CHANGE PITCHER', () => { if (open) phase = 'pitchpick'; }, open ? '#1a2230' : '#161b26', '#fff', fs);
+  button(xs(0), ys(3), 2 * bw + gp, bh, 'SAVE AND EXIT', () => { saveEverything(); M = null; P = null; BALL = null; phase = 'menu'; menu = 'title'; }, '#1a2230', '#fff', 8);      // the game is written down where it stands; RESUME on the main menu picks it up
 }
 // pick a reliever: only pitchers who have not been in yet
 function drawPitchPick(){
@@ -5375,7 +5400,7 @@ function derbyHUD(){
 function derbyPeople(){
   if (!(GPF.ready && GP.ready)) return;
   const ft = fldTeam(), bt = batTeam(), b = M.batter, lefty = b.bats === 'L';
-  [{ k:'cat', d:-3.4, lat:0, bat:1, man:ft.lineup[7] || ft.lineup[0], team:ft },
+  [{ k:'cat', d:-3.4, lat:0, bat:1, man:posMan(ft, 'C'), team:ft },
    { k:'bat', d:.7, lat: lefty ? 3 : -3, man:b, team:bt },
    { k:'pit', d:60.5, lat:0, man:curPitcher(), team:ft }].forEach(o => {
     const p = gxPerson(o.k, o.k, o.man, o.team, o.lat, -o.d, 0, null), q = derbyPt(o.d, o.lat, 0), hPx = clamp(Math.round(6.2 * q.s * DH.hs * 1.05 * .85), 10, 13);
