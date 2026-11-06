@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11r"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11s"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11r';
+const BUILD = '11-11s';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -305,16 +305,19 @@ function makeSchedule(){
     G.sched.push({ opp, home: k === 1 ? !first : first, done:false, rs:0, ra:0 });
   }
 }
+let saveFailed = false;
 const save = () => {
+  const me = G && G.teams && G.teams[G.team];
+  const keep = me ? { lineup:me.lineup, rot:me.rot, pen:me.pen } : null;
   try {
     // our own players live in G.cards; the team just points at them, so blank those
     // three lists before saving and build them again on load
-    const me = G.teams[G.team], keep = { lineup:me.lineup, rot:me.rot, pen:me.pen };
     me.lineup = me.rot = me.pen = null;
     const txt = JSON.stringify(G);
     me.lineup = keep.lineup; me.rot = keep.rot; me.pen = keep.pen;
-    localStorage.setItem(SAVE, txt);
-  } catch(e){}
+    localStorage.setItem(SAVE, txt); saveFailed = false;
+  } catch(e){ saveFailed = true; }
+  finally { if (me && keep && !me.lineup){ me.lineup = keep.lineup; me.rot = keep.rot; me.pen = keep.pen; } }       // however it ended, the team is put back
 };
 const load = () => {
   try {
@@ -326,6 +329,7 @@ const load = () => {
       rebuildTeam();
       if (!G.seen){ G.seen = {}; G.cards.forEach(c => { G.seen[c.name] = 1; }); }
       if (!G.streak) G.streak = { day:0, last:'' };
+      if (G.packReset !== 1){ G.freeAt = 0; G.packReset = 1; }                    // one-time: the daily pack that glitched is available again
       G.cards.forEach(c => { if (c.fz == null) c.fz = 0; });
       if (!G.gift25k){                                                       // the 1,000,000 gift is taken back and replaced by a one-time 25,000
         G.gift25k = true;
@@ -2364,7 +2368,7 @@ function applyPlay(res){
 }
 // coins for what you play: nothing for innings the game simulates. The same batter repeating a hit or a walk earns 15 more each time; a pitcher's repeat strikeouts 10 more.
 let SIMMING = false;
-function earn(cat, amt, n = 1){ G.coins += amt; const e = (M.earn[cat] = M.earn[cat] || { n:0, c:0 }); e.n += n; e.c += amt; }
+function earn(cat, amt, n = 1){ G.coins += amt; const e = (M.earn[cat] = M.earn[cat] || { n:0, c:0 }); e.n += n; e.c += amt; save(); }      // saved the moment it is earned
 function payPlay(res, b, p, rbi){
   if (M.league || SIMMING || !M.earn) return;
   if (weBat()){
@@ -2372,8 +2376,8 @@ function payPlay(res, b, p, rbi){
     if (base){ const cat = res === 'hbp' ? 'bb' : res, key = (b.id || b.name) + ':' + cat, n = (M.rep[key] || 0) + 1; M.rep[key] = n; earn(cat, base + 15 * (n - 1)); }
     if (rbi > 0) earn('rbi', rbi * 70, rbi);
   } else {
-    if (res === 'k'){ const key = 'K:' + (p.id || p.name), n = (M.rep[key] || 0) + 1; M.rep[key] = n; earn('k', 75 + 10 * (n - 1)); }
-    if (res === 'dp') earn('dp', 125);
+    if (res === 'k'){ const key = 'K:' + (p.id || p.name), n = (M.rep[key] || 0) + 1; M.rep[key] = n; earn('k', 125 + 10 * (n - 1)); }
+    if (res === 'dp') earn('dp', 175);
   }
 }
 function walkAdvance(){
@@ -2413,7 +2417,7 @@ function snapMatch(){
       inning:M.inning, top:M.top, outs:M.outs, balls:M.balls, strikes:M.strikes, score:M.score, ls:M.ls, H:M.H, E:M.E, pcHome:M.pcHome, pcAway:M.pcAway,
       lineHome:M.lineHome, lineAway:M.lineAway, bases:M.bases.map(p => p ? bt.lineup.indexOf(p) : null), bi:{ home:M.home._bi || 0, away:M.away._bi || 0 },
       pH:pitchers(M.home).indexOf(M.pitcherHome), pA:pitchers(M.away).indexOf(M.pitcherAway),
-      pgH:pitchers(M.home).map(p => pg(p)), pgA:pitchers(M.away).map(p => pg(p)), t:Date.now(), coins0:M.coins0, earn:M.earn, rep:M.rep, ps:M.pitchSimmed }));
+      pgH:pitchers(M.home).map(p => pg(p)), pgA:pitchers(M.away).map(p => pg(p)), t:Date.now(), coins0:M.coins0, coins:G.coins, earn:M.earn, rep:M.rep, ps:M.pitchSimmed }));
   } catch (e){}
 }
 const matchSnap = () => { try { const d = JSON.parse(localStorage.getItem(MSAVE)); return d && d.v === 1 && G && d.day === G.day && G.day < G.seasonLen ? d : null; } catch (e){ return null; } };
@@ -2426,6 +2430,7 @@ function resumeMatch(){
   M.home._bi = d.bi.home; M.away._bi = d.bi.away;
   if (d.pH >= 0) M.pitcherHome = pitchers(M.home)[d.pH]; if (d.pA >= 0) M.pitcherAway = pitchers(M.away)[d.pA];
   if (d.coins0 != null) M.coins0 = d.coins0;
+  if (d.coins != null && G.coins < d.coins){ G.coins = d.coins; save(); }                  // the coins you had earned by then are never lost to a reload
   if (d.earn) M.earn = d.earn; if (d.rep) M.rep = d.rep; if (d.ps) M.pitchSimmed = true;
   if (d.pgH && d.pgA){ PG.clear(); pitchers(M.home).forEach((p, i) => PG.set(p, d.pgH[i])); pitchers(M.away).forEach((p, i) => PG.set(p, d.pgA[i])); }      // who has pitched, and how much, same as before he quit
   const bt = batTeam(); M.bases = d.bases.map(i => i == null || i < 0 ? null : bt.lineup[i]);
@@ -2483,6 +2488,7 @@ function gameOver(){
   const me = myTeam(), myRuns = M.meHome ? M.score.home : M.score.away, oth = M.meHome ? M.score.away : M.score.home;
   const won = myRuns > oth;
   if (!M.playoff){ me[won ? 'w' : 'l']++; me.rs += myRuns; me.ra += oth; }
+  { const es = Object.values(M.earn || {}).reduce((a, e) => a + e.c, 0); if (M.coins0 != null && G.coins < M.coins0 + es) G.coins = M.coins0 + es; }
   G.coins += won ? 600 : 150;
   M.shutBonus = oth === 0 && !M.pitchSimmed;                                 // a shutout pays only if you pitched every inning yourself
   if (M.shutBonus) G.coins += 850;
@@ -3811,7 +3817,7 @@ function freePack(){
   if (Date.now() < (G.freeAt || 0)) return;
   const si = streakInfo(), day = si.claimedToday ? si.run : si.next;
   G.streak = { day, last:dayKey() }; G.freeAt = Date.now() + 24 * 3600 * 1000;
-  const batches = [{ tier:'bronze', cards:Array.from({ length:5 }, () => rollCard('bronze')) }];
+  const batches = [{ tier:'bronze', cards:Array.from({ length:10 }, () => rollCard('bronze')) }];
   let bonus = '';
   if (day >= 7) batches.push({ tier:'gold', cards:Array.from({ length:3 }, () => rollCard('gold')) });
   else { G.coins += STREAK_COINS[day - 1]; bonus = 'DAY ' + day + ' STREAK  +' + STREAK_COINS[day - 1].toLocaleString() + ' COINS'; }
@@ -4161,6 +4167,11 @@ const packBox = () => ({ x: PK_CX() - 161 * PK_S / 2, w: 161 * PK_S, top: PK_BOT
 function startOpen(o){
   OPEN = Object.assign({ phase:'pack', bi:0, t:0, ph0:0, revealed:[], newIds:new Set(), tr:{ a:null, b:null }, shake:0, sold:false, sellArmed:false }, o);
   if (o.kind !== 'pack') OPEN.phase = 'ready';
+  if (!o.pre && (o.kind === 'pack' || o.kind === 'trade')){
+    G.seen = G.seen || {};
+    o.batches.forEach(b => b.cards.forEach(c => { if (!G.cards.includes(c)){ G.cards.push(c); if (!G.seen[c.name]) OPEN.newIds.add(c.id); G.seen[c.name] = 1; } }));
+    OPEN.pre = true; save();
+  }
   menu = 'open';
 }
 function startSpin(){
@@ -4290,8 +4301,9 @@ function drawOpen(){
   } else if (ph === 'ready'){
     text(O.kind === 'fuse' ? 'A NEW PLAYER' : 'WHAT DID YOU GET?', W / 2, 90, '#ffffff', 8, 'center');
   } else if (ph === 'spin' || ph === 'hold'){
-    const n = O.sp.length, slotW = (W - 16) / n, k = Math.min(n === 1 ? .95 : .9, (W - 16) / (n * 200)), cy = 124;
-    O.sp.forEach((s, i) => drawSpinCard(s, 8 + slotW * (i + .5), cy, k));
+    const n = O.sp.length, rows = n > 5 ? 2 : 1, perRow = rows === 2 ? Math.ceil(n / 2) : n, slotW = (W - 16) / perRow;
+    const k = rows === 2 ? Math.min(.58, slotW / 108) : Math.min(n === 1 ? .95 : .9, (W - 16) / (n * 200)), chR2 = 140 * k, cy1 = rows === 2 ? 26 + chR2 / 2 + 2 : 124;
+    O.sp.forEach((s, i) => { const r = rows === 2 ? Math.floor(i / perRow) : 0, c = rows === 2 ? i % perRow : i; drawSpinCard(s, 8 + slotW * (c + .5), cy1 + r * (chR2 + 13), k); });
     if (ph === 'hold'){
       const pulse = .6 + .4 * Math.sin(O.t / 240);
       text('TAP TO CONTINUE', W / 2, H - 20, `rgba(255,255,255,${.7 + .3 * pulse})`, 8, 'center');
@@ -4798,21 +4810,22 @@ function drawMenu(){
       const snap = matchSnap();
       if (snap){
         const nm = `${snap.top ? 'TOP' : 'BOT'} ${snap.inning}  ${snap.score.away}-${snap.score.home}`;
-        button(W / 2 - 108, 116, 150, 22, `RESUME ${nm}`, () => { if (!resumeMatch()) clearMatchSnap(); }, '#2f6fe0');
-        button(W / 2 + 48, 116, 60, 22, 'RESTART', () => { clearMatchSnap(); if (G.day < G.seasonLen){ const s = G.sched[G.day]; startGame(s.opp, s.home); } }, '#2a1a1a', '#fff', 7);
-      } else if (G.day < G.seasonLen) button(W / 2 - 70, 116, 140, 22, `PLAY GAME ${G.day + 1}/${G.seasonLen}`, () => {
+        button(W / 2 - 162, 108, 225, 33, `RESUME ${nm}`, () => { if (!resumeMatch()) clearMatchSnap(); }, '#2f6fe0', '#fff', 12);
+        button(W / 2 + 69, 108, 90, 33, 'RESTART', () => { clearMatchSnap(); if (G.day < G.seasonLen){ const s = G.sched[G.day]; startGame(s.opp, s.home); } }, '#2a1a1a', '#fff', 10);
+      } else if (G.day < G.seasonLen) button(W / 2 - 105, 108, 210, 33, `PLAY GAME ${G.day + 1}/${G.seasonLen}`, () => {
         const sg = G.sched[G.day]; startGame(sg.opp, sg.home);
-      }, '#2f6fe0');
-      else if (!G.po) button(W / 2 - 70, 116, 140, 22, 'START PLAYOFFS', () => { startPlayoffs(); menu = 'playoffs'; }, '#2f6fe0');
-      else if (poUserGame()) { const ug = poUserGame(); button(W / 2 - 70, 116, 140, 22, 'PLAY ' + PO_ROUNDS[G.po.round], () => { startGame(ug.a === G.team ? ug.b : ug.a, ug.a === G.team, { playoff:true }); }, '#2f6fe0'); }
-      else button(W / 2 - 70, 116, 140, 22, 'NEW SEASON', () => newSeason(), '#2f6fe0');
-      button(W / 2 - 108, 142, 68, 18, 'MY CARDS', () => menu = 'cards');
-      button(W / 2 - 34, 142, 68, 18, 'SHOP', () => menu = 'shop');
-      button(W / 2 + 40, 142, 68, 18, 'LINEUP', () => menu = 'lineup');
-      button(W / 2 - 108, 164, 68, 18, 'STANDINGS', () => menu = 'stand');
-      button(W / 2 - 34, 164, 68, 18, 'MINIGAMES', () => menu = 'minigames');
-      button(W / 2 + 40, 164, 68, 18, 'LEADERS', () => { menu = 'stats'; statsScroll = 0; }, '#2f6fe0', '#fff', 7);
-      coinText(G.coins, W / 2, 192, 9, UI.yellow, 'center');
+      }, '#2f6fe0', '#fff', 12);
+      else if (!G.po) button(W / 2 - 105, 108, 210, 33, 'START PLAYOFFS', () => { startPlayoffs(); menu = 'playoffs'; }, '#2f6fe0', '#fff', 12);
+      else if (poUserGame()) { const ug = poUserGame(); button(W / 2 - 105, 108, 210, 33, 'PLAY ' + PO_ROUNDS[G.po.round], () => { startGame(ug.a === G.team ? ug.b : ug.a, ug.a === G.team, { playoff:true }); }, '#2f6fe0', '#fff', 12); }
+      else button(W / 2 - 105, 108, 210, 33, 'NEW SEASON', () => newSeason(), '#2f6fe0', '#fff', 12);
+      button(W / 2 - 159, 145, 102, 27, 'MY CARDS', () => menu = 'cards', '#1a2230', '#fff', 11);
+      button(W / 2 - 51, 145, 102, 27, 'SHOP', () => menu = 'shop', '#1a2230', '#fff', 11);
+      button(W / 2 + 57, 145, 102, 27, 'LINEUP', () => menu = 'lineup', '#1a2230', '#fff', 11);
+      button(W / 2 - 159, 176, 102, 27, 'STANDINGS', () => menu = 'stand', '#1a2230', '#fff', 10);
+      button(W / 2 - 51, 176, 102, 27, 'MINIGAMES', () => menu = 'minigames', '#1a2230', '#fff', 10);
+      button(W / 2 + 57, 176, 102, 27, 'LEADERS', () => { menu = 'stats'; statsScroll = 0; }, '#2f6fe0', '#fff', 10);
+      coinText(G.coins, W / 2, 210, 9, UI.yellow, 'center');
+      if (saveFailed) text('SAVE FAILED - FREE UP SPACE', W / 2, 226, UI.red, 6, 'center');
       button(6, H - 24, 62, 16, 'NEW SAVE', () => { newSaveAsk = true; }, '#1a2030', '#fff', 7);
       if (newSaveAsk){
         btns = []; R(0, 0, W, H, 'rgba(8,12,30,.78)');
