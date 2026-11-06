@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11p"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11q"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11p';
+const BUILD = '11-11q';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -2814,7 +2814,7 @@ function gxParkBG(S){
   GX.bg.getContext('2d').drawImage(GX.c, 0, 0); GX.bgKey = key;
 }
 
-// ── the home run's fire: a pixel flame for a home run under 450 ft, a blue inferno for 450 ft and more ──
+// ── the home run's fire: only a home run of 450 ft or more burns (a pixel flame); a shorter one keeps the plain white arc ──
 function hrFire(S, P){
   const T = S.trail, n = T.length, L = Math.min(110, n - 1), pts = [];
   for (let k = 0; k <= L; k++) pts.push(P(...T[n - 1 - k]));
@@ -2823,7 +2823,7 @@ function hrFire(S, P){
   const clampf = (x, a, b) => Math.max(a, Math.min(b, x));
   const PT = (x, y, s, c, a) => { g.globalAlpha = clampf((a == null ? 1 : a) * (S.fade == null ? 1 : S.fade), 0, 1); const sz = Math.max(1, Math.round(s)); R(Math.round(x - sz / 2), Math.round(y - sz / 2), sz, sz, c); };
   let seed = (Math.floor(tm * 18) * 9301 + 49297) % 233280; const rr = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
-  const pal = far ? ['#f0ffff', '#9be9ff', '#2f9bff', '#1d4fd0', '#142a70'] : ['#fffbd0', '#ffd23f', '#ff8a1c', '#d93a14', '#6a1a10'];
+  const pal = ['#fffbd0', '#ffd23f', '#ff8a1c', '#d93a14', '#6a1a10'];                 // the long ones burn in the same orange flame
   const ramp = u => pal[Math.min(pal.length - 1, Math.max(0, Math.floor(u * pal.length)))];
   for (let k = L; k >= 0; k--){
     const a = k / L, p = pts[k], cnt = a < .15 ? 2 : 4;
@@ -2834,18 +2834,18 @@ function hrFire(S, P){
     if (k % 5 === 0 && rr() < .7) PT(p.x + (rr() - .5) * 12, p.y - a * 18 - rr() * 5, 1, pal[1], 1 - a);
   }
   PT(h.x, h.y, 16, pal[2], .2); PT(h.x, h.y, 11, pal[1], .3); PT(h.x, h.y, 7, pal[0], .65);
-  if (far) for (let i = 0; i < 12; i++){ const p = pts[Math.floor(rr() * 60)]; PT(p.x + (rr() - .5) * 18, p.y + (rr() - .5) * 12, 1, '#f0ffff', .9); }
+  if (far) for (let i = 0; i < 12; i++){ const p = pts[Math.floor(rr() * 60)]; PT(p.x + (rr() - .5) * 18, p.y + (rr() - .5) * 12, 1, '#fffbd0', .9); }
   g.globalAlpha = 1;
 }
 function gxOverlay(S){
   GL3D.setView('air'); GL3D.placeCamera(); GL3D.cam.updateMatrixWorld(true);
   const P = (x, y, z) => toScr(x, y, z, W, H);
-  if (S.trail && S.trail.length > 1 && !S.hr){                                // the ball's path: a thin white line
+  if (S.trail && S.trail.length > 1 && (!S.hr || !S.hrFar)){                  // the ball's path: a thin white line (a home run under 450 ft keeps it too; only the long ones burn)
     g.strokeStyle = S.hr ? (S.hrOut ? 'rgba(80,170,255,.4)' : 'rgba(255,120,30,.35)') : 'rgba(255,255,255,.55)'; g.lineWidth = S.hr ? 1.2 : .9; g.beginPath();
     S.trail.forEach((t, i) => { const q = P(t[0], t[1], t[2]); i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y); });
     g.stroke();
   }
-  if (S.hr && S.trail && S.trail.length > 3) hrFire(S, P);
+  if (S.hr && S.hrFar && S.trail && S.trail.length > 3) hrFire(S, P);
   if (S.land){
     const q = P(S.land.x, .05, S.land.z), age = (performance.now() - S.land.t) / 1000, col = S.land.caught ? '255,214,64' : '255,255,255';
     const r1 = 3 + Math.min(age, .5) * 12, a1 = clamp(1 - age / .6, 0, 1);
@@ -5362,13 +5362,13 @@ function drawDerbyHit(B){
   const gone = B.hr && B.hrG != null && B.t >= B.hrG, air = B.t < B.T && !gone;
   if (air){ DTRAIL.push([B.lat, B.h + .4 + BALL_LIFT * clamp((B.h - .3) / 5, 0, 1), -B.d]); if (DTRAIL.length > 290) DTRAIL.shift(); }
   const Pp = (x, y, z) => derbyPt(-z, x, y);
-  if (DTRAIL.length > 1 && !B.hr){
+  if (DTRAIL.length > 1 && (!B.hr || (B.carry || 0) < 450)){
     g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = .9; g.beginPath();
     DTRAIL.forEach((t, i) => { const q = Pp(...t); i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y); }); g.stroke();
   }
   if (gone && !B.endPt && DTRAIL.length) B.endPt = DTRAIL[DTRAIL.length - 1];
   if (gone){ DTRAIL.splice(0, 5); }                                       // in the seats: the tail catches up and the fire burns out
-  if (B.hr && DTRAIL.length > 3){
+  if (B.hr && (B.carry || 0) >= 450 && DTRAIL.length > 3){
     const fade = gone ? clamp(1 - (B.t - B.hrG) / .75, 0, 1) : 1;
     if (fade > 0) hrFire({ trail: DTRAIL, hrFar: (B.carry || 0) >= 450, fade }, Pp);
   }
