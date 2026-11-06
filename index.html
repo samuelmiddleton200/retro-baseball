@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11j"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11k"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11j';
+const BUILD = '11-11k';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1305,7 +1305,8 @@ function simFlight(x, y, z, vx, vy, vz, wall){
 let RUNCTL = {};                                   // per runner: his own clock, the base he is told to stop at (cap), the times he reached each base
 let RUNBTN = [];                                   // on-screen hit areas of this frame's diamonds
 // a ball in play where YOU run the bases: every runner starts RED (stop at the next base); tap = green (go on through the base ahead)
-const isManualPlay = B => !!B && userBats() && !B.hr && !B.foul && ((!B.isCatch && ['single', 'double', 'triple', 'error'].includes(B.play)) || !!B.tagUp);
+const isGPlay = B => !!B && ['groundout', 'dp', 'fc'].includes(B.play);                  // a ground ball the infield deals with: no base is a gift, every one has to be won
+const isManualPlay = B => !!B && userBats() && !B.hr && !B.foul && ((!B.isCatch && ['single', 'double', 'triple', 'error', 'groundout', 'dp', 'fc'].includes(B.play)) || !!B.tagUp);
 // the base he is heading for (feet along the path): the first one ahead of him, or the one he stands on once he has stopped there
 const runAhead = c => {
   if (c.pos <= c.s0 + .5) return c.forced ? c.s0 + 90 : c.s0;      // a forced runner is running to the next base; a free one is standing on his
@@ -1317,8 +1318,9 @@ function runPosCtl(key, man, s0, s1){
   if (!c){
     // forced = he has to run because the runner behind him pushes him: the batter always; first base's runner always; second's if first is taken; third's if first and second are
     // On a hit that is not going to be an out, EVERY runner leaves with the batter and runs to the next base (red diamond: he stops there). That base is his to take, so it is never a tag play.
-    const forced = !BALL.tagUp;                                              // tagging up on a caught fly: nobody is forced, everyone stands on his base until you send him
-    c = RUNCTL[key] = { te:0, last:BALL.t, cap: BALL.tagUp ? (key === 'runB' ? s1 : s0) : manual ? Math.min(360, s0 + 90) : s1, s0, s1, pos:s0, man, manual, forced, arr:{}, bat: key === 'runB', v:0, dir:1, dly: CFG.RUN_START_DELAY + (key === 'runB' ? CFG.BATTER_EXTRA : 0) };
+    const gb = isGPlay(BALL), isF = key === 'runB' || (gb && M.bases.slice(0, s0 / 90 - 1).every(Boolean));
+    const forced = gb ? isF : !BALL.tagUp;                                   // on a ground ball only the forced men have to run; tagging up on a caught fly: nobody is forced, everyone stands on his base until you send him
+    c = RUNCTL[key] = { te:0, last:BALL.t, cap: BALL.tagUp ? (key === 'runB' ? s1 : s0) : manual ? (gb && !isF ? s0 : Math.min(360, s0 + 90)) : s1, s0, s1, pos:s0, man, manual, forced, arr:{}, bat: key === 'runB', v:0, dir:1, dly: CFG.RUN_START_DELAY + (key === 'runB' ? CFG.BATTER_EXTRA : 0) };
   }
   const dt = BALL.t - c.last; c.last = BALL.t; c.s1 = s1;
   if (c.manual){
@@ -1506,15 +1508,19 @@ function manualThrow(B){
     B.d = P.x; B.lat = P.y; B.h = 4;
     if (B.t < P.t0) return;                                                     // the transfer: glove to hand
     let best = null;
+    const holder = P.first ? B.chaser : (FLD || []).reduce((a, f) => Math.hypot(f.x - P.x, f.y - P.y) < Math.hypot(a.x - P.x, a.y - P.y) ? f : a);
     for (const key in RUNCTL){
-      const c = RUNCTL[key]; if (c.out || (!c.back && c.pos >= c.cap - .05)) continue;
-      const nb = c.cap, bi = Math.round(nb / 90) - 1; if (bi < 0 || bi > 3) continue;                // throw to the base he is running to
-      if (!best || c.pos > best.c.pos) best = { key, c, nb, bi, back:!!c.back };
+      const c = RUNCTL[key]; if (c.out || (!c.back && c.pos >= c.cap - .05 && Math.abs(c.v || 0) < .01)) continue;
+      const nb = c.back ? c.back.to : c.cap, bi = Math.round(nb / 90) - 1; if (bi < 0 || bi > 3) continue;                // throw to the base he is running to (or back to)
+      if (isGPlay(B)){                                                                        // a ground ball: the throw goes where the out is likeliest (the runner he can beat by the most)
+        const rt = routeThrow(holder, [P.x, P.y], B.t, BASE_XY[bi], 0, true), rem = Math.abs(nb - c.pos);
+        const margin = B.t + rem / (sprintFps(spdOf(c.man)) * .9) - rt.arr;
+        if (!best || margin > best.margin) best = { key, c, nb, bi, back:!!c.back, margin, rt };
+      } else if (!best || c.pos > best.c.pos) best = { key, c, nb, bi, back:!!c.back };
     }
     if (!best) return;
     const to = BASE_XY[best.bi];
-    const holder = P.first ? B.chaser : (FLD || []).reduce((a, f) => Math.hypot(f.x - P.x, f.y - P.y) < Math.hypot(a.x - P.x, a.y - P.y) ? f : a);
-    const rt = routeThrow(holder, [P.x, P.y], B.t, to, 0, true), thr = mkThr(rt, [P.x, P.y], to);
+    const rt = best.rt || routeThrow(holder, [P.x, P.y], B.t, to, 0, true), thr = mkThr(rt, [P.x, P.y], to);
     B.pass = { ph:'fly', thr, to, t1:thr.t1, run:best, fl:true };
     return;
   }
@@ -1529,7 +1535,7 @@ function manualThrow(B){
   const tp = thrPos(P.thr, B.t); P.fl = tp.flying;
   B.d = tp.d; B.lat = tp.lat; B.h = tp.flying ? 4 + Math.sin(tp.u * Math.PI) * Math.min(16, tp.len * .09) : 4;
   if (B.t >= P.t1){
-    const c = P.run.c, extra = c.back || P.run.nb > c.s0 + (c.forced ? 90 : 0) + .5;   // only a base beyond the one he has to take can be lost; going back is always a tag play
+    const c = P.run.c, extra = c.back || isGPlay(B) || P.run.nb > c.s0 + (c.forced ? 90 : 0) + .5;   // only a base beyond the one he has to take can be lost; going back is always a tag play
     if (extra && !c.out && (c.back ? c.pos > P.run.nb + .05 : c.pos < P.run.nb - .05)){ B.pass = { ph:'wait', x:P.to[0], y:P.to[1], run:P.run }; return; }
     B.pass = { ph:'hold', x:P.to[0], y:P.to[1], t0:B.t + .5 };
   }
@@ -1939,6 +1945,7 @@ function defEntries(B){
 }
 function planOutcome(B, c){
   planOutcomeAuto(B, c);
+  if (userBats() && isGPlay(B)) B.tEnd = Math.max(B.tEnd, (B.tf || 0) + 2.5);                 // you may send a runner while the ball is in play
   if (!userPitches() || B.hr || B.foul || B.isCatch || !['single', 'double', 'triple', 'error', 'groundout', 'dp', 'fc'].includes(B.play)) return;
   B.defManual = true; B.defKind = B.play; B.play = 'def'; B.autoThr = B.thr; B.thr = null;
   B.def = { queue:[], pass:null, outs:[], entries:defEntries(B), last:-1 };
@@ -2166,17 +2173,22 @@ function manualHit(res){
     const c = RUNCTL[e.key];
     return { e, K: c ? c.cap : e.s0 + 90, out: !!(c && c.out) };
   });
-  const nb = [null, null, null];
+  const nb = [null, null, null], noRuns = isGPlay(B) && M.outs + res2.filter(r => r.out).length >= 3;       // the third out of the inning on a ground ball: nothing scores
   res2.sort((a, b) => b.K - a.K).forEach(r => {                           // lead runner first, so a held runner blocks the one behind him
     if (r.out){ outs++; thrownOut = true; if (r.e.batter) batterBase = 1; return; }
     let k = Math.min(4, Math.round(r.K / 90));
     if (r.e.batter) batterBase = k;
-    if (k >= 4){ runs++; score(r.e.man); return; }
+    if (k >= 4){ if (!noRuns){ runs++; score(r.e.man); } return; }
     while (k > 1 && nb[k - 1]) k--;
     if (nb[k - 1]) k = 0;
     if (k >= 1) nb[k - 1] = r.e.man;
   });
   M.bases = nb;
+  if (isGPlay(B)){                                                                          // a ground ball: who was put out decides what it was
+    const batterOut = res2.some(r => r.e.batter && r.out);
+    const r_ = batterOut ? (outs >= 2 ? 'dp' : 'groundout') : outs ? 'fc' : 'single';
+    return { res: r_, runs, outs, txt: ({ dp:'DOUBLE PLAY', groundout:'GROUND OUT', fc:"FIELDER'S CHOICE", single:'INFIELD HIT' })[r_] };
+  }
   const out_ = thrownOut ? 'single' : names[Math.max(1, batterBase)];
   return { res: res === 'error' ? 'error' : out_, runs, outs, txt: thrownOut ? 'THROWN OUT TRYING FOR AN EXTRA BASE' : '' };
 }
@@ -2240,10 +2252,11 @@ function applyPlay(res){
   let runs = 0, out = 0, txt = '';
   st.pa++; const rbi0 = st.rbi;
   const isDef = res === 'def' && BALL && BALL.defManual;
-  const manual = isDef ? defHit() : (['single', 'double', 'triple', 'error'].includes(res) && isManualPlay(BALL) && Object.keys(RUNCTL).length ? manualHit(res) : null);
+  const manual = isDef ? defHit() : ((['single', 'double', 'triple', 'error'].includes(res) || isGPlay(BALL)) && isManualPlay(BALL) && Object.keys(RUNCTL).length ? manualHit(res) : null);
   if (['single','double','triple','hr'].includes(res)) M.H[M.top ? 'away' : 'home']++;
   if (res === 'error') M.E[M.top ? 'home' : 'away']++;
   if (manual){
+    if (!isDef && manual.res === 'single' && isGPlay(BALL)) M.H[M.top ? 'away' : 'home']++;
     res = manual.res; st.ab++; runs = manual.runs; out = manual.outs;
     if (isDef && ['single', 'double', 'triple'].includes(res)) M.H[M.top ? 'away' : 'home']++;
     if (isDef && res === 'error') M.E[M.top ? 'home' : 'away']++;
