@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11s"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11v"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11s';
+const BUILD = '11-11v';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -329,7 +329,7 @@ const load = () => {
       rebuildTeam();
       if (!G.seen){ G.seen = {}; G.cards.forEach(c => { G.seen[c.name] = 1; }); }
       if (!G.streak) G.streak = { day:0, last:'' };
-      if (G.packReset !== 1){ G.freeAt = 0; G.packReset = 1; }                    // one-time: the daily pack that glitched is available again
+      if (G.packReset !== 2){ G.freeAt = 0; G.packReset = 2; }                    // one-time: the daily pack that glitched is available again
       G.cards.forEach(c => { if (c.fz == null) c.fz = 0; });
       if (!G.gift25k){                                                       // the 1,000,000 gift is taken back and replaced by a one-time 25,000
         G.gift25k = true;
@@ -410,10 +410,13 @@ function ramp(base, spec){
   return spec.map(([dh, ds, dl, lift]) =>
     hslToHex(h + dh, clamp(s * ds, 0, 1), lift ? l + (1 - l) * lift : l * dl));
 }
+const MIXC = new Map();                                        // a card is drawn from hundreds of mixed colours every frame: each one is worked out once
 function mix(a, b, t){
-  const A = parseInt(a.slice(1), 16), B = parseInt(b.slice(1), 16);
-  return '#' + [16, 8, 0].map(sh => Math.round(lerp((A >> sh) & 255, (B >> sh) & 255, clamp(t, 0, 1))))
-    .map(v => v.toString(16).padStart(2, '0')).join('');
+  const q = Math.round(clamp(t, 0, 1) * 255), key = a + b + q; let v = MIXC.get(key); if (v) return v;
+  const A = parseInt(a.slice(1), 16), B = parseInt(b.slice(1), 16), u = q / 255;
+  v = '#' + [16, 8, 0].map(sh => Math.round(lerp((A >> sh) & 255, (B >> sh) & 255, u)))
+    .map(x => x.toString(16).padStart(2, '0')).join('');
+  MIXC.set(key, v); return v;
 }
 
 // every colour one player is painted with
@@ -2847,7 +2850,7 @@ function gxOverlay(S){
   GL3D.setView('air'); GL3D.placeCamera(); GL3D.cam.updateMatrixWorld(true);
   const P = (x, y, z) => toScr(x, y, z, W, H);
   if (S.trail && S.trail.length > 1 && (!S.hr || !S.hrFar)){                  // the ball's path: a thin white line (a home run under 450 ft keeps it too; only the long ones burn)
-    g.strokeStyle = S.hr ? (S.hrOut ? 'rgba(80,170,255,.4)' : 'rgba(255,120,30,.35)') : 'rgba(255,255,255,.55)'; g.lineWidth = S.hr ? 1.2 : .9; g.beginPath();
+    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = .9; g.beginPath();
     S.trail.forEach((t, i) => { const q = P(t[0], t[1], t[2]); i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y); });
     g.stroke();
   }
@@ -3759,9 +3762,9 @@ function rollCard(packKey, forceTier, o){
   return makeCardAt(TIER_LO[tier] + Math.floor(Math.random() * (TIER_HI[tier] - TIER_LO[tier] + 1)), o);
 }
 
-// ── fusing: two cards with one face (+5) or one position (+3), in the same band of the 4-3-3 ladder ──
-const bandOf = r => { const d = Math.floor(r / 10) * 10, o = r - d; return d + (o < 4 ? 0 : o < 7 ? 4 : 7); };
-const bandText = b => { const o = b % 10; return b + '-' + (b + (o === 0 ? 3 : 2)); };
+// ── fusing: two cards with one face (+7) or one position (+3), in the same range: 60-64, 65-69, 70-74 and so on ──
+const bandOf = r => Math.floor(r / 5) * 5;
+const bandText = b => b + '-' + (b + 4);
 function fuseKey(c, mode){
   const band = bandOf(ovrOf(c));
   if (mode === 'face'){ const f = portraitFor(c); return (f >= 0 ? 'f' + f : 'x' + c.id) + '|' + band; }
@@ -3773,7 +3776,7 @@ function fuseGroups(mode){
   const out = []; m.forEach((list, k) => { if (list.length >= 2) out.push({ k, list:list.sort((a, b) => ovrOf(b) - ovrOf(a)), band:+k.split('|')[1], top:ovrOf(list[0]) }); });
   return out.sort((a, b) => b.top - a.top);
 }
-const fuseRating = (a, b, mode) => clamp(Math.floor((ovrOf(a) + ovrOf(b)) / 2 + (mode === 'face' ? 5 : 3) + .5), 60, 120);
+const fuseRating = (a, b, mode) => clamp(Math.floor((ovrOf(a) + ovrOf(b)) / 2 + (mode === 'face' ? 7 : 3) + .5), 60, 120);
 const canFuse = (a, b, mode) => !!(a && b && a.id !== b.id && (a.fz || 0) < 2 && (b.fz || 0) < 2 && fuseKey(a, mode) === fuseKey(b, mode) && !(inUse(a.id) && inUse(b.id)));
 function doFuse(a, b, mode){
   if (!canFuse(a, b, mode)) return null;
@@ -4186,7 +4189,7 @@ function landCard(s){
   if (!O.pre && !G.seen[c.name]) O.newIds.add(c.id);
   G.seen[c.name] = 1;
   if (s.ti >= 4) O.shake = 520;
-  save();
+  if (!O.pre) save();
 }
 function openTick(dt){
   const O = OPEN; if (!O) return;
@@ -4248,15 +4251,15 @@ function drawSpinCard(s, cx, cy, k){
   // the front turns into view, with light behind it
   const sx = s.landed ? 1 : Math.abs(Math.cos(Math.PI * e));
   const fl = s.landed ? clamp(s.flash / 700, 0, 1) : 0, grow = s.landed ? 1 : (e - .5) * 2;
-  const rays = 14, rr = (chR * (.75 + .5 * (s.ti + 1) / 6)) * (.5 + .5 * grow), spin = O.t / 900;
+  const heavy = O.sp.length > 5, rays = heavy ? (s.ti >= 3 ? 8 : 0) : 14, rr = (chR * (.75 + .5 * (s.ti + 1) / 6)) * (.5 + .5 * grow), spin = O.t / 900;
   g.save(); g.beginPath(); g.rect(0, 0, W, H); g.clip();
   for (let r = 0; r < rays; r++){
     const a = r / rays * Math.PI * 2 + spin;
     g.fillStyle = `rgba(${rgb},${(.10 + .08 * s.ti / 5) * grow * (.6 + .4 * fl)})`;
     g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * rr * 1.6, cy + Math.sin(a) * rr * 1.6); g.lineTo(cx + Math.cos(a + .11) * rr * 1.6, cy + Math.sin(a + .11) * rr * 1.6); g.fill();
   }
-  const hg = g.createRadialGradient(cx, cy, 4, cx, cy, rr); hg.addColorStop(0, `rgba(${rgb},${.45 * grow})`); hg.addColorStop(1, `rgba(${rgb},0)`);
-  g.fillStyle = hg; g.fillRect(cx - rr, cy - rr, rr * 2, rr * 2);
+  if (!heavy || s.ti >= 2){ const hg = g.createRadialGradient(cx, cy, 4, cx, cy, rr); hg.addColorStop(0, `rgba(${rgb},${.45 * grow})`); hg.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = hg; g.fillRect(cx - rr, cy - rr, rr * 2, rr * 2); }
   g.restore();
   g.save(); g.translate(cx, 0); g.scale(Math.max(.03, sx), 1); g.translate(-cx, 0);
   drawCard(cx - cwR / 2, cy - chR / 2, c, cwR, chR, O.t);
@@ -4440,7 +4443,7 @@ function drawFuseTab(){
   const y0 = 44, gap = 6, lw = Math.floor((W - 16 - gap) * .52), rx = 8 + lw + gap, rw = W - 8 - rx, ph = H - 4 - y0;
   uiBox(8, y0, lw, ph); uiBox(rx, y0, rw, ph);
   // the two ways to fuse
-  [['face', 'SAME FACE +5'], ['pos', 'SAME POS +3']].forEach(([k, l], i) => {
+  [['face', 'SAME FACE +7'], ['pos', 'SAME POS +3']].forEach(([k, l], i) => {
     const bw = Math.floor((lw - 14) / 2), x = 11 + i * (bw + 3), on = fuseMode === k;
     if (on) R(x, y0 + 5, bw, 14, UI.yellow); else uiBox(x, y0 + 5, bw, 14);
     text(l, x + bw / 2, y0 + 8, on ? '#241a00' : '#ffffff', 6, 'center', bw - 2);
@@ -5159,22 +5162,35 @@ function drawGameMenuBtn(){
   g.fillRect(x + w * .31, y + h * .24, w * .13, h * .52); g.fillRect(x + w * .56, y + h * .24, w * .13, h * .52);
   btns.push({ x, y, w, h, fn: () => { phase = 'gmenu'; } });
 }
+// SIM INNING: play out the rest of this inning without playing it. Everything: to the top of the next inning. One side only: the half you don't play is
+// simmed anyway, so it runs until the next half that is yours (batting only, in the bottom: the rest of the bottom and the top that follows)
+function simInning(){
+  if (M.over) return;
+  const mode = M.mode, inn0 = M.inning, side0 = M.top; let guard = 0;
+  const half = () => { const side = M.top, inn = M.inning; while (!M.over && M.top === side && M.inning === inn && guard++ < 900) simPitch(); };
+  half();                                                                                  // the rest of this half
+  if (mode === 'full'){ while (!M.over && M.inning === inn0 && guard++ < 900) half(); }    // top of the next inning
+  else { const mine = () => mode === 'offense' ? weBat() : !weBat(); while (!M.over && !mine() && guard++ < 900) half(); }
+  if (M.over){ phase = 'over'; return; }
+  nextPitch();
+}
 function drawGameMenu(){
   if (M.derby) return drawDerbyPause();
   btns = [];
   R(0, 0, W, H, '#0b1018e8');
-  textb('WHAT DO YOU WANT TO PLAY?', W / 2, 36, '#ffd23f', 10, 'center');
-  const opts = [['PLAY EVERYTHING','full'],['BATTING ONLY','offense'],['PITCHING ONLY','defense'],['SIM THE REST','sim']];
-  opts.forEach(([l, m], i) => button(W / 2 - 80, 62 + i * 26, 160, 20, l, () => {
-    if (m === 'sim'){ simRest(); return; }
+  textb('WHAT DO YOU WANT TO PLAY?', W / 2, 30, '#ffd23f', 10, 'center');
+  const bw = 106, bh = 27, gp = 6, x0 = W / 2 - (3 * bw + 2 * gp) / 2, xs = i => x0 + i * (bw + gp), y1 = 54, y2 = y1 + bh + gp + 2, y3 = y2 + bh + gp + 2, fs = 7;
+  const modes = [['PLAY EVERYTHING', 'full'], ['BATTING ONLY', 'offense'], ['PITCHING ONLY', 'defense']];
+  modes.forEach(([l, m], i) => button(xs(i), y1, bw, bh, l, () => {
     M.mode = m; phase = 'atbat';
     if ((m === 'offense' && !weBat()) || (m === 'defense' && weBat())){ simHalfIfNeeded(); if (!M.over && phase === 'atbat' && !P) nextPitch(); }   // the half you just skipped plays out now
     else nextPitch();
-  }, '#1a2230'));
-  { const i = opts.findIndex(o => o[1] === M.mode); if (i >= 0){ const yy = 62 + i * 26 + 10; g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(W / 2 - 96, yy - 5); g.lineTo(W / 2 - 88, yy); g.lineTo(W / 2 - 96, yy + 5); g.closePath(); g.fill(); } }      // the mode you are in is outlined in white; all the buttons are the same blue
+  }, M.mode === m ? '#2f6fe0' : '#1a2230', M.mode === m ? '#fff' : '#fff', fs));                       // the mode you are in is lit
   const mine = M.meHome ? M.home : M.away, open = !(P && P.thrown) && mine.pen.some(p => !pg(p).used);
-  button(W / 2 - 80, 166, 160, 18, 'CHANGE PITCHER', () => { if (open) phase = 'pitchpick'; }, open ? '#1a2230' : '#161b26');
-  button(W / 2 - 40, 190, 80, 18, 'BACK', () => { phase = userPitches() ? 'pitching' : 'atbat'; });
+  button(xs(0), y2, bw, bh, 'SIM INNING', () => simInning(), '#1a2230', '#fff', fs);
+  button(xs(1), y2, bw, bh, 'SIM FULL GAME', () => simRest(), '#1a2230', '#fff', fs);
+  button(xs(2), y2, bw, bh, 'CHANGE PITCHER', () => { if (open) phase = 'pitchpick'; }, open ? '#1a2230' : '#161b26', '#fff', fs);
+  button(xs(0), y3, 3 * bw + 2 * gp, bh, 'SAVE AND EXIT', () => { saveEverything(); M = null; P = null; BALL = null; phase = 'menu'; menu = 'title'; }, '#1a2230', '#fff', 8);      // the game is written down where it stands; RESUME on the main menu picks it up
 }
 // pick a reliever: only pitchers who have not been in yet
 function drawPitchPick(){
@@ -5537,7 +5553,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   buyPack, buyPosPack, freePack, rollCard, makeCardAt, valueOf, sellPrice, upCost, upgradeCard, doFuse, canFuse, fuseGroups, fuseRating, bandOf, dealsToday, buyDeal, streakInfo, tradeRating, doTrade, startOpen, openPointer, openAdvance, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
   CFG, get shopTab(){ return shopTab; }, makeContact2: makeContact, cpuDecide, set shopTab(v){ shopTab = v; }, get upStat(){ return upStat; }, set upStat(v){ upStat = v; }, set colSel(v){ colSel = v; }, set fuseMode(v){ fuseMode = v; }, get fuseSel(){ return fuseSel; }, set fuseSel(v){ fuseSel = v; }, tickOpen(ms){ openTick(ms); }, payPlay, earn, get SIMMING(){ return SIMMING; },
   get P(){ return P; }, get BALL(){ return BALL; }, get swing(){ return swing; }, get FLD(){ return FLD; },
-  get menu(){ return menu; }, set menu(v){ menu = v; }, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
+  get menu(){ return menu; }, set menu(v){ menu = v; }, simInning, saveEverything, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
   set swing(v){ swing = v; },
   // schedule a swing so the bat arrives at a chosen point in the pitch
   swingAt(ms){ swing = { start: ms - BAT_LAG, contactAt: ms, t:0, resolved:false, cpu:false }; },
