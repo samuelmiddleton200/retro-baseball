@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11i"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11j"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11i';
+const BUILD = '11-11j';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1318,9 +1318,30 @@ function runPosCtl(key, man, s0, s1){
     // forced = he has to run because the runner behind him pushes him: the batter always; first base's runner always; second's if first is taken; third's if first and second are
     // On a hit that is not going to be an out, EVERY runner leaves with the batter and runs to the next base (red diamond: he stops there). That base is his to take, so it is never a tag play.
     const forced = !BALL.tagUp;                                              // tagging up on a caught fly: nobody is forced, everyone stands on his base until you send him
-    c = RUNCTL[key] = { te:0, last:BALL.t, cap: BALL.tagUp ? (key === 'runB' ? s1 : s0) : manual ? Math.min(360, s0 + 90) : s1, s0, s1, pos:s0, man, manual, forced, arr:{}, bat: key === 'runB' };
+    c = RUNCTL[key] = { te:0, last:BALL.t, cap: BALL.tagUp ? (key === 'runB' ? s1 : s0) : manual ? Math.min(360, s0 + 90) : s1, s0, s1, pos:s0, man, manual, forced, arr:{}, bat: key === 'runB', v:0, dir:1, dly: CFG.RUN_START_DELAY + (key === 'runB' ? CFG.BATTER_EXTRA : 0) };
   }
   const dt = BALL.t - c.last; c.last = BALL.t; c.s1 = s1;
+  if (c.manual){
+    const vmax = sprintFps(spdOf(man)), acc = vmax / CFG.RUNNER_ACCEL_T, dec = acc * 2;      // braking is twice as quick as getting going; speed is the same both ways
+    let left = Math.max(0, dt);
+    while (left > 1e-6){
+      const h = Math.min(left, .02); left -= h;
+      const tgt = c.back ? c.back.to : c.cap, want = tgt > c.pos + .01 ? 1 : tgt < c.pos - .01 ? -1 : 0;
+      if (want === 0){ c.v = 0; if (c.back){ c.pos = c.back.to; c.cap = c.back.to; c.back = null; } continue; }
+      if (c.dly > 0 && c.v === 0){ c.dly -= h; continue; }                                  // the start: his reaction
+      const sv = Math.sign(c.v);
+      if (sv !== 0 && sv !== want){ c.v -= sv * dec * h; if (Math.sign(c.v) !== sv) c.v = 0; }     // braking before he can turn
+      else c.v = clamp(c.v + want * acc * h, -vmax, vmax);
+      c.pos += c.v * h;
+      if (c.v > 0 && !c.back && c.pos >= c.cap){ c.pos = c.cap; c.v = 0; }
+      else if (c.v < 0 && c.back && c.pos <= c.back.to){ c.pos = c.back.to; c.v = 0; c.cap = c.back.to; c.back = null; }
+      else if (c.v > 0 && c.back && c.pos >= 360){ c.pos = 360; c.v = 0; }
+      c.pos = clamp(c.pos, c.s0 > 0 ? 0 : 0, 360);
+      if (c.v) c.dir = Math.sign(c.v);
+    }
+    for (let k = 1; k <= 4; k++) if (c.arr[k] == null && 90 * k > s0 && c.pos >= 90 * k - .05) c.arr[k] = BALL.t;
+    return c.pos;
+  }
   if (c.back){                                                                  // turned round: he runs back toward the base he left
     c.pos = Math.max(c.back.to, c.pos - sprintFps(spdOf(man)) * Math.max(0, dt));
     if (c.pos <= c.back.to + .01){ c.pos = c.back.to; c.cap = c.back.to; c.te = runTime(spdOf(man), c.pos - s0, c.bat); c.back = null; }
@@ -1336,17 +1357,17 @@ function runBack(key){                                                         /
   const c = RUNCTL[key]; if (!c || !c.manual || c.out || c.back) return;
   const to = Math.floor((c.pos - .5) / 90) * 90;
   if (to < 90 || to < c.s0) return;                                              // nothing behind him but home plate
-  c.back = { to }; c.cap = to;
+  c.back = { to };
 }
 function runToggle(key){
   const c = RUNCTL[key]; if (!c || !c.manual) return;
   if (BALL && BALL.tagUp && BALL.t < BALL.tf) return;                          // not until it is caught
-  if (c.back){ c.back = null; c.te = runTime(spdOf(c.man), c.pos - c.s0, c.bat); c.cap = Math.min(360, Math.ceil((c.pos + .5) / 90) * 90); return; }     // changed his mind: forward again
+  if (c.back){ c.back = null; c.cap = Math.min(360, Math.ceil((c.pos + .5) / 90) * 90); return; }     // changed his mind: forward again
   const ah = runAhead(c);
   if (c.cap > ah) c.cap = Math.max(ah, c.pos);            // green -> red: stop at the base ahead
   else c.cap = Math.min(360, ah + 90);                    // red -> green: go on through it and stop at the next
 }
-const runnersSettled = () => Object.values(RUNCTL).every(c => !c.back && c.pos >= c.cap - .05);
+const runnersSettled = () => Object.values(RUNCTL).every(c => !c.back && c.pos >= c.cap - .05 && !(c.manual && Math.abs(c.v) > .01));
 // kept for the old code path: every runner gets what the play gave him
 function runnerGain(key, s0, n){ return n; }
 function drawRunDiamond(key, sx, sy){
@@ -2674,7 +2695,7 @@ function gxPlay(B){
   if (!B.foul){
     const run = (key, man, s0, s1) => {
       const s = runPosCtl(key, man, s0, s1); let a = basePathPos(s), over = 0;
-      const a2 = basePathPos(Math.min(360, s + 1.5)), cc0 = RUNCTL[key];
+      const cc0 = RUNCTL[key], ds = cc0 && cc0.manual ? (cc0.v < -.01 ? -1 : cc0.v > .01 ? 1 : cc0.dir || 1) : 1, a2 = basePathPos(clamp(s + ds * 1.5, 0, 360));
       if (cc0 && cc0.manual && !cc0.out && s0 === 0 && cc0.cap === 90 && s >= 90 - .05){          // stopping at first: he runs on past the bag, slows, then walks back to it
         if (cc0.arrT == null) cc0.arrT = B.t;
         const dt = B.t - cc0.arrT, RUN = 13, SLOW = .8, BACK = 1.1;
@@ -2684,7 +2705,7 @@ function gxPlay(B){
       const X = a.lat, Z = -a.d, mv = gxMover(key, X, Z);
       if (RUNCTL[key] && RUNCTL[key].out && B.t > RUNCTL[key].outT + .9) return;       // thrown out: he walks off
       const dirYaw = Math.atan2(a2.lat - a.lat, -(a2.d - a.d)), dly = key === 'runB' ? dly0 + CFG.BATTER_EXTRA : dly0;
-      const cc = RUNCTL[key], held = cc && s >= cc.cap - .05 && over < .3;
+      const cc = RUNCTL[key], held = cc && s >= cc.cap - .05 && over < .3 && !(cc.manual && (cc.back || Math.abs(cc.v) > .01));
       S.people.push(gxPerson(key, 'run', man, bt, X, Z, dirYaw, B.t < dly ? GL3D.poseBatter(1, t) : (held ? GL3D.poseReady(t) : GL3D.poseRun(mv.ph, spdOf(man))), { sp: B.t < dly || held ? { f:0 } : runCycle(dirYaw, mv.ph, key) }));
       if (isManualPlay(B) && cc && cc.manual && !cc.out){ const q = toScr(X, paintOn() ? 16 : 26, Z, W, H); runMarks.push([key, q.x, q.y]); }
     };
@@ -5314,7 +5335,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   buyPack, buyPosPack, freePack, rollCard, makeCardAt, valueOf, sellPrice, upCost, upgradeCard, doFuse, canFuse, fuseGroups, fuseRating, bandOf, dealsToday, buyDeal, streakInfo, tradeRating, doTrade, startOpen, openPointer, openAdvance, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
   CFG, get shopTab(){ return shopTab; }, makeContact2: makeContact, cpuDecide, set shopTab(v){ shopTab = v; }, get upStat(){ return upStat; }, set upStat(v){ upStat = v; }, set colSel(v){ colSel = v; }, set fuseMode(v){ fuseMode = v; }, get fuseSel(){ return fuseSel; }, set fuseSel(v){ fuseSel = v; }, tickOpen(ms){ openTick(ms); }, payPlay, earn, get SIMMING(){ return SIMMING; },
   get P(){ return P; }, get BALL(){ return BALL; }, get swing(){ return swing; }, get FLD(){ return FLD; },
-  stepAtBat, doSwing, makeContact, planFielders, stepFielders, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
+  stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
   set swing(v){ swing = v; },
   // schedule a swing so the bat arrives at a chosen point in the pitch
   swingAt(ms){ swing = { start: ms - BAT_LAG, contactAt: ms, t:0, resolved:false, cpu:false }; },
