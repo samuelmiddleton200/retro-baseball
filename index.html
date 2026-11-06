@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-11z"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12b"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-11z';
+const BUILD = '11-12b';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -2380,6 +2380,7 @@ function applyPlay(res){
   M.outs += out; p.st.po = (p.st.po || 0) + out; pg(p).po += out;                       // the outs he got: his innings pitched
   say(txt);
   payPlay(res, b, p, st.rbi - rbi0);
+  if (M.perfect && M.score.home > M.score.away) return perfectEnd();                 // they took the lead: it is over
   nextBatter();
   if (M.outs >= 3) endHalf(); else setupAtBat();
 }
@@ -2389,12 +2390,12 @@ function earn(cat, amt, n = 1){ G.coins += amt; const e = (M.earn[cat] = M.earn[
 function payPlay(res, b, p, rbi){
   if (M.league || SIMMING || !M.earn) return;
   if (weBat()){
-    const base = ({ single:50, double:125, triple:350, hr:200, bb:65, hbp:65 })[res];
-    if (base){ const cat = res === 'hbp' ? 'bb' : res, key = (b.id || b.name) + ':' + cat, n = (M.rep[key] || 0) + 1; M.rep[key] = n; earn(cat, base + 15 * (n - 1)); }
-    if (rbi > 0) earn('rbi', rbi * 70, rbi);
+    const base = ({ single:75, double:175, triple:450, hr:275, bb:75, hbp:75 })[res];
+    if (base){ const cat = res === 'hbp' ? 'bb' : res, key = (b.id || b.name) + ':' + cat, n = (M.rep[key] || 0) + 1; M.rep[key] = n; earn(cat, base + 25 * (n - 1)); }
+    if (rbi > 0) earn('rbi', rbi * 100, rbi);
   } else {
-    if (res === 'k'){ const key = 'K:' + (p.id || p.name), n = (M.rep[key] || 0) + 1; M.rep[key] = n; earn('k', 125 + 10 * (n - 1)); }
-    if (res === 'dp') earn('dp', 175);
+    if (res === 'k'){ const key = 'K:' + (p.id || p.name), n = (M.rep[key] || 0) + 1; M.rep[key] = n; earn('k', 150 + 25 * (n - 1)); }
+    if (res === 'dp') earn('dp', 225);
   }
 }
 function walkAdvance(){
@@ -2413,6 +2414,7 @@ function finishPitch(){
   P.done = true; P.waitT = 0;
 }
 function endHalf(){
+  if (M.perfect) return perfectEnd();                                                  // three outs: the lead held, or the game is tied
   const p = curPitcher(); p.st.ip += 1;
   M.outs = 0; M.bases = [null,null,null];
   if (!M.top){ M.inning++; }
@@ -2428,7 +2430,7 @@ function endHalf(){
 const MSAVE = 'retrobaseball.match.v1';
 function snapMatch(){
   try {
-    if (!M || M.over || M.derby || !G || phase === 'menu' || phase === 'over') return;
+    if (!M || M.over || M.derby || M.perfect || !G || phase === 'menu' || phase === 'over') return;
     const bt = batTeam(), pitchers = t => t.rot.concat(t.pen);
     localStorage.setItem(MSAVE, JSON.stringify({ v:1, day:G.day, opp:G.teams.indexOf(M.meHome ? M.away : M.home), meHome:M.meHome, mode:M.mode,
       inning:M.inning, top:M.top, outs:M.outs, balls:M.balls, strikes:M.strikes, score:M.score, ls:M.ls, H:M.H, E:M.E, pcHome:M.pcHome, pcAway:M.pcAway,
@@ -2506,9 +2508,9 @@ function gameOver(){
   const won = myRuns > oth;
   if (!M.playoff){ me[won ? 'w' : 'l']++; me.rs += myRuns; me.ra += oth; }
   { const es = Object.values(M.earn || {}).reduce((a, e) => a + e.c, 0); if (M.coins0 != null && G.coins < M.coins0 + es) G.coins = M.coins0 + es; }
-  G.coins += won ? 600 : 150;
-  M.shutBonus = oth === 0 && !M.pitchSimmed;                                 // a shutout pays only if you pitched every inning yourself
-  if (M.shutBonus) G.coins += 850;
+  M.gamePay = M.playoff ? (won ? 1500 : 450) : (won ? 850 : 250); G.coins += M.gamePay;
+  M.shutBonus = oth === 0;                                                   // a shutout pays 1,850, however you pitched it
+  if (M.shutBonus) G.coins += 1850;
   if (M.playoff){ poUserDone(won); G.rotIdx++; save(); return; }
   const sg = G.sched[G.day]; if (sg){ sg.done = true; sg.rs = myRuns; sg.ra = oth; }
   simLeagueDay(G.day, sg ? sg.opp : -1);                                  // everybody else plays today too, and their players get stats
@@ -3727,7 +3729,7 @@ const VAL_T = { 80:380, 81:450, 82:525, 83:620, 84:725, 85:855, 86:1000, 87:1175
   100:9550, 101:11200, 102:13200, 103:15500, 104:18200, 105:21350, 106:25100, 107:29450, 108:34600, 109:40650 };
 const VAL_STEP = Math.pow(40650 / 380, 1 / 29);
 const valueOf = r => { r = clamp(r, 60, 125); const f = Math.floor(r); if (r === f && VAL_T[f]) return VAL_T[f]; return 380 * Math.pow(VAL_STEP, r - 80); };
-const sellPrice = c => Math.round(valueOf(ovrOf(c)) * .4);                              // selling pays 40% of what a card is worth
+const sellPrice = c => Math.round(valueOf(ovrOf(c)) * .35);                             // selling pays 35% of what a card is worth
 const upCost = c => Math.round(1.3 * (valueOf(ovrOf(c) + 5) - valueOf(ovrOf(c))) / 10);  // one of its ten levels: 1.3 x the value it adds
 // the hot deal prices: Epics 20% off, Legendaries 10% off
 const DEAL_PRICE = { 90:1525, 91:1800, 92:2100, 93:2475, 94:2900, 95:3425, 96:4025, 97:4725, 98:5525, 99:6500,
@@ -3829,14 +3831,16 @@ function streakInfo(){
   const run = (s.last === today || s.last === yest) ? s.day : 0;
   return { run, next: s.last === today ? run : run >= 7 ? 1 : run + 1, claimedToday: s.last === today };
 }
-const STREAK_COINS = [500, 1000, 1500, 2000, 2500, 3000];
+const STREAK_COINS = [500, 1000, 0, 2000, 0, 3000];                     // days 3, 5 and 7 are packs instead
+const STREAK_PACK = { 3:['silver', 3, 'SILVER PACK'], 5:['gold', 3, 'GOLD PACK'], 7:['gold', 5, '5-CARD GOLD PACK'] };
 function freePack(){
   if (Date.now() < (G.freeAt || 0)) return;
   const si = streakInfo(), day = si.claimedToday ? si.run : si.next;
   G.streak = { day, last:dayKey() }; G.freeAt = Date.now() + 24 * 3600 * 1000;
   const batches = [{ tier:'bronze', cards:Array.from({ length:10 }, () => rollCard('bronze')) }];
   let bonus = '';
-  if (day >= 7) batches.push({ tier:'gold', cards:Array.from({ length:3 }, () => rollCard('gold')) });
+  const sp = STREAK_PACK[day];
+  if (sp){ batches.push({ tier:sp[0], cards:Array.from({ length:sp[1] }, () => rollCard(sp[0])) }); bonus = 'DAY ' + day + ' STREAK  +' + sp[2]; }
   else { G.coins += STREAK_COINS[day - 1]; bonus = 'DAY ' + day + ' STREAK  +' + STREAK_COINS[day - 1].toLocaleString() + ' COINS'; }
   startOpen({ kind:'pack', batches, bonus, free:true }); save();
 }
@@ -4399,13 +4403,13 @@ function drawFeatured(){
   const sx = 8 + lw + gap; uiBox(sx, y0, rw, ph);
   ptitle('THIS WEEK', sx + 6, y0 + 5, 8, '#ffffff', 'left');
   const si = streakInfo();
-  text('FREE GOLD PACK ON DAY 7', sx + 6, y0 + 17, UI.ice, 5.5, 'left', rw - 10);
+  text('FREE PACKS ON DAYS 3, 5 AND 7', sx + 6, y0 + 17, UI.ice, 5.5, 'left', rw - 10);
   const bw = Math.floor((rw - 12 - 6 * 3) / 7);
   for (let d = 1; d <= 7; d++){
     const x = sx + 6 + (d - 1) * (bw + 3), y = y0 + 27, done = d <= si.run, nxt = !si.claimedToday && d === si.next;
     R(x, y, bw, 33, done ? '#2a3a8a' : UI.navy); if (nxt){ R(x, y, bw, 1, UI.yellow); R(x, y + 32, bw, 1, UI.yellow); R(x, y, 1, 33, UI.yellow); R(x + bw - 1, y, 1, 33, UI.yellow); }
     text('DAY ' + d, x + bw / 2, y + 3, done || nxt ? '#fff' : UI.ice, 5, 'center');
-    text(d === 7 ? 'GOLD' : '+' + STREAK_COINS[d - 1], x + bw / 2, y + 13, UI.yellow, d === 7 ? 5.5 : 5.5, 'center', bw - 2);
+    text(STREAK_PACK[d] ? (d === 3 ? 'SILVER' : d === 5 ? 'GOLD' : 'GOLD x5') : '+' + STREAK_COINS[d - 1], x + bw / 2, y + 13, UI.yellow, 5.5, 'center', bw - 2);
     if (done) text('GOT', x + bw / 2, y + 23, '#7fd38f', 5, 'center');
   }
   // hot deals
@@ -4984,6 +4988,61 @@ function drawMenu(){
     button(W - 58, H - 20, 50, 16, 'BACK', () => menu = 'title');
   }
 }
+
+function perfectStart(){
+  if (!G) return false;
+  const me = myTeam(), opp0 = G.teams.find(t => t !== me && t.lg !== me.lg) || G.teams[(G.team + 1) % G.teams.length];
+  const mk = (L, pos) => { const c = fitTo(makeHitter(L, pos), L); c.contact = c.power = c.fielding = c.speed = L; c.ovr = ovrOf(c); c.st = newStat(); c.id = null; return c; };
+  const rp = fitTo(makePitcher(60, 'RP'), 60); rp.pos = 'RP'; rp.velocity = rp.control = rp.stamina = rp.batting = 60; rp.pitches = { FB:60, CV:60, SL:60, CH:60 }; rp.st = newStat(); rp.stam = 1; rp.id = null;
+  me.lineup = POS.map(p => mk(60, p)); me.rot = [rp, rp, rp, rp, rp]; me.pen = [];                 // your side for this game only: 60s everywhere; rebuildTeam() puts your real team back
+  const opp = Object.assign({}, opp0, { lineup: POS.map(p => mk(120, p)), _bi: 0 });
+  M = {
+    home: opp, away: me, meHome: false,
+    inning:9, top:false, outs:0, bases:[opp.lineup[7], opp.lineup[6], null], score:{ home:0, away:1 },
+    balls:0, strikes:0, lineHome:0, lineAway:0, ls:{ away:[0, 0, 0, 0, 0, 0, 0, 0, 1], home:[0, 0, 0, 0, 0, 0, 0, 0] }, H:{ away:0, home:0 }, E:{ away:0, home:0 },
+    pitcherHome: opp0.rot[0], pitcherAway: rp, pcHome:0, pcAway:0, line:[], mode:'defense',
+    park: makePark(opp), msg:null, msgT:0, over:false, exc:0, perfect:true,
+  };
+  M.uni = pickUniforms(M.home, M.away); M.stad = (G.day || 0) % STADIUMS.length;
+  Object.assign(M.park, { lf:330, cf:400, rf:330 });
+  M.coins0 = G.coins; M.earn = null; M.rep = {}; M.pitchSimmed = false;                              // no per-play coins here: the result pays
+  PG.clear(); pg(M.pitcherHome).used = true; pg(M.pitcherAway).used = true;
+  swing = null; BALL = null; P = null;
+  phase = 'atbat'; setupAtBat();
+  setTimeout(warmHitView, 30);
+  return true;
+}
+function perfectEnd(){
+  if (!M || M.over) return;
+  const a = M.score.away, h = M.score.home, kind = h > a ? 'loss' : h === a ? 'tie' : 'win', coins = { win:2000, tie:1000, loss:500 }[kind];
+  M.over = true; phase = 'over'; M.perfectRes = { kind, coins }; G.coins += coins;
+  const pf = G.perfect || (G.perfect = { plays:0, wins:0, ties:0, losses:0 }); pf.plays++; pf[kind === 'win' ? 'wins' : kind === 'tie' ? 'ties' : 'losses']++;
+  rebuildTeam(); save();                                                                              // your real team is back
+}
+function perfectQuit(){ rebuildTeam(); M = null; phase = 'menu'; menu = 'minigames'; }
+function drawPerfectPause(){
+  btns = [];
+  R(0, 0, W, H, '#0b1018e8');
+  textb('PAUSED', W / 2, 36, '#fff', 18, 'center');
+  textb('THE PERFECT GAME: HOLD THE 1-0 LEAD', W / 2, 66, UI.ice, 8, 'center', W - 20);
+  button(W / 2 - 80, 100, 160, 22, 'RESUME', () => { phase = userPitches() ? 'pitching' : 'atbat'; }, '#2f6fe0');
+  button(W / 2 - 80, 130, 160, 18, 'QUIT (NO COINS)', () => perfectQuit(), '#2a1a1a', '#fff', 7);
+}
+function drawPerfectOver(){
+  btns = [];
+  R(0, 0, W, H, '#0b1018ee');
+  const F = M.perfectRes || { kind:'loss', coins:0 }, col = F.kind === 'win' ? '#54d67a' : F.kind === 'tie' ? UI.yellow : '#ff6b5a';
+  textb(F.kind === 'win' ? 'YOU HELD IT!' : F.kind === 'tie' ? 'TIE GAME' : 'THEY TOOK THE LEAD', W / 2, 10, col, 18, 'center', W - 16);
+  textb(`${M.away.ab} ${M.score.away}   -   ${M.home.ab} ${M.score.home}`, W / 2, 38, '#fff', 10, 'center');
+  const pf = G.perfect || { plays:0, wins:0, ties:0, losses:0 };
+  textb(`WINS ${pf.wins}   TIES ${pf.ties}   LOSSES ${pf.losses}`, W / 2, 56, UI.ice, 7, 'center');
+  const y0 = 76, lx = W / 2 - 110, rx = W / 2 + 110;
+  textb(F.kind === 'win' ? 'SHUTDOWN' : F.kind === 'tie' ? 'TIED IT UP' : 'PLAYED IT OUT', lx, y0, UI.ice, 7, 'left'); textb('+' + F.coins.toLocaleString(), rx, y0, '#ffffff', 7, 'right');
+  R(lx, y0 + 14, 220, 1, '#2a5ba6');
+  textb('TOTAL EARNED', lx, y0 + 18, '#ffd23f', 8, 'left'); textb('+' + F.coins.toLocaleString() + ' coins', rx, y0 + 17, '#ffd23f', 9, 'right');
+  button(W / 2 - 108, y0 + 42, 100, 22, 'PLAY AGAIN', () => { M = null; perfectStart(); }, '#2f6fe0');
+  button(W / 2 + 8, y0 + 42, 100, 22, 'CONTINUE', () => { M = null; phase = 'menu'; menu = 'minigames'; }, '#1a2030', '#fff', 8);
+}
 // ── the playoffs ──
 const PO_ROUNDS = ['WILD CARD', 'DIVISION SERIES', 'LEAGUE SERIES', 'WORLD SERIES'];
 function poPct(i){ const t = G.teams[i]; return (t.w + t.l) ? t.w / (t.w + t.l) : 0; }
@@ -5002,12 +5061,13 @@ function poAdvance(){                                                      // si
   while (P.champ < 0 && guard++ < 10){
     (P.g[P.round] || []).forEach(gm => { if (gm.w >= 0 || gm.a === G.team || gm.b === G.team) return; gm.w = simLeagueGame(gm.a, gm.b, true).homeWon ? gm.a : gm.b; });
     if (poUserGame()) return;
-    if (P.round >= 3){ P.champ = P.g[3][0].w; G.champs = (G.champs || 0) + (P.champ === G.team ? 1 : 0); return; }
+    if (P.round >= 3){ P.champ = P.g[3][0].w; G.champs = (G.champs || 0) + (P.champ === G.team ? 1 : 0); if (P.champ === G.team){ P.wsWon = true; G.coins += 50000; } return; }
     P.round++; poBuildRound();
   }
 }
 function startPlayoffs(){
   G.po = { round:0, seeds:{ AL:playoffSeeds('AL').slice(0, 6).map(o => o.i), NL:playoffSeeds('NL').slice(0, 6).map(o => o.i) }, g:[[], [], [], []], champ:-1 };
+  { const me = G.teams[G.team], dv = playoffSeeds(me.lg).filter(o => o.t.div === me.div); if (dv.length && dv[0].i === G.team){ G.po.divWon = true; G.coins += 10000; } }      // you won your division
   poBuildRound(); poAdvance(); save();
 }
 function poUserDone(won){
@@ -5097,6 +5157,7 @@ function drawPlayoffs(){
   textb('WORLD', cx, cyMid - 7, UI.yellow, 6, 'center'); textb('SERIES', cx, cyMid + 1, UI.yellow, 6, 'center');
   if (chp){ R(cx - wsW / 2, cyMid + 11, wsW, 11, UI.yellow); textb(chp.ab, cx, cyMid + 13, UI.navy, 7, 'center'); } else if (wsT) textb(wsT, cx, cyMid + 12, UI.ice, 6, 'center');
   textb(G._poNote || '', 8, H - 17, UI.yellow, 6, 'left', W - 76);
+  if (PO && (PO.divWon || PO.wsWon)) textb((PO.divWon ? 'DIVISION CHAMPS +10,000' : '') + (PO.divWon && PO.wsWon ? '   ' : '') + (PO.wsWon ? 'WORLD SERIES +50,000' : ''), 8, H - 28, '#9af0ae', 6, 'left', W - 76);
   button(W - 58, H - 20, 50, 16, 'BACK', () => menu = 'stand');
 }
 // ── league leaders: batters or pitchers, every player or each team's average; tap a column to rank by it (tap again to flip) ──
@@ -5213,6 +5274,7 @@ function drawStats(){
 }
 const EARN_ROWS = [['single', 'SINGLE', 'SINGLES'], ['double', 'DOUBLE', 'DOUBLES'], ['triple', 'TRIPLE', 'TRIPLES'], ['hr', 'HOME RUN', 'HOME RUNS'], ['bb', 'WALK', 'WALKS'], ['rbi', 'RBI', 'RBI'], ['k', 'STRIKEOUT', 'STRIKEOUTS'], ['dp', 'DOUBLE PLAY', 'DOUBLE PLAYS']];
 function drawOver(){
+  if (M.perfect) return drawPerfectOver();
   if (M.derby) return drawDerbyOver();
   btns = [];
   R(0, 0, W, H, '#0b1018ee');
@@ -5221,7 +5283,7 @@ function drawOver(){
   textb(won ? 'WIN' : 'LOSS', W / 2, 8, won ? '#54d67a' : '#ff6b5a', 20, 'center');
   textb(`${M.away.ab} ${M.score.away}   -   ${M.home.ab} ${M.score.home}`, W / 2, 34, '#fff', 10, 'center');
   const rows = EARN_ROWS.filter(r => M.earn && M.earn[r[0]]).map(r => { const e = M.earn[r[0]]; return [`${e.n} ${e.n === 1 ? r[1] : r[2]}`, e.c]; });
-  rows.push([won ? 'WIN BONUS' : 'PLAYED THE GAME', won ? 600 : 150]); if (M.shutBonus) rows.push(['SHUTOUT', 850]);
+  rows.push([M.playoff ? (won ? 'PLAYOFF WIN' : 'PLAYOFF LOSS') : (won ? 'WIN BONUS' : 'PLAYED THE GAME'), M.gamePay || (won ? 850 : 250)]); if (M.shutBonus) rows.push(['SHUTOUT', 1850]);
   const sp = Math.min(12, Math.floor(112 / rows.length)), y0 = 52, lx = W / 2 - 110, rx = W / 2 + 110;
   rows.forEach(([l, v], i) => { textb(l, lx, y0 + i * sp, UI.ice, 7, 'left'); textb('+' + v.toLocaleString(), rx, y0 + i * sp, '#ffffff', 7, 'right'); });
   const ty = y0 + rows.length * sp + 3; R(lx, ty, 220, 1, '#2a5ba6');
@@ -5251,6 +5313,7 @@ function simInning(){
 }
 function drawGameMenu(){
   if (M.derby) return drawDerbyPause();
+  if (M.perfect) return drawPerfectPause();
   btns = [];
   R(0, 0, W, H, '#0b1018e8');
   textb('WHAT DO YOU WANT TO PLAY?', W / 2, 16, '#ffd23f', 10, 'center');
@@ -5442,7 +5505,7 @@ function derbyAfter(){
   nextPitch();
 }
 function derbyEnd(){
-  const D = M.derby, hrCoins = D.hr * 100, distCoins = Math.round(D.dist / 5);
+  const D = M.derby, hrCoins = D.hr * 150, distCoins = Math.round(D.dist / 4);
   G.coins += hrCoins + distCoins;
   const gd = G.derby || (G.derby = { best:0, plays:0, longest:0 }), nb = D.score > gd.best;
   if (nb) gd.best = D.score; gd.plays++; gd.longest = Math.max(gd.longest || 0, D.longest);
@@ -5555,13 +5618,20 @@ function drawDerbyOver(){
 // ── the menus: MINIGAMES, then pick a hitter ───────────────────────────────
 function drawMinigames(){
   R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff'); ptitle('MINIGAMES', 10, 3, 10, '#ffffff', 'left'); coinText(G.coins, W - 8, 4, 8, UI.yellow, 'right');
-  const bw = Math.min(300, W - 40), bx = W / 2 - bw / 2, by = 34;
+  const bw = Math.min(300, W - 40), bx = W / 2 - bw / 2, by = 24;
   uiBox(bx, by, bw, 78);
   ptitle('HOME RUN DERBY', W / 2, by + 8, 12, UI.yellow);
   text('10 OUTS. 70 MPH DOWN THE MIDDLE. HIGH SCORE.', W / 2, by + 30, UI.ice, 6.5, 'center', bw - 12);
   const gd = G.derby || { best:0, plays:0 };
   text(gd.best ? `BEST ${gd.best.toLocaleString()}   LONGEST ${(gd.longest || 0)} FT` : 'NO SCORE YET', W / 2, by + 42, '#ffffff', 6.5, 'center', bw - 12);
   button(bx + bw / 2 - 50, by + 54, 100, 18, derbyReady() ? 'PLAY' : 'LOADING', () => { if (derbyReady()){ derbyPick = null; derbyScroll = 0; menu = 'derbypick'; } }, derbyReady() ? '#2f6fe0' : '#161b26', '#fff', 8);
+    const by2 = by + 78 + 6, pf = G.perfect || { plays:0, wins:0, ties:0, losses:0 };
+  uiBox(bx, by2, bw, 76);
+  ptitle('THE PERFECT GAME', W / 2, by2 + 6, 12, UI.yellow);
+  text('BOTTOM 9TH. UP 1-0. RUNNERS ON 1ST AND 2ND, NO OUTS.', W / 2, by2 + 24, UI.ice, 6, 'center', bw - 12);
+  text('YOUR 60 PITCHER AND 60 DEFENCE VS ENDLESS 120 HITTERS.', W / 2, by2 + 33, UI.ice, 6, 'center', bw - 12);
+  text('WIN 2,000    TIE 1,000    LOSS 500', W / 2, by2 + 43, '#ffffff', 6.5, 'center', bw - 12);
+  button(bx + bw / 2 - 50, by2 + 54, 100, 18, 'PLAY', () => { perfectStart(); }, '#2f6fe0', '#fff', 8);
   button(10, H - 22, 70, 18, 'BACK', () => menu = 'title');
 }
 function drawDerbyPick(){
@@ -5647,7 +5717,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   buyPack, buyPosPack, freePack, rollCard, makeCardAt, valueOf, sellPrice, upCost, upgradeCard, doFuse, canFuse, fuseGroups, fuseRating, bandOf, dealsToday, buyDeal, streakInfo, tradeRating, doTrade, startOpen, openPointer, openAdvance, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
   CFG, get shopTab(){ return shopTab; }, makeContact2: makeContact, cpuDecide, set shopTab(v){ shopTab = v; }, get upStat(){ return upStat; }, set upStat(v){ upStat = v; }, set colSel(v){ colSel = v; }, set fuseMode(v){ fuseMode = v; }, get fuseSel(){ return fuseSel; }, set fuseSel(v){ fuseSel = v; }, tickOpen(ms){ openTick(ms); }, payPlay, earn, get SIMMING(){ return SIMMING; },
   get P(){ return P; }, get BALL(){ return BALL; }, get swing(){ return swing; }, get FLD(){ return FLD; },
-  get menu(){ return menu; }, set menu(v){ menu = v; }, orderTap, get orderSel(){ return orderSel; }, stamCap, stamPct, restPitchers, pg, simRest, simInning, saveEverything, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
+  get menu(){ return menu; }, set menu(v){ menu = v; }, perfectStart, perfectEnd, applyPlay, orderTap, get orderSel(){ return orderSel; }, stamCap, stamPct, restPitchers, pg, simRest, simInning, saveEverything, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
   set swing(v){ swing = v; },
   // schedule a swing so the bat arrives at a chosen point in the pitch
   swingAt(ms){ swing = { start: ms - BAT_LAG, contactAt: ms, t:0, resolved:false, cpu:false }; },
