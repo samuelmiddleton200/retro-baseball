@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12k"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12l"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,26 +216,30 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-12k';
+const BUILD = '11-12l';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
 let G = null;
 
+// a whole roster: nine hitters, five starters, five relievers (the last is the closer, 4 better). The computer's players are 80-120 around the club's level q; yours start at 60-75.
+function makeRoster(mine, q){
+  const lv = () => mine ? rnd(75, 60) : clamp(q + (bell() - .5) * 16, 80, 120);
+  const hit = pos => { const L = lv(); return fitTo(makeHitter(L, pos), L); };
+  const arm = (role, plus) => { const L = clamp(lv() + plus, 60, 120); return fitTo(makePitcher(L, role), L); };
+  const lineup = POS.map(p => hit(p));
+  const rot = [0,1,2,3,4].map(() => arm('SP', 0));
+  const pen = [0,1,2,3].map(() => arm('RP', 0)).concat([arm('CP', 4)]);
+  [...lineup, ...rot, ...pen].forEach(p => { p.num = ri(1, 72); });
+  return { lineup, rot, pen };
+}
 function newGame(teamAb){
   try { localStorage.removeItem('retrobaseball.match.v1'); } catch (e){}
   _cardId = 1;
   // the league: every other club has its own level (a weak one averages about 86, a strong one about 100) with players of 80-105; you start with 60-75 cards, the worst team in the game
   const teams = TEAMS.map(t => {
-    const mine = t.ab === teamAb, q = rnd(101, 86);
-    const lv = () => mine ? rnd(75, 60) : clamp(q + (bell() - .5) * 16, 80, 105);
-    const hit = pos => { const L = lv(); return fitTo(makeHitter(L, pos), L); };
-    const arm = (role, plus) => { const L = clamp(lv() + plus, 60, 108); return fitTo(makePitcher(L, role), L); };
-    const lineup = POS.map(p => hit(p));
-    const rot = [0,1,2,3,4].map(() => arm('SP', 0));
-    const pen = [0,1,2,3].map(() => arm('RP', 0)).concat([arm('CP', 4)]);
-    [...lineup, ...rot, ...pen].forEach(p => { p.num = ri(1, 72); });
-    return { ...t, lineup, rot, pen, w:0, l:0, rs:0, ra:0, q };
+    const mine = t.ab === teamAb, q = rnd(112, 84), r = makeRoster(mine, q);
+    return { ...t, lineup:r.lineup, rot:r.rot, pen:r.pen, w:0, l:0, rs:0, ra:0, q };
   });
   G = { v:2, team: teams.findIndex(t => t.ab === teamAb), teams, day:0, coins:START_COINS, gift25k:true, fun1m:true, seen:{}, streak:{ day:0, last:'' }, seasonLen:24,
         sched:[], rotIdx:0, cards:[], slots:{ lineup:[], rot:[], pen:[] }, freeAt:0 };
@@ -5133,7 +5137,7 @@ function poUserDone(won){
   poAdvance();
 }
 function newSeason(){
-  G.teams.forEach(t => { t.w = t.l = t.rs = t.ra = 0; [...t.lineup, ...t.rot, ...t.pen].forEach(p => { p.st = newStat(); }); });
+  G.teams.forEach((t, i) => { t.w = t.l = t.rs = t.ra = 0; if (i !== G.team){ t.q = rnd(112, 84); Object.assign(t, makeRoster(false, t.q)); } [...t.lineup, ...t.rot, ...t.pen].forEach(p => { p.st = newStat(); }); });
   G.cards.forEach(p => { p.st = newStat(); p.stam = 1; });
   G.day = 0; G.seasonLen = 24; G.po = null; G.season = (G.season || 1) + 1; makeSchedule(); save();
 }
