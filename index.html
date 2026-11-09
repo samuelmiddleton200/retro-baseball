@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12h"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12i"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-12h';
+const BUILD = '11-12i';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1575,6 +1575,7 @@ function tRunTo(c, rem){                                                        
 const baseS = (px, py) => { for (let i = 0; i < 4; i++) if (Math.hypot(px - BASE_XY[i][0], py - BASE_XY[i][1]) < 4) return (i + 1) * 90; return null; };      // where on the base path the man with the ball stands (null: not on a bag)
 function pickTarget(B, holder, px, py){
   let best = null;
+  const sh = baseS(px, py);                                                                               // the base he stands on, if the ball is in his hands on a bag
   for (const key in RUNCTL){
     const c = RUNCTL[key]; if (c.out || c.scored || c.pos >= 359.95) continue;                         // a runner who has scored is out of play
     const dir = runHeading(c); if (!dir) continue;
@@ -1582,6 +1583,15 @@ function pickTarget(B, holder, px, py){
     if (!(dir < 0 || isGPlay(B) || nb > c.s0 + (c.forced ? 90 : 0) + .5)) continue;                       // a base the hit gave him cannot be lost
     const rt = routeThrow(holder, [px, py], B.t, BASE_XY[bi], 0, true), margin = B.t + tRunTo(c, Math.abs(nb - c.pos)) - rt.arr;
     if (margin <= .05) continue;                                                                          // that throw cannot get him: they hold it instead
+    if (sh != null && nb !== sh){
+      // a pickle: he is on a bag with the ball and the runner is between bases. If the runner could turn round, get back to the bag he left, and be there before the ball
+      // has gone to the other base and come back, the throw is a gamble he does not take: he holds it, and anybody who comes back to the bag is tagged. He throws once the runner is committed.
+      const bb = runBase(c, -dir), vmax = sprintFps(spdOf(c.man)), acc = vmax / CFG.RUNNER_ACCEL_T, dec = acc * 2, v0 = Math.abs(c.v || 0);
+      const back = Math.abs(c.pos - bb) + v0 * v0 / (2 * dec), dA = vmax * vmax / (2 * acc);
+      const tEscape = B.t + v0 / dec + (back <= dA ? Math.sqrt(2 * back / acc) : vmax / acc + (back - dA) / vmax);
+      const tBall = rt.arr + 90 * CFG.GLOVE_PER_FT + 90 / (holder.armFps || 40);
+      if (tEscape <= tBall + .1 || Math.abs(c.pos - bb) < 45) continue;                                  // he has to be at least halfway to the other base, and unable to get back
+    }
     if (!best || margin > best.margin) best = { key, c, nb, bi, back: dir < 0, margin, rt };
   }
   return best;
@@ -2169,7 +2179,11 @@ function stepAtBat(dt){
       B.judged = true;
       if (B.foul){ B.play = 'foul'; say('FOUL BALL'); }
     }
-    if ((B.judged && B.t > B.tEnd && (B.t > B.tEnd + 9 || (runnersSettled() && !B.inFlightThrow && !(B.defManual && B.def.queue.length)))) || P.playT > 24000){
+    // the play is over once every runner has stood still for 2 seconds (never while somebody is still running, so the next batter's view never cuts in on a runner mid-run)
+    const calm = runnersSettled() && !B.inFlightThrow && !(B.defManual && B.def.queue.length);
+    if (calm){ if (B.settleT == null) B.settleT = B.t; } else B.settleT = null;
+    const ran = Object.values(RUNCTL).some(c => c.out || c.pos > c.s0 + .5), calm2 = calm && (!ran || B.t - B.settleT >= 2);
+    if ((B.judged && B.t > B.tEnd && (B.t > B.tEnd + 30 || calm2)) || P.playT > 60000){
       P.state = 'result'; P.hold = 0; applyCall();
     }
     return;
@@ -5749,7 +5763,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   buyPack, buyPosPack, freePack, rollCard, makeCardAt, valueOf, sellPrice, upCost, upgradeCard, doFuse, canFuse, fuseGroups, fuseRating, bandOf, dealsToday, buyDeal, streakInfo, tradeRating, doTrade, startOpen, openPointer, openAdvance, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
   CFG, get shopTab(){ return shopTab; }, makeContact2: makeContact, cpuDecide, set shopTab(v){ shopTab = v; }, get upStat(){ return upStat; }, set upStat(v){ upStat = v; }, set colSel(v){ colSel = v; }, set fuseMode(v){ fuseMode = v; }, get fuseSel(){ return fuseSel; }, set fuseSel(v){ fuseSel = v; }, tickOpen(ms){ openTick(ms); }, payPlay, earn, get SIMMING(){ return SIMMING; },
   get P(){ return P; }, get BALL(){ return BALL; }, get swing(){ return swing; }, get FLD(){ return FLD; },
-  get menu(){ return menu; }, set menu(v){ menu = v; }, perfectStart, perfectEnd, applyPlay, orderTap, get orderSel(){ return orderSel; }, stamCap, stamPct, restPitchers, pg, simRest, simInning, saveEverything, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
+  get menu(){ return menu; }, set menu(v){ menu = v; }, get RUNCTLX(){ return RUNCTL; }, pickTarget, runHeading, perfectStart, perfectEnd, applyPlay, orderTap, get orderSel(){ return orderSel; }, stamCap, stamPct, restPitchers, pg, simRest, simInning, saveEverything, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
   set swing(v){ swing = v; },
   // schedule a swing so the bat arrives at a chosen point in the pitch
   swingAt(ms){ swing = { start: ms - BAT_LAG, contactAt: ms, t:0, resolved:false, cpu:false }; },
