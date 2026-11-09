@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12o"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12p"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-12o';
+const BUILD = '11-12p';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -4612,6 +4612,8 @@ function drawShop(){
 
 // ── the collection ─────────────────────────────────────────────────────────
 let colSort = 'ovr', colFilter = 'all', colSel = null, colScroll = 0, cardFlip = false;
+let colPos = null, colPosMenu = false;                         // the position filter: null shows everybody; the picker is its own screen
+const FILTER_POS = ['SP', 'RP', 'CP', 'CF', 'LF', 'RF', '1B', '2B', '3B', 'SS', 'C', 'DH'];
 // the Bench view: tap bench cards to select them (all of one colour); with 5 selected the button trades them for 1 random card of the next colour up
 let benchSel = [];
 function benchToggle(c){
@@ -4635,21 +4637,43 @@ function myCards(){
   if (colFilter === 'hit') list = list.filter(c => !isPitcher(c));
   if (colFilter === 'pit') list = list.filter(isPitcher);
   if (colFilter === 'bench') list = list.filter(c => !inUse(c.id));
+  if (colPos) list = list.filter(c => c.pos === colPos);                        // a position picked: only that position
   list.sort((a, b) => colSort === 'ovr' ? ovrOf(b) - ovrOf(a) : a.pos.localeCompare(b.pos));
   return list;
 }
+function drawPosPicker(){
+  btns = [];
+  uiBg();
+  R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff'); ptitle('PICK A POSITION', 10, 3, 9, '#ffffff', 'left');
+  text('The list will show only that position.', W / 2, 24, UI.ice, 7, 'center', W - 16);
+  const bw = 62, bh = 30, gp = 6, per = 6, x0 = W / 2 - (per * bw + (per - 1) * gp) / 2;
+  FILTER_POS.forEach((p, i) => {
+    const x = x0 + (i % per) * (bw + gp), y = 40 + Math.floor(i / per) * (bh + gp), n = G.cards.filter(c => c.pos === p).length, on = colPos === p;
+    if (on) R(x, y, bw, bh, UI.yellow); else uiBox(x, y, bw, bh);
+    textb(p, x + bw / 2, y + 5, on ? '#241a00' : '#ffffff', 10, 'center');
+    text(n + (n === 1 ? ' card' : ' cards'), x + bw / 2, y + 19, on ? '#241a00' : (n ? UI.ice : '#6c7aa3'), 6, 'center');
+    btns.push({ x, y, w:bw, h:bh, fn: () => { colPos = p; colFilter = 'all'; colScroll = 0; benchSel = []; colPosMenu = false; } });
+  });
+  button(W / 2 - 80, 40 + 2 * (bh + gp) + 6, 160, 20, 'ALL POSITIONS', () => { colPos = null; colScroll = 0; colPosMenu = false; }, '#2f6fe0', '#fff', 8);
+  button(10, H - 22, 70, 18, 'BACK', () => { colPosMenu = false; });
+}
 function drawCards(){
+  if (colPosMenu) return drawPosPicker();
   btns = [];
   uiBg();
   R(0, 0, W, 17, UI.blueDD); R(0, 17, W, 2, '#ffffff');
   ptitle('MY CARDS', 10, 3, 10, '#ffffff', 'left');
   text(`${G.cards.length} cards`, W - 100, 5, UI.ice, 7, 'right'); coinText(G.coins, W - 8, 4, 8, UI.yellow, 'right');
   [['all','All'], ['hit','Hitters'], ['pit','Pitchers'], ['bench','Bench']].forEach(([k, l], i) => {
-    const x = 10 + i * 62, on = colFilter === k;
+    const x = 10 + i * 62, on = colFilter === k && !colPos;
     if (on) R(x, 22, 58, 14, UI.yellow); else uiBox(x, 22, 58, 14);
     text(l, x + 29, 25, on ? '#241a00' : '#ffffff', 7, 'center');
-    btns.push({ x, y:22, w:58, h:14, fn: () => { colFilter = k; colScroll = 0; benchSel = []; } });
+    btns.push({ x, y:22, w:58, h:14, fn: () => { colFilter = k; colPos = null; colScroll = 0; benchSel = []; } });
   });
+  { const x = 10 + 4 * 62, on = !!colPos;                                       // FILTER: pick one position to look at
+    if (on) R(x, 22, 58, 14, UI.yellow); else uiBox(x, 22, 58, 14);
+    text(colPos ? colPos : 'Filter', x + 29, 25, on ? '#241a00' : '#ffffff', 7, 'center');
+    btns.push({ x, y:22, w:58, h:14, fn: () => { colPosMenu = true; } }); }
   const list = myCards(), cw = 44, ch = 62, per = Math.floor((W - 16) / (cw + 4));
   const rows = Math.ceil(list.length / per), maxScroll = Math.max(0, rows * (ch + 6) - (H - 70));
   colScroll = clamp(colScroll, 0, maxScroll);
@@ -4669,6 +4693,7 @@ function drawCards(){
   }
   button(10, H - 22, 70, 18, 'BACK', () => menu = 'title');
   if (colFilter === 'bench' && !list.length) textb('No bench cards: everybody is in your lineup.', W / 2, 90, '#ffffff', 8, 'center', W - 20);
+  else if (colPos && !list.length) textb('No ' + colPos + ' cards yet.', W / 2, 90, '#ffffff', 8, 'center', W - 20);
   button(W / 2 - 50, H - 22, 100, 18, 'TRADE IN 5→1', () => { menu = 'trade'; tradeSel = []; }, '#6a3aa8', '#fff', 8);
   button(W - 86, H - 22, 76, 18, 'LINEUP', () => menu = 'lineup', '#2f6fe0');
 }
@@ -5805,7 +5830,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   buyPack, buyPosPack, freePack, rollCard, makeCardAt, valueOf, sellPrice, upCost, upgradeCard, doFuse, canFuse, fuseGroups, fuseRating, bandOf, dealsToday, buyDeal, streakInfo, tradeRating, doTrade, startOpen, openPointer, openAdvance, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
   CFG, get shopTab(){ return shopTab; }, makeContact2: makeContact, cpuDecide, set shopTab(v){ shopTab = v; }, get upStat(){ return upStat; }, set upStat(v){ upStat = v; }, set colSel(v){ colSel = v; }, set fuseMode(v){ fuseMode = v; }, get fuseSel(){ return fuseSel; }, set fuseSel(v){ fuseSel = v; }, tickOpen(ms){ openTick(ms); }, payPlay, earn, get SIMMING(){ return SIMMING; },
   get P(){ return P; }, get BALL(){ return BALL; }, get swing(){ return swing; }, get FLD(){ return FLD; },
-  get menu(){ return menu; }, set menu(v){ menu = v; }, gpTint, hexRgb, load, get Gx(){ return G; }, get RUNCTLX(){ return RUNCTL; }, pickTarget, runHeading, perfectStart, perfectEnd, applyPlay, orderTap, get orderSel(){ return orderSel; }, stamCap, stamPct, restPitchers, pg, simRest, simInning, saveEverything, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
+  get menu(){ return menu; }, set menu(v){ menu = v; }, set colPos(v){ colPos = v; }, set colPosMenu(v){ colPosMenu = v; }, myCards, gpTint, hexRgb, load, get Gx(){ return G; }, get RUNCTLX(){ return RUNCTL; }, pickTarget, runHeading, perfectStart, perfectEnd, applyPlay, orderTap, get orderSel(){ return orderSel; }, stamCap, stamPct, restPitchers, pg, simRest, simInning, saveEverything, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
   set swing(v){ swing = v; },
   // schedule a swing so the bat arrives at a chosen point in the pitch
   swingAt(ms){ swing = { start: ms - BAT_LAG, contactAt: ms, t:0, resolved:false, cpu:false }; },
