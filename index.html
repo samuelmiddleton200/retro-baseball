@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12b"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12c"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-12b';
+const BUILD = '11-12c';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -3837,7 +3837,7 @@ function freePack(){
   if (Date.now() < (G.freeAt || 0)) return;
   const si = streakInfo(), day = si.claimedToday ? si.run : si.next;
   G.streak = { day, last:dayKey() }; G.freeAt = Date.now() + 24 * 3600 * 1000;
-  const batches = [{ tier:'bronze', cards:Array.from({ length:10 }, () => rollCard('bronze')) }];
+  const batches = [{ tier:'bronze', cards:Array.from({ length:5 }, () => rollCard('bronze')) }];
   let bonus = '';
   const sp = STREAK_PACK[day];
   if (sp){ batches.push({ tier:sp[0], cards:Array.from({ length:sp[1] }, () => rollCard(sp[0])) }); bonus = 'DAY ' + day + ' STREAK  +' + sp[2]; }
