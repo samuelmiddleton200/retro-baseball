@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12g"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12h"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-12g';
+const BUILD = '11-12h';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -1576,7 +1576,7 @@ const baseS = (px, py) => { for (let i = 0; i < 4; i++) if (Math.hypot(px - BASE
 function pickTarget(B, holder, px, py){
   let best = null;
   for (const key in RUNCTL){
-    const c = RUNCTL[key]; if (c.out) continue;
+    const c = RUNCTL[key]; if (c.out || c.scored || c.pos >= 359.95) continue;                         // a runner who has scored is out of play
     const dir = runHeading(c); if (!dir) continue;
     const nb = runBase(c, dir), bi = Math.round(nb / 90) - 1; if (bi < 0 || bi > 3) continue;
     if (!(dir < 0 || isGPlay(B) || nb > c.s0 + (c.forced ? 90 : 0) + .5)) continue;                       // a base the hit gave him cannot be lost
@@ -1595,7 +1595,7 @@ function manualThrow(B){
     // the man with the ball on a bag tags anybody who runs into him (not one who is standing on the bag)
     const sh = baseS(P.x, P.y);
     if (sh != null) for (const key in RUNCTL){
-      const c = RUNCTL[key]; if (c.out) continue;
+      const c = RUNCTL[key]; if (c.out || c.scored || c.pos >= 359.95) continue;
       const near = Math.min(Math.abs(c.pos - sh), sh === 360 ? Math.abs(c.pos) : 1e9);
       if (near <= 2.5 && !(Math.abs(c.v || 0) < .5 && onBag(c))){ c.out = true; c.cap = c.pos; c.v = 0; c.back = null; c.outT = B.t; say('TAGGED OUT!'); }
     }
@@ -2827,6 +2827,7 @@ function gxPlay(B){
   if (!B.foul){
     const run = (key, man, s0, s1) => {
       const s = runPosCtl(key, man, s0, s1); let a = basePathPos(s), over = 0;
+      { const cs = RUNCTL[key]; if (cs && s >= 359.95 && !cs.out){ if (!cs.scored){ cs.scored = true; cs.scoredT = B.t; } if (B.t > cs.scoredT + .3) return; } }      // he touched home: he has scored and he is gone from the field
       const cc0 = RUNCTL[key], ds = cc0 && cc0.manual ? (cc0.v < -.01 ? -1 : cc0.v > .01 ? 1 : cc0.dir || 1) : 1, a2 = basePathPos(clamp(s + ds * 1.5, 0, 360));
       if (cc0 && cc0.manual && !cc0.out && s0 === 0 && cc0.cap === 90 && s >= 90 - .05){          // stopping at first: he runs on past the bag, slows, then walks back to it
         if (cc0.arrT == null) cc0.arrT = B.t;
