@@ -80,7 +80,7 @@
 <div id="ui">
 <canvas id="cv"></canvas>
 </div>
-<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12m"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
+<script src="lib/three.min.js"></script><script src="gl3d.js?v=11-12n"></script><script src="glchars.js"></script><script src="glposes.js"></script><script src="glstage.js"></script><script src="glbake.js"></script>
 <style>
 #ui{position:relative;width:100%;height:100vh;background:#0b1018;overflow:hidden;touch-action:none;
     font-family:ui-monospace,"Courier New",monospace;color:#fff;-webkit-user-select:none;user-select:none}
@@ -216,7 +216,7 @@ function look(){
 }
 
 // ── season-long state ──────────────────────────────────────────────────────
-const BUILD = '11-12m';
+const BUILD = '11-12n';
 const SAVE = 'retrobaseball.v1';
 const START_COINS = 27500;                                // a new save starts with 2,500 and a 25,000 bonus
 const SRC = p => (window.EMB && window.EMB[p]) || p;      // recolourable sprites come from embed.js when the page is opened as a file
@@ -250,6 +250,7 @@ function newGame(teamAb){
   G.slots.rot = me.rot.map(own);
   G.slots.pen = me.pen.map(own);
   makeSchedule();
+  G.leagueV = 3;
   save();
 }
 // point the team at whatever cards are in the slots right now
@@ -325,6 +326,29 @@ const save = () => {
   } catch(e){ saveFailed = true; }
   finally { if (me && keep && !me.lineup){ me.lineup = keep.lineup; me.rot = keep.rot; me.pen = keep.pen; } }       // however it ended, the team is put back
 };
+
+function injectLeague(){
+  G.teams.forEach((t, i) => { t.w = t.l = t.rs = t.ra = 0; if (i !== G.team){ t.q = rnd(112, 84); Object.assign(t, makeRoster(false, t.q)); } });      // new, stronger computer clubs
+  G.seasonLen = 24; G.po = null; G.season = (G.season || 1) + 1;
+  makeSchedule();                                                                          // a fresh 24-game schedule
+  const myRes = Array.from({ length:17 }, (_, i) => i < 10);                               // you are 10-7 after 17 games, in a random order
+  for (let i = myRes.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [myRes[i], myRes[j]] = [myRes[j], myRes[i]]; }
+  const pWin = (a, b) => 1 / (1 + Math.exp(-(G.teams[a].q - G.teams[b].q) / 12));         // everyone else: the better club wins more often
+  for (let d = 0; d < 17; d++){
+    (G.rounds[Math.floor(d / 3)] || []).forEach(([a, b]) => {
+      const aw = a === G.team ? myRes[d] : b === G.team ? !myRes[d] : Math.random() < pWin(a, b);
+      const wr = ri(3, 9), lr = ri(0, wr - 1), w = aw ? a : b, l = aw ? b : a;
+      G.teams[w].w++; G.teams[l].l++; G.teams[w].rs += wr; G.teams[w].ra += lr; G.teams[l].rs += lr; G.teams[l].ra += wr;
+      if (a === G.team || b === G.team){ const sg = G.sched[d], won = w === G.team; if (sg){ sg.done = true; sg.rs = won ? wr : lr; sg.ra = won ? lr : wr; } }
+    });
+  }
+  G.day = 17;
+  G.teams.forEach(t => [...(t.lineup || []), ...(t.rot || []), ...(t.pen || [])].forEach(p => { p.st = newStat(); }));      // every stat back to zero
+  G.cards.forEach(p => { p.st = newStat(); p.stam = 1; });
+  G.leagueV = 3;
+  try { localStorage.removeItem('retrobaseball.match.v1'); } catch (e){}                  // a game in progress from the old league cannot be resumed
+  save();
+}
 const load = () => {
   try {
     const d = JSON.parse(localStorage.getItem(SAVE));
@@ -336,6 +360,7 @@ const load = () => {
       if (!G.seen){ G.seen = {}; G.cards.forEach(c => { G.seen[c.name] = 1; }); }
       if (!G.streak) G.streak = { day:0, last:'' };
       if (G.packReset !== 2){ G.freeAt = 0; G.packReset = 2; }                    // one-time: the daily pack that glitched is available again
+      if (G.leagueV !== 3) injectLeague();                                        // one-time: the stronger league, game 17 of 24 at 10-7, stats reset
       G.cards.forEach(c => { if (c.fz == null) c.fz = 0; });
       if (!G.gift25k){                                                       // the 1,000,000 gift is taken back and replaced by a one-time 25,000
         G.gift25k = true;
@@ -5778,7 +5803,7 @@ window.__rb = { buildPlayer, batterPose, pitcherPose, palette, RW, RH,
   buyPack, buyPosPack, freePack, rollCard, makeCardAt, valueOf, sellPrice, upCost, upgradeCard, doFuse, canFuse, fuseGroups, fuseRating, bandOf, dealsToday, buyDeal, streakInfo, tradeRating, doTrade, startOpen, openPointer, openAdvance, drawCard, ovrOf, cardById, openTick, get OPEN(){ return OPEN; },
   CFG, get shopTab(){ return shopTab; }, makeContact2: makeContact, cpuDecide, set shopTab(v){ shopTab = v; }, get upStat(){ return upStat; }, set upStat(v){ upStat = v; }, set colSel(v){ colSel = v; }, set fuseMode(v){ fuseMode = v; }, get fuseSel(){ return fuseSel; }, set fuseSel(v){ fuseSel = v; }, tickOpen(ms){ openTick(ms); }, payPlay, earn, get SIMMING(){ return SIMMING; },
   get P(){ return P; }, get BALL(){ return BALL; }, get swing(){ return swing; }, get FLD(){ return FLD; },
-  get menu(){ return menu; }, set menu(v){ menu = v; }, get RUNCTLX(){ return RUNCTL; }, pickTarget, runHeading, perfectStart, perfectEnd, applyPlay, orderTap, get orderSel(){ return orderSel; }, stamCap, stamPct, restPitchers, pg, simRest, simInning, saveEverything, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
+  get menu(){ return menu; }, set menu(v){ menu = v; }, load, get Gx(){ return G; }, get RUNCTLX(){ return RUNCTL; }, pickTarget, runHeading, perfectStart, perfectEnd, applyPlay, orderTap, get orderSel(){ return orderSel; }, stamCap, stamPct, restPitchers, pg, simRest, simInning, saveEverything, get statsBy(){ return statsBy; }, set statsBy(v){ statsBy = v; }, startPlayoffs, poUserGame, poUserDone, newSeason, simLeagueDay, makeSchedule, get PO(){ return G.po; }, stepAtBat, doSwing, makeContact, planFielders, stepFielders, runPosCtl, runBack, runToggle, get RUNCTL(){ return RUNCTL; }, launchBall, stepBall, resolveSwing, judgePlay, cpuDecide, nextPitch, applyPlay, SIM_DT,
   set swing(v){ swing = v; },
   // schedule a swing so the bat arrives at a chosen point in the pitch
   swingAt(ms){ swing = { start: ms - BAT_LAG, contactAt: ms, t:0, resolved:false, cpu:false }; },
